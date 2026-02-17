@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+
+    /* Quantara Specific (Light Mode) */
+    --q-positive: 161 94% 30%;
+    --q-warning: 35 92% 44%;
+    --q-risk: 0 72% 51%;
+    --q-primary-accent: 221 83% 53%;
+    --q-surface: 210 20% 98%;
+    --q-border: 214 32% 91%;
+  }
+
+  .dark {
+    --background: 210 25% 6%;
+    --foreground: 210 40% 98%;
+    --card: 215 25% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 215 25% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 14% 22%;
+    --input: 215 14% 22%;
+    --ring: 224 76% 48%;
+
+    /* Quantara Specific (Dark Mode) */
+    --q-positive: 128 49% 49%;
+    --q-warning: 41 72% 48%;
+    --q-risk: 1 92% 63%;
+    --q-primary-accent: 217 91% 60%;
+    --q-surface: 215 25% 11%;
+    --q-border: 215 14% 22%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-inter antialiased;
+  }
+}
