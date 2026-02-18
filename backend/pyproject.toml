@@ -25,6 +25,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.26.0",
     "structlog>=24.1.0",
+    "yfinance>=0.2.36",
+    "pandas>=2.2.0",
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +40,9 @@ dev = [
     "ruff>=0.1.14",
     "mypy>=1.8.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [build-system]
 requires = ["hatchling"]
