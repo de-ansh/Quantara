@@ -22,6 +22,9 @@ import type { NavItem } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
+import { useAuth } from "@/context/AuthContext"
+
+const PUBLIC_ROUTES = ["/login", "/register"]
 
 const navigation: NavItem[] = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -43,8 +46,23 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
     const { theme, setTheme } = useTheme()
+    const { user } = useAuth()
     const location = useLocation()
     const [sidebarOpen, setSidebarOpen] = useState(true)
+
+    const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
+
+    if (isPublicRoute) {
+        return (
+            <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+                <main className="flex-1 overflow-y-auto bg-background relative flex flex-col custom-scrollbar">
+                    <div className="flex-1 flex flex-col">
+                        {children}
+                    </div>
+                </main>
+            </div>
+        )
+    }
 
     return (
         <div className="min-h-screen bg-background text-foreground flex overflow-hidden">
@@ -143,11 +161,13 @@ export default function MainLayout({ children }: MainLayoutProps) {
                         <Separator orientation="vertical" className="h-6" />
                         <div className="flex items-center space-x-3 group cursor-pointer">
                             <div className="flex flex-col items-end mr-1">
-                                <span className="text-sm font-bold tracking-tight text-foreground">Ashish Mishra</span>
-                                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Portfolio Manager</span>
+                                <span className="text-sm font-bold tracking-tight text-foreground">{user?.email?.split('@')[0] || "Trader"}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Institutional Node</span>
                             </div>
                             <Avatar className="h-9 w-9 border border-primary/20 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
-                                <AvatarFallback className="bg-primary/10 text-primary font-bold">AM</AvatarFallback>
+                                <AvatarFallback className="bg-primary/10 text-primary font-bold uppercase">
+                                    {user?.email?.[0] || "U"}
+                                </AvatarFallback>
                             </Avatar>
                         </div>
                     </div>

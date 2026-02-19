@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, Link } from "react-router-dom"
 import {
     ShieldCheck,
     Mail,
@@ -10,16 +10,41 @@ import {
     Monitor
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Switch } from "@radix-ui/react-switch"
+import { api } from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 
 export default function Login() {
     const navigate = useNavigate()
+    const { login } = useAuth()
     const [mfaEnabled, setMfaEnabled] = useState(true)
+    const [email, setEmail] = useState("")
+    const [password, setPassword] = useState("")
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
-        // Simulate login
-        navigate("/")
+        setIsLoading(true)
+        setError(null)
+
+        try {
+            const { data } = await api.post<{ access_token: string }>("/auth/login", {
+                email,
+                password
+            })
+
+            const user = {
+                id: "1", // Mock ID for now matches backend
+                email: email,
+            }
+
+            login(data.access_token, user)
+            navigate("/")
+        } catch (err: any) {
+            setError(err.message || "Failed to authenticate. Please check your credentials.")
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (
@@ -69,6 +94,8 @@ export default function Login() {
                                     id="email"
                                     placeholder="name@institution.com"
                                     type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
                                     required
                                 />
                             </div>
@@ -86,6 +113,8 @@ export default function Login() {
                                     id="password"
                                     placeholder="••••••••••••"
                                     type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
                                     required
                                 />
                             </div>
@@ -118,16 +147,26 @@ export default function Login() {
                             </div>
                         </div>
 
+                        {error && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                                {error}
+                            </div>
+                        )}
+
                         <button
-                            className="w-full bg-[#1e5df1] hover:bg-[#1e5df1]/90 text-white font-bold py-3.5 uppercase tracking-widest text-xs transition-colors border border-[#1e5df1]/50 shadow-lg shadow-[#1e5df1]/20 active:translate-y-[1px]"
+                            className="w-full bg-[#1e5df1] hover:bg-[#1e5df1]/90 text-white font-bold py-3.5 uppercase tracking-widest text-xs transition-colors border border-[#1e5df1]/50 shadow-lg shadow-[#1e5df1]/20 active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed"
                             type="submit"
+                            disabled={isLoading}
                         >
-                            Secure Sign In
+                            {isLoading ? "Authenticating..." : "Secure Sign In"}
                         </button>
 
-                        <div className="flex items-center justify-center gap-2 text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
-                            <Lock className="size-3 text-green-500" />
-                            AES-256 end-to-end encrypted session active
+                        <div className="flex items-center justify-between text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
+                            <div className="flex items-center gap-1">
+                                <Lock className="size-3 text-green-500" />
+                                AES-256 end-to-end encrypted session active
+                            </div>
+                            <Link to="/register" className="text-[#1e5df1] hover:underline font-bold">Request Access</Link>
                         </div>
                     </form>
 

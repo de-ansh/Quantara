@@ -40,7 +40,7 @@ class AuditLog(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Additional Context
-    metadata: Mapped[Optional[dict]] = mapped_column(
+    data: Mapped[Optional[dict]] = mapped_column(
         JSON, nullable=True, comment="Additional context and data"
     )
     

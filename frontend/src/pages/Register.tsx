@@ -9,20 +9,50 @@ import {
     Globe,
     Monitor
 } from "lucide-react"
+import { api } from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 
 export default function Register() {
     const navigate = useNavigate()
+    const { login } = useAuth()
     const [formData, setFormData] = useState({
         fullName: "",
         email: "",
         password: "",
         confirmPassword: ""
     })
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
-    const handleRegister = (e: React.FormEvent) => {
+    const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()
-        // Simulate registration
-        navigate("/login")
+
+        if (formData.password !== formData.confirmPassword) {
+            setError("Passwords do not match.")
+            return
+        }
+
+        setIsLoading(true)
+        setError(null)
+
+        try {
+            const { data } = await api.post<{ access_token: string }>("/auth/register", {
+                email: formData.email,
+                password: formData.password
+            })
+
+            const user = {
+                id: "1", // Mock ID
+                email: formData.email,
+            }
+
+            login(data.access_token, user)
+            navigate("/")
+        } catch (err: any) {
+            setError(err.message || "Failed to register. Please try again.")
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,11 +164,18 @@ export default function Register() {
                             </div>
                         </div>
 
+                        {error && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                                {error}
+                            </div>
+                        )}
+
                         <button
-                            className="w-full bg-[#1e5df1] hover:bg-[#1e5df1]/90 text-white font-bold py-3.5 uppercase tracking-widest text-xs transition-colors border border-[#1e5df1]/50 shadow-lg shadow-[#1e5df1]/20 active:translate-y-[1px]"
+                            className="w-full bg-[#1e5df1] hover:bg-[#1e5df1]/90 text-white font-bold py-3.5 uppercase tracking-widest text-xs transition-colors border border-[#1e5df1]/50 shadow-lg shadow-[#1e5df1]/20 active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed"
                             type="submit"
+                            disabled={isLoading}
                         >
-                            Request Access
+                            {isLoading ? "Processing Request..." : "Request Access"}
                         </button>
 
                         <div className="flex items-center justify-between text-[10px] text-[#9ca5ba] uppercase tracking-tighter">

@@ -67,3 +67,4 @@ Desktop.ini
 *.temp
 .temp
 .tmp
+pnpm-lock.yaml
