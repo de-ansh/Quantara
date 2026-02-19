@@ -14,6 +14,8 @@ import {
     ChevronRight,
     ShieldAlert
 } from "lucide-react"
+import { useParams } from "react-router-dom"
+import { useResearch } from "@/hooks/useResearch"
 import { cn } from "@/lib/utils"
 
 const stats = [
@@ -25,12 +27,15 @@ const stats = [
 ]
 
 export default function StockDetail() {
+    const { ticker = 'NVDA' } = useParams();
+    const { data: report, isLoading } = useResearch(ticker);
+
     return (
         <div className="flex flex-col flex-1 p-6 bg-background overflow-y-auto custom-scrollbar transition-colors">
             <section className="mb-6 flex flex-wrap items-end justify-between gap-6 border-b border-border pb-6">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-baseline gap-4">
-                        <h2 className="text-6xl font-black tracking-tighter text-foreground">NVDA</h2>
+                        <h2 className="text-6xl font-black tracking-tighter text-foreground">{ticker}</h2>
                         <div className="flex items-center gap-2 px-3 py-1 bg-q-risk-low/10 text-q-risk-low text-sm font-bold border border-q-risk-low/20 uppercase tracking-widest shadow-sm shadow-q-risk-low/10">
                             <TrendingUp className="size-4" />
                             <span>+2.45%</span>
@@ -88,17 +93,21 @@ export default function StockDetail() {
                                 <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Investment Thesis</h3>
                                 <span className="ml-auto flex items-center gap-1 rounded bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary border border-primary/20">BULLISH</span>
                             </div>
-                            <div className="p-6">
+                            <div className="p-6 relative min-h-[200px]">
+                                {isLoading && (
+                                    <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
+                                        <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Running_Deep_Analysis...</div>
+                                    </div>
+                                )}
                                 <p className="text-sm leading-relaxed text-muted-foreground mb-4 font-medium">
-                                    NVIDIA occupies a dominant, near-monopoly position in the high-performance AI accelerator market. Our quantitative models suggest H100 lifecycle remains robust with a visibility runway extending into FY2026.
+                                    {report?.summary || "NVIDIA occupies a dominant, near-monopoly position in the high-performance AI accelerator market. Our quantitative models suggest H100 lifecycle remains robust with a visibility runway extending into FY2026."}
                                 </p>
                                 <ul className="space-y-3">
-                                    {/* ... */}
-                                    {[
+                                    {(report?.key_insights || [
                                         "Structural data center demand continues to outpace foundry supply limits.",
                                         "Superior software moat (CUDA) prevents rapid displacement by commodity silicon.",
                                         "Aggressive Blackwell roadmap maintains 12-18 month lead."
-                                    ].map((item, i) => (
+                                    ]).map((item, i) => (
                                         <li key={i} className="flex items-start gap-3 group">
                                             <CheckCircle2 className="text-primary size-4 mt-0.5 group-hover:scale-110 transition-transform" />
                                             <span className="text-sm text-foreground/90 font-medium">{item}</span>
@@ -120,12 +129,11 @@ export default function StockDetail() {
                                     Concentration risk among major hyperscalers presents a potential air-pocket in future CapEx cycles. Geopolitical friction remains the primary tail-risk.
                                 </p>
                                 <ul className="space-y-3">
-                                    {/* ... */}
-                                    {[
+                                    {(report?.weaknesses || [
                                         "Export restrictions on specialized chips to China may widen in Q3.",
                                         "Valuation premiums sit 2.5 standard deviations above historical means.",
                                         "Supply chain bottlenecks in CoWoS packaging could cap short-term upside."
-                                    ].map((item, i) => (
+                                    ]).map((item, i) => (
                                         <li key={i} className="flex items-start gap-3 group">
                                             <ShieldAlert className="text-q-warning size-4 mt-0.5 group-hover:scale-110 transition-transform" />
                                             <span className="text-sm text-foreground/90 font-medium">{item}</span>

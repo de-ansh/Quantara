@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { useSignals } from "@/hooks/useSignals"
 
 interface AccumulationData {
     fund: string
@@ -69,9 +70,17 @@ const sentimentData: SentimentPoint[] = [
     { time: "16:00", social: 75, news: 62 },
 ]
 
+const fallbackSignals = [
+    { time: "14:02:45", type: "BULLISH", text: "FED RATE UPDATE: STATEMENTS SUGGEST HAWKISH PAUSE. TECH SECTOR INFLOWS DETECTED." },
+    { time: "13:58:12", type: "NEUTRAL", text: "AAPL EARNINGS CALL PREP: ANALYST CONSENSUS SHIFTING TO OVERWEIGHT FOR Q3." },
+    { time: "13:45:01", type: "BEARISH", text: "CRUDE OIL FUTURES (WTI) BREAKING BELOW $75 SUPPORT. ENERGY EXPOSURE WARNING." },
+];
+
 export default function Signals() {
+    const { data: liveSignals = [], isLoading } = useSignals({ refetchInterval: 10000 });
+
     return (
-        <div className="flex flex-col h-full bg-background overflow-hidden">
+        <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
             {/* Header Info */}
             <div className="flex items-center justify-between px-6 py-3 border-b border-q-border bg-q-surface/50 shrink-0">
                 <div className="flex items-center gap-6">
@@ -170,6 +179,38 @@ export default function Signals() {
                     </CardContent>
                 </Card>
 
+                {/* Signal Side Panel - Inlined for layout consistency across mobile/desktop */}
+                <Card className="col-span-12 flex flex-col bg-q-surface border-q-border overflow-hidden shadow-none min-h-[400px]">
+                    <CardHeader className="p-4 border-b border-q-border bg-background/30 shrink-0 flex items-center justify-between flex-row">
+                        <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
+                            <div className="size-2 rounded-full bg-q-risk-high animate-pulse shadow-[0_0_8px_rgba(var(--q-risk-high),1)]" />
+                            Live Signal Feed
+                        </CardTitle>
+                        {isLoading && <span className="text-[9px] font-bold animate-pulse text-muted-foreground uppercase">Syncing...</span>}
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed relative">
+                        {isLoading && liveSignals.length === 0 && (
+                            <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10">
+                                <span className="animate-pulse tracking-widest">CONNECTING_TO_NODES...</span>
+                            </div>
+                        )}
+                        {(liveSignals.length > 0 ? liveSignals : fallbackSignals).map((item, i) => (
+                            <div key={i} className="p-3 border-b border-q-border/30 hover:bg-primary/5 transition-colors cursor-help">
+                                <div className="flex justify-between mb-1">
+                                    <span className="text-muted-foreground font-bold">{item.time}</span>
+                                    <span className={cn(
+                                        "font-black uppercase tracking-[0.05em]",
+                                        item.type === "BULLISH" ? "text-q-risk-low" :
+                                            item.type === "BEARISH" ? "text-q-risk-high" :
+                                                item.type === "VOLATILITY" ? "text-amber-500" : "text-muted-foreground"
+                                    )}>[{item.type}]</span>
+                                </div>
+                                <p className="text-foreground uppercase tracking-tight leading-tight font-medium">{item.text}</p>
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+
                 {/* Sentiment Analysis */}
                 <Card className="col-span-12 flex flex-col bg-q-surface border-q-border overflow-hidden min-h-[400px] shadow-none">
                     <CardHeader className="px-4 py-2 border-b border-q-border bg-background/30 shrink-0 flex-row items-center justify-between space-y-0">
@@ -240,37 +281,6 @@ export default function Signals() {
                                     />
                                 </AreaChart>
                             </ResponsiveContainer>
-                        </div>
-                        <div className="w-full xl:w-72 border-l border-q-border bg-background/20 overflow-hidden flex flex-col">
-                            <div className="p-3 border-b border-q-border bg-q-surface shrink-0">
-                                <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Sentiment Ticker Scores</h4>
-                            </div>
-                            <div className="flex-1 overflow-auto custom-scrollbar">
-                                <table className="w-full text-[10px] font-mono border-collapse">
-                                    <tbody className="divide-y divide-q-border/50">
-                                        {[
-                                            { t: "NVDA", s: "88", v: "+2.4%" },
-                                            { t: "TSMC", s: "82", v: "+1.1%" },
-                                            { t: "AMD", s: "45", v: "-4.2%" },
-                                            { t: "INTC", s: "12", v: "-8.1%" },
-                                            { t: "ARM", s: "77", v: "+5.1%" },
-                                            { t: "AVGO", s: "60", v: "+0.5%" },
-                                        ].map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-primary/5 transition-colors">
-                                                <td className="px-3 py-2 font-black text-foreground">{item.t}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <span className={cn(
-                                                        "px-1 py-0.5 rounded-sm",
-                                                        parseInt(item.s) > 70 ? "bg-q-risk-low/20 text-q-risk-low" :
-                                                            parseInt(item.s) < 30 ? "bg-q-risk-high/20 text-q-risk-high" : "bg-muted text-muted-foreground"
-                                                    )}>{item.s}</span>
-                                                </td>
-                                                <td className={cn("px-3 py-2 text-right font-black", item.v.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high")}>{item.v}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                     </CardContent>
                 </Card>

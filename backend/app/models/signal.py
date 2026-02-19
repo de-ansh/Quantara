@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Float, DateTime, Integer, Index, ForeignKey
+from sqlalchemy import String, Float, DateTime, Integer, Index, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -31,8 +31,8 @@ class Signal(Base):
     )
     
     # Additional Data
-    metadata: Mapped[Optional[dict]] = mapped_column(
-        "metadata_json", type_=None, nullable=True,
+    data: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True,
         comment="Additional signal-specific data"
     )
     

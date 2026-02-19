@@ -80,10 +80,10 @@ async def register(
     # TODO: Check if user exists
     # TODO: Create user in database
     
+    # Mock user creation
     # Hash password
     hashed_password = get_password_hash(request.password)
     
-    # Mock user creation
     access_token = create_access_token(
         data={"sub": "1", "email": request.email}
     )

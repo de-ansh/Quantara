@@ -44,3 +44,16 @@ export interface SignalEvent {
     type: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILITY"
     text: string
 }
+
+export interface User {
+    id: string
+    email: string
+}
+
+export interface AuthState {
+    user: User | null
+    token: string | null
+    isLoading: boolean
+    login: (token: string, user: User) => void
+    logout: () => void
+}

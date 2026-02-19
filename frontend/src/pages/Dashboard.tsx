@@ -10,7 +10,9 @@ import {
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useSignals } from "@/hooks/useSignals"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useRecommendations } from "@/hooks/useRecommendations"
 
 interface StatItem {
     label: string
@@ -85,6 +87,9 @@ const signals: SignalItem[] = [
 ]
 
 export default function Dashboard() {
+    const { data: opportunities = [], isLoading: isLoadingOpportunities } = useRecommendations();
+    const { data: liveSignals = [], isLoading: isLoadingSignals } = useSignals({ refetchInterval: 5000 });
+
     return (
         <div className="p-4 space-y-4 flex flex-col h-full bg-background overflow-hidden">
             {/* KPI Row */}
@@ -168,7 +173,12 @@ export default function Dashboard() {
                             <Filter className="size-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors" />
                         </div>
                     </div>
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar relative">
+                        {isLoadingOpportunities && (
+                            <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
+                                <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Synchronizing_Engine...</div>
+                            </div>
+                        )}
                         <Table>
                             <TableHeader className="bg-q-surface sticky top-0 z-10">
                                 <TableRow className="border-q-border hover:bg-transparent">
@@ -224,8 +234,13 @@ export default function Dashboard() {
                             Live Signal Feed
                         </h2>
                     </div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed p-0">
-                        {signals.map((item, i) => (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed p-0 relative">
+                        {isLoadingSignals && (
+                            <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
+                                <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Listening_to_Market...</div>
+                            </div>
+                        )}
+                        {(liveSignals.length > 0 ? liveSignals : signals).map((item, i) => (
                             <div key={i} className="p-3 border-b border-q-border/30 hover:bg-primary/5 transition-colors cursor-help">
                                 <div className="flex justify-between mb-1">
                                     <span className="text-muted-foreground font-bold">{item.time}</span>
