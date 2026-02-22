@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_max_tokens: int = 4096
     openai_temperature: float = 0.1
+    
+    # SEC EDGAR
+    sec_user_agent: str = Field("Quantara admin@example.com", description="SEC EDGAR User-Agent string")
 
     # Vector Database
     vector_db_type: str = "pinecone"
