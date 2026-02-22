@@ -79,7 +79,15 @@ class LLMOrchestrator:
         
         # Build the state graph
         self.workflow = self._build_workflow()
+        self.sec_provider = None  # Lazy init in retrieve_data if needed or here
     
+    def _get_sec_provider(self):
+        """Lazy initialization of SEC provider."""
+        from app.providers.sec import SECProvider
+        if not self.sec_provider:
+            self.sec_provider = SECProvider()
+        return self.sec_provider
+
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow."""
         workflow = StateGraph(AnalysisState)
@@ -114,18 +122,33 @@ class LLMOrchestrator:
         
         return workflow.compile()
     
-    def _retrieve_data(self, state: AnalysisState) -> AnalysisState:
+    async def _retrieve_data(self, state: AnalysisState) -> AnalysisState:
         """Retrieve structured financial data."""
         logger.info(f"Retrieving data for {state['ticker']}")
         
-        # TODO: Implement actual data retrieval
-        # This would connect to financial data APIs
-        state["raw_data"] = {
-            "ticker": state["ticker"],
-            "financials": {},
-            "transcripts": [],
-            "news": [],
-        }
+        # Use SEC provider
+        sec = self._get_sec_provider()
+        raw_facts = await sec.fetch_company_facts(state["ticker"])
+        
+        if raw_facts:
+            metrics = sec.extract_metrics(raw_facts)
+            latest = sec.get_latest_metrics(metrics)
+            
+            state["raw_data"] = {
+                "ticker": state["ticker"],
+                "financials": latest,
+                "historical_metrics": metrics,
+                "source": "SEC EDGAR",
+            }
+            logger.info(f"Successfully retrieved SEC data for {state['ticker']}")
+        else:
+            logger.warning(f"No SEC data retrieved for {state['ticker']}, using mock data")
+            state["raw_data"] = {
+                "ticker": state["ticker"],
+                "financials": {},
+                "transcripts": [],
+                "news": [],
+            }
         
         return state
     
