@@ -31,6 +31,8 @@ class ResearchEngine:
         self,
         db: AsyncSession,
         ticker: str,
+        openai_api_key: Optional[str] = None,
+        sec_user_agent: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """
         Generate comprehensive research report for a stock.
@@ -38,6 +40,8 @@ class ResearchEngine:
         Args:
             db: Database session
             ticker: Stock ticker symbol
+            openai_api_key: Optional OpenAI API key override
+            sec_user_agent: Optional SEC User Agent override
         
         Returns:
             Structured research report or None if failed
@@ -46,7 +50,9 @@ class ResearchEngine:
         
         try:
             # Use LLM orchestrator to generate structured analysis
-            analysis = await self.llm_orchestrator.analyze_stock(ticker, db)
+            analysis = await self.llm_orchestrator.analyze_stock(
+                ticker, db, openai_api_key=openai_api_key, sec_user_agent=sec_user_agent
+            )
             
             if analysis:
                 logger.info(f"Research report generated successfully for {ticker}")

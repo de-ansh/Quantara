@@ -37,6 +37,8 @@ class AnalysisState(TypedDict):
     retry_count: int
     final_output: dict[str, Any] | None
     db: Optional[AsyncSession]
+    openai_api_key: Optional[str]
+    sec_user_agent: Optional[str]
 
 
 class StructuredAnalysisSchema(BaseModel):
@@ -85,9 +87,11 @@ class LLMOrchestrator:
         self.workflow = self._build_workflow()
         self.sec_provider = None  # Lazy init in retrieve_data if needed or here
     
-    def _get_sec_provider(self):
+    def _get_sec_provider(self, user_agent: Optional[str] = None):
         """Lazy initialization of SEC provider."""
         from app.providers.sec import SECProvider
+        if user_agent:
+            return SECProvider(user_agent=user_agent)
         if not self.sec_provider:
             self.sec_provider = SECProvider()
         return self.sec_provider
@@ -131,7 +135,7 @@ class LLMOrchestrator:
         logger.info(f"Retrieving data for {state['ticker']}")
         
         # Use SEC provider
-        sec = self._get_sec_provider()
+        sec = self._get_sec_provider(state.get("sec_user_agent"))
         raw_facts = await sec.fetch_company_facts(state["ticker"])
         
         if raw_facts:
@@ -397,7 +401,16 @@ Generate a structured analysis based on this data.
                 HumanMessage(content=context),
             ]
             
-            response = self.llm.invoke(messages)
+            llm = self.llm
+            if state.get("openai_api_key"):
+                llm = ChatOpenAI(
+                    model=settings.openai_model,
+                    temperature=settings.openai_temperature,
+                    max_tokens=settings.openai_max_tokens,
+                    api_key=state["openai_api_key"],
+                    timeout=self.TIMEOUT_SECONDS,
+                )
+            response = llm.invoke(messages)
             
             # Log prompt and response
             logger.info(
@@ -566,13 +579,21 @@ Generate a structured analysis based on this data.
                 
         return state
     
-    async def analyze_stock(self, ticker: str, db: Optional[AsyncSession] = None) -> dict[str, Any] | None:
+    async def analyze_stock(
+        self,
+        ticker: str,
+        db: Optional[AsyncSession] = None,
+        openai_api_key: Optional[str] = None,
+        sec_user_agent: Optional[str] = None,
+    ) -> dict[str, Any] | None:
         """
         Run complete analysis workflow for a stock.
         
         Args:
             ticker: Stock ticker symbol
             db: Database session
+            openai_api_key: Optional OpenAI API key override
+            sec_user_agent: Optional SEC User Agent override
         
         Returns:
             Structured analysis or None if failed
@@ -590,6 +611,8 @@ Generate a structured analysis based on this data.
             "retry_count": 0,
             "final_output": None,
             "db": db,
+            "openai_api_key": openai_api_key,
+            "sec_user_agent": sec_user_agent,
         }
         
         try:

@@ -20,11 +20,11 @@ const StockDetail = lazy(() => import("@/pages/StockDetail"))
 const Signals = lazy(() => import("@/pages/Signals"))
 const Risk = lazy(() => import("@/pages/Risk"))
 const Simulation = lazy(() => import("@/pages/Simulation"))
-const Login = lazy(() => import("./pages/Login"))
-const Register = lazy(() => import("./pages/Register"))
+const Login = lazy(() => import("@/pages/Login"))
+const Register = lazy(() => import("@/pages/Register"))
 
-const Settings = () => <div className="p-8"><h1>Settings</h1></div>
-const Account = () => <div className="p-8"><h1>Account & Security</h1></div>
+const Settings = lazy(() => import("@/pages/Settings"))
+const Account = lazy(() => import("@/pages/Account"))
 
 function App() {
   return (

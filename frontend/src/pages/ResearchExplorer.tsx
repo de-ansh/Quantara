@@ -219,7 +219,7 @@ export default function ResearchExplorer() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border font-mono text-xs">
-                                    {results.map((row, i) => (
+                                    {results.map((row: any, i: number) => (
                                         <tr 
                                             key={i} 
                                             onClick={() => navigate(`/research/${row.ticker}`)}

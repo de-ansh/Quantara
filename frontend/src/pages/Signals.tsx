@@ -82,7 +82,7 @@ export default function Signals() {
     const { data: liveSignals = [], isLoading: loadingLive } = useSignals({ refetchInterval: 10000 });
 
     // Fetch dynamic 13F Institutional Accumulation signals from DB
-    const { data: institutionalSignals = [], isLoading: loadingInst } = useQuery({
+    const { data: institutionalSignals = [], isLoading: loadingInst } = useQuery<AccumulationData[]>({
         queryKey: ["signals", "institutional_buying"],
         queryFn: async () => {
             const res = await apiClient.get("/signals", { params: { signal_type: "institutional_buying", limit: 10 } })
@@ -95,13 +95,13 @@ export default function Signals() {
                     value: `$${((s.metadata?.shares_held || s.strength * 1250000) * 150 / 1e9).toFixed(1)}B`,
                     date: new Date(s.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
                     type: changePct >= 0 ? "buy" : "sell"
-                } as AccumulationData
+                }
             })
         }
     })
 
     // Fetch dynamic SEC Form 4 Insider transaction signals from DB
-    const { data: insiderSignals = [], isLoading: loadingInsider } = useQuery({
+    const { data: insiderSignals = [], isLoading: loadingInsider } = useQuery<InsiderData[]>({
         queryKey: ["signals", "insider_buying"],
         queryFn: async () => {
             const res = await apiClient.get("/signals", { params: { signal_type: "insider_buying", limit: 10 } })
@@ -114,7 +114,7 @@ export default function Signals() {
                     shares: (s.metadata?.shares_bought || Math.round(s.strength * 500)).toLocaleString(),
                     price: `$${(s.metadata?.average_price || 120.0).toFixed(2)}`,
                     date: new Date(s.timestamp).toISOString().split("T")[0]
-                } as InsiderData
+                }
             })
         }
     })
