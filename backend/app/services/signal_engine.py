@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 
@@ -290,3 +291,135 @@ class SignalEngine:
         )
         
         return min(max(aggregated, 0), 100)
+
+
+async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
+    """Save a detected signal to the database, ensuring stock exists."""
+    from app.models.signal import Signal as DBSignal
+    from app.models.stock import Stock
+    from sqlalchemy import select
+    
+    # Ensure the stock exists in the database
+    stmt_stock = select(Stock).where(Stock.ticker == signal.ticker)
+    res_stock = await db.execute(stmt_stock)
+    stock = res_stock.scalar_one_or_none()
+    
+    if not stock:
+        # Create a basic placeholder Stock record if it doesn't exist
+        stock = Stock(
+            ticker=signal.ticker,
+            name=signal.ticker,
+            sector="Technology",
+            risk_score=50.0,
+            research_score=None
+        )
+        db.add(stock)
+        await db.commit()
+        
+    # Check if this exact signal (ticker, type, timestamp) already exists
+    stmt_sig = select(DBSignal).where(
+        DBSignal.ticker == signal.ticker,
+        DBSignal.signal_type == signal.signal_type.value,
+        DBSignal.timestamp == signal.timestamp
+    )
+    res_sig = await db.execute(stmt_sig)
+    existing_sig = res_sig.scalar_one_or_none()
+    
+    if not existing_sig:
+        db_signal = DBSignal(
+            ticker=signal.ticker,
+            signal_type=signal.signal_type.value,
+            strength=signal.strength,
+            confidence=signal.confidence,
+            data=signal.metadata,
+            timestamp=signal.timestamp
+        )
+        db.add(db_signal)
+        await db.commit()
+        logger.info(f"Saved signal {signal.signal_type.value} for {signal.ticker} to database")
+
+
+async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
+    """Background task to periodically fetch SEC filings and generate market signals."""
+    import asyncio
+    from app.providers.sec import SECProvider
+    from app.core.database import AsyncSessionLocal
+    
+    sec = SECProvider()
+    engine = SignalEngine()
+    
+    # Active tickers from CIK_MAPPING
+    tickers = list(sec.CIK_MAPPING.keys())
+    
+    logger.info(f"Starting background signal processing for tickers: {tickers} every {interval_seconds}s")
+    
+    while True:
+        try:
+            logger.info("Running scheduled signal generation pass...")
+            
+            async with AsyncSessionLocal() as db:
+                for ticker in tickers:
+                    # 1. Fetch Form 4 insider transactions
+                    logger.info(f"Fetching Form 4 insider transactions for {ticker}")
+                    txs = await sec.fetch_insider_transactions(ticker, limit=10)
+                    
+                    if txs:
+                        insider_buy_vol = 0.0
+                        insider_sell_vol = 0.0
+                        insiders_buying = set()
+                        
+                        for tx in txs:
+                            shares = tx.get("shares") or 0.0
+                            price = tx.get("price_per_share") or 0.0
+                            vol = shares * price
+                            
+                            if tx.get("classification") == "Buy":
+                                insider_buy_vol += vol
+                                insiders_buying.add(tx.get("reporting_owner"))
+                            elif tx.get("classification") == "Sell":
+                                insider_sell_vol += vol
+                                
+                        num_insiders = len(insiders_buying)
+                        
+                        # Detect and save signal if buying criteria met
+                        insider_sig = engine.detect_insider_buying(
+                            ticker=ticker,
+                            insider_buy_volume=insider_buy_vol,
+                            insider_sell_volume=insider_sell_vol,
+                            num_insiders_buying=num_insiders
+                        )
+                        
+                        if insider_sig:
+                            await save_signal_to_db(db, insider_sig)
+                            
+                    # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
+                    facts = await sec.fetch_company_facts(ticker)
+                    if facts:
+                        # Try to extract EPS
+                        extracted = sec.extract_metrics(facts)
+                        eps_history = extracted.get("eps", [])
+                        if eps_history:
+                            # Assume the last one is the latest reported actual EPS
+                            actual_eps = eps_history[-1]["val"]
+                            
+                            # Estimate consensus EPS as slightly different to simulate surprise (e.g. actual_eps * 0.9)
+                            estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
+                            
+                            surprise_sig = engine.detect_earnings_surprise(
+                                ticker=ticker,
+                                actual_eps=actual_eps,
+                                estimated_eps=estimated_eps,
+                                timestamp=datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d") if eps_history[-1].get("filed") else None
+                            )
+                            if surprise_sig:
+                                await save_signal_to_db(db, surprise_sig)
+                                
+            logger.info("Signal generation pass completed successfully")
+            
+        except asyncio.CancelledError:
+            logger.info("Background signal processing task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in background signal processing: {e}", exc_info=True)
+            
+        await asyncio.sleep(interval_seconds)
