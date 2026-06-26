@@ -1,7 +1,7 @@
 """Research API endpoints."""
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Header
 from pydantic import BaseModel
 
 from app.core.dependencies import DBSession, CurrentUser
@@ -140,6 +140,8 @@ async def get_stock_research(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
+    x_openai_api_key: Optional[str] = Header(None, alias="X-OpenAI-API-Key"),
+    x_sec_user_agent: Optional[str] = Header(None, alias="X-SEC-User-Agent"),
 ) -> ResearchReportResponse:
     """
     Get research report for a stock.
@@ -166,7 +168,9 @@ async def get_stock_research(
         return ResearchReportResponse(**report.structured_json)
         
     # Generate new report
-    report_data = await research_engine.generate_research_report(db, ticker_upper)
+    report_data = await research_engine.generate_research_report(
+        db, ticker_upper, openai_api_key=x_openai_api_key, sec_user_agent=x_sec_user_agent
+    )
     
     if not report_data:
         raise HTTPException(

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import apiClient from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
 import {
     Play,
     Download,
@@ -7,7 +8,8 @@ import {
     Bell,
     ChevronDown,
     Zap,
-    SlidersHorizontal
+    SlidersHorizontal,
+    AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -33,6 +35,15 @@ export default function Simulation() {
     const [result, setResult] = useState<any>(null)
     const [horizonYears, setHorizonYears] = useState(10)
     const [volatilityAssumption, setVolatilityAssumption] = useState("base")
+
+    const { data: marketData } = useQuery({
+        queryKey: ["marketStatus"],
+        queryFn: async () => {
+            const { data } = await apiClient.get("/market/status")
+            return data
+        },
+        refetchInterval: 5000,
+    })
 
     const runSimulation = async () => {
         setIsLoading(true)
@@ -138,6 +149,11 @@ export default function Simulation() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
+                    {marketData?.vix?.value && (
+                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono font-bold uppercase tracking-widest">
+                            VIX: {marketData.vix.value} ({marketData.vix.change_percent >= 0 ? "+" : ""}{marketData.vix.change_percent}%)
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 px-2 py-1 bg-green-500/10 border border-green-500/20 text-green-400 text-[9px] font-bold uppercase tracking-widest">
                         <div className="size-1.5 bg-green-500 rounded-full animate-pulse" />
                         Market Open
@@ -149,6 +165,18 @@ export default function Simulation() {
                     </div>
                 </div>
             </div>
+
+            {/* Macro Alert Banner */}
+            {marketData?.alerts?.[0] && (
+                <div className="flex items-center gap-3 px-4 py-2 border-b border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider shrink-0">
+                    <span className="flex items-center gap-1.5 shrink-0 font-bold">
+                        <AlertTriangle className="size-3.5 animate-pulse" />
+                        MACRO_ALERT
+                    </span>
+                    <span className="h-3 w-[1px] bg-amber-500/30 shrink-0" />
+                    <span className="truncate">{marketData.alerts[0].time} - {marketData.alerts[0].text}</span>
+                </div>
+            )}
 
             <main className="flex flex-1 overflow-hidden">
                 {/* Controls */}

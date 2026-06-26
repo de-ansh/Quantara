@@ -20,6 +20,16 @@ api.interceptors.request.use((config) => {
     if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    const openaiKey = localStorage.getItem('openai_api_key');
+    const secUserAgent = localStorage.getItem('sec_user_agent');
+    if (openaiKey && config.headers) {
+        config.headers['X-OpenAI-API-Key'] = openaiKey;
+    }
+    if (secUserAgent && config.headers) {
+        config.headers['X-SEC-User-Agent'] = secUserAgent;
+    }
+    
     return config;
 }, (error) => {
     return Promise.reject(error);

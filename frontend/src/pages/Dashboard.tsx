@@ -6,6 +6,7 @@ import {
     ArrowDown,
     MoveRight,
     Filter,
+    AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +14,8 @@ import { Badge } from "@/components/ui/badge"
 import { useSignals } from "@/hooks/useSignals"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useRecommendations } from "@/hooks/useRecommendations"
+import { useQuery } from "@tanstack/react-query"
+import apiClient from "@/lib/api"
 
 interface StatItem {
     label: string
@@ -90,11 +93,66 @@ export default function Dashboard() {
     const { data: opportunities = [], isLoading: isLoadingOpportunities } = useRecommendations();
     const { data: liveSignals = [], isLoading: isLoadingSignals } = useSignals({ refetchInterval: 5000 });
 
+    const { data: marketData } = useQuery({
+        queryKey: ["marketStatus"],
+        queryFn: async () => {
+            const { data } = await apiClient.get("/market/status")
+            return data
+        },
+        refetchInterval: 5000,
+    })
+
+    const vixVal = marketData?.vix?.value ? `VIX: ${marketData.vix.value}` : "VIX: 14.22"
+    const vixTrend = marketData?.vix?.change_percent !== undefined
+        ? `${marketData.vix.change_percent >= 0 ? "+" : ""}${marketData.vix.change_percent}%`
+        : "-0.4%"
+
+    const currentStats: StatItem[] = [
+        {
+            label: "Portfolio Risk Score",
+            value: "72",
+            trend: "+2.4%",
+            trendStatus: "up",
+            isGauge: true
+        },
+        {
+            label: "Recommended Risk Band",
+            value: "MODERATE - STEADY",
+            subtext: "Confidence: 94%",
+            isBadge: true
+        },
+        {
+            label: "Macro Risk Indicator",
+            value: "1.2%",
+            isSparkline: true
+        },
+        {
+            label: "Volatility Snapshot",
+            value: vixVal,
+            trend: vixTrend,
+            isVol: true
+        }
+    ]
+
+    const latestAlert = marketData?.alerts?.[0]
+
     return (
         <div className="p-4 space-y-4 flex flex-col h-full bg-background overflow-hidden">
+            {/* Macro Alert Banner */}
+            {latestAlert && (
+                <div className="flex items-center gap-3 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider shrink-0 rounded-sm">
+                    <span className="flex items-center gap-1.5 shrink-0 font-bold">
+                        <AlertTriangle className="size-3.5 animate-pulse" />
+                        MACRO_ALERT
+                    </span>
+                    <span className="h-3 w-[1px] bg-amber-500/30 shrink-0" />
+                    <span className="truncate">{latestAlert.time} - {latestAlert.text}</span>
+                </div>
+            )}
+
             {/* KPI Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-                {stats.map((stat, i) => (
+                {currentStats.map((stat, i) => (
                     <Card key={i} className="bg-q-surface border-q-border flex flex-col justify-between min-h-[140px] shadow-none">
                         <CardHeader className="p-4 pb-2 flex-row items-start justify-between space-y-0">
                             <CardTitle className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest leading-none">{stat.label}</CardTitle>

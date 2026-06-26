@@ -1,5 +1,6 @@
 """Risk analysis API endpoints."""
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Header
 from pydantic import BaseModel
 
 from app.core.dependencies import DBSession, CurrentUser
@@ -34,6 +35,7 @@ async def get_stock_risk_analysis(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
+    x_sec_user_agent: Optional[str] = Header(None, alias="X-SEC-User-Agent"),
 ) -> RiskAnalysisResponse:
     """
     Get risk analysis for a stock.
@@ -61,6 +63,7 @@ async def get_stock_risk_analysis(
         "retry_count": 0,
         "final_output": None,
         "db": db,
+        "sec_user_agent": x_sec_user_agent,
     }
     
     try:

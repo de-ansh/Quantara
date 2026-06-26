@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import {
     ResponsiveContainer,
     CartesianGrid,
+    XAxis,
     YAxis,
     Tooltip,
     LineChart,
@@ -106,33 +107,33 @@ export default function Risk() {
     const riskLevel = riskData?.risk_level || "Moderate"
 
     const kpis = [
-        { 
-            label: "Beta (5Y Trailing)", 
-            value: (components.beta_score / 50.0).toFixed(2), 
-            trend: components.beta_score > 50 ? "+2.1% ↑" : "-0.8% ↓", 
-            status: components.beta_score > 60 ? "danger" : "success", 
-            fill: `${components.beta_score}%` 
+        {
+            label: "Beta (5Y Trailing)",
+            value: (components.beta_score / 50.0).toFixed(2),
+            trend: components.beta_score > 50 ? "+2.1% ↑" : "-0.8% ↓",
+            status: components.beta_score > 60 ? "danger" : "success",
+            fill: `${components.beta_score}%`
         },
-        { 
-            label: "Annual Volatility Score", 
-            value: `${components.volatility_score.toFixed(1)}/100`, 
-            trend: components.volatility_score > 50 ? "+1.5% ↑" : "-0.5% ↓", 
-            status: components.volatility_score > 60 ? "danger" : "success", 
-            isSpark: true 
+        {
+            label: "Annual Volatility Score",
+            value: `${components.volatility_score.toFixed(1)}/100`,
+            trend: components.volatility_score > 50 ? "+1.5% ↑" : "-0.5% ↓",
+            status: components.volatility_score > 60 ? "danger" : "success",
+            isSpark: true
         },
-        { 
-            label: "Liquidity/Leverage Index", 
-            value: `${(100 - components.leverage_score).toFixed(0)}/100`, 
-            trend: components.leverage_score > 50 ? "-1.2% ↓" : "+0.2% ↑", 
-            status: components.leverage_score > 50 ? "warning" : "success", 
-            isDots: true 
+        {
+            label: "Liquidity/Leverage Index",
+            value: `${(100 - components.leverage_score).toFixed(0)}/100`,
+            trend: components.leverage_score > 50 ? "-1.2% ↓" : "+0.2% ↑",
+            status: components.leverage_score > 50 ? "warning" : "success",
+            isDots: true
         },
-        { 
-            label: "Valuation Risk Score", 
-            value: `${components.valuation_risk_score.toFixed(1)}/100`, 
-            trend: components.valuation_risk_score > 50 ? "+2.8% ↑" : "-1.1% ↓", 
-            status: components.valuation_risk_score > 60 ? "danger" : "success", 
-            sub: "CONFIDENCE: 95%" 
+        {
+            label: "Valuation Risk Score",
+            value: `${components.valuation_risk_score.toFixed(1)}/100`,
+            trend: components.valuation_risk_score > 50 ? "+2.8% ↑" : "-1.1% ↓",
+            status: components.valuation_risk_score > 60 ? "danger" : "success",
+            sub: "CONFIDENCE: 95%"
         },
     ]
 
@@ -173,7 +174,7 @@ export default function Risk() {
                         ))}
                     </div>
                 </div>
-                
+
                 <form onSubmit={handleCustomSearch} className="flex items-center gap-2">
                     <div className="relative group">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -200,7 +201,7 @@ export default function Risk() {
                     <h2 className="text-3xl font-black tracking-tighter uppercase text-foreground leading-none">
                         Asset: {activeTicker} | <span className={cn(
                             riskLevel === "Conservative" ? "text-green-400" :
-                            riskLevel === "Moderate" ? "text-yellow-400" : "text-q-risk-high"
+                                riskLevel === "Moderate" ? "text-yellow-400" : "text-q-risk-high"
                         )}>Risk: {riskLevel} ({overallRiskScore.toFixed(1)})</span>
                     </h2>
                     <p className="text-muted-foreground text-[11px] max-w-2xl font-bold uppercase tracking-tight">
@@ -212,10 +213,10 @@ export default function Risk() {
                         <Download className="mr-2 size-3.5" />
                         Export Data
                     </Button>
-                    <Button 
+                    <Button
                         onClick={() => refetch()}
                         disabled={isLoading}
-                        size="sm" 
+                        size="sm"
                         className="bg-primary hover:brightness-110 text-primary-foreground text-[10px] font-black uppercase tracking-[0.15em] h-9 px-4"
                     >
                         {isLoading ? "Recalculating..." : "Recalculate Model"}

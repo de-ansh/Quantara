@@ -119,7 +119,7 @@ async def root() -> dict:
 
 
 # Include API routers
-from app.api.v1 import auth, users, research, recommendations, signals, portfolio, risk, audit
+from app.api.v1 import auth, users, research, recommendations, signals, portfolio, risk, audit, market
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
@@ -129,6 +129,7 @@ app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
 app.include_router(risk.router, prefix="/api/v1", tags=["risk"])
 app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
+app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
 
 
 @app.exception_handler(Exception)
