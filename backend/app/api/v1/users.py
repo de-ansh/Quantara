@@ -3,8 +3,11 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.core.dependencies import DBSession, CurrentUser
+from app.models.user import User
+from app.api.v1.audit import create_audit_log
 
 router = APIRouter()
 
@@ -42,14 +45,23 @@ async def get_current_user_profile(
     Returns:
         User profile data
     """
-    # TODO: Fetch from database
+    stmt = select(User).where(User.id == int(current_user["id"]))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+        
     return UserResponse(
-        id=int(current_user["id"]),
-        email=current_user.get("email", ""),
-        risk_level=None,
-        volatility_tolerance=None,
-        investment_horizon=None,
-        sector_preferences=None,
+        id=user.id,
+        email=user.email,
+        risk_level=user.risk_level,
+        volatility_tolerance=user.volatility_tolerance,
+        investment_horizon=user.investment_horizon,
+        sector_preferences=user.sector_preferences,
     )
 
 
@@ -70,13 +82,43 @@ async def update_risk_profile(
     Returns:
         Updated user profile
     """
-    # TODO: Update user in database
+    stmt = select(User).where(User.id == int(current_user["id"]))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+        
+    user.risk_level = profile.risk_level
+    user.volatility_tolerance = profile.volatility_tolerance
+    user.investment_horizon = profile.investment_horizon
+    user.sector_preferences = profile.sector_preferences
+    
+    await db.commit()
+    await db.refresh(user)
+    
+    await create_audit_log(
+        db,
+        user_id=user.id,
+        action="update_profile",
+        entity="user",
+        entity_id=str(user.id),
+        status="success",
+        data={
+            "risk_level": profile.risk_level,
+            "volatility_tolerance": profile.volatility_tolerance,
+            "investment_horizon": profile.investment_horizon,
+        },
+    )
     
     return UserResponse(
-        id=int(current_user["id"]),
-        email=current_user.get("email", ""),
-        risk_level=profile.risk_level,
-        volatility_tolerance=profile.volatility_tolerance,
-        investment_horizon=profile.investment_horizon,
-        sector_preferences=profile.sector_preferences,
+        id=user.id,
+        email=user.email,
+        risk_level=user.risk_level,
+        volatility_tolerance=user.volatility_tolerance,
+        investment_horizon=user.investment_horizon,
+        sector_preferences=user.sector_preferences,
     )

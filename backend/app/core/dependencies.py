@@ -46,9 +46,29 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # TODO: Fetch user from database
-    # For now, return payload
-    return {"id": user_id, **payload}
+    from app.models.user import User
+    from sqlalchemy import select
+    
+    stmt = select(User).where(User.id == int(user_id))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "risk_level": user.risk_level,
+        "volatility_tolerance": user.volatility_tolerance,
+        "investment_horizon": user.investment_horizon,
+        "sector_preferences": user.sector_preferences,
+        "is_active": user.is_active,
+    }
 
 
 # Type aliases for common dependencies

@@ -4,10 +4,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import select
 
 from app.core.dependencies import DBSession
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
+from app.models.user import User
+from app.api.v1.audit import create_audit_log
 
 router = APIRouter()
 
@@ -45,15 +48,33 @@ async def login(
     Returns:
         JWT access token
     """
-    # TODO: Fetch user from database
-    # For now, mock authentication
+    stmt = select(User).where(User.email == request.email)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
     
-    # Mock user validation
-    if request.email == "test@quantara.com" and request.password == "password":
+    if user and verify_password(request.password, user.hashed_password):
         access_token = create_access_token(
-            data={"sub": "1", "email": request.email}
+            data={"sub": str(user.id), "email": user.email}
+        )
+        await create_audit_log(
+            db,
+            user_id=user.id,
+            action="login",
+            entity="user",
+            entity_id=str(user.id),
+            status="success",
         )
         return TokenResponse(access_token=access_token)
+    
+    await create_audit_log(
+        db,
+        user_id=None,
+        action="login",
+        entity="user",
+        status="failure",
+        error_message="Incorrect email or password",
+        data={"email": request.email},
+    )
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -77,15 +98,39 @@ async def register(
     Returns:
         JWT access token
     """
-    # TODO: Check if user exists
-    # TODO: Create user in database
+    stmt = select(User).where(User.email == request.email)
+    result = await db.execute(stmt)
+    existing_user = result.scalar_one_or_none()
     
-    # Mock user creation
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email address already exists.",
+        )
+    
     # Hash password
     hashed_password = get_password_hash(request.password)
     
+    # Create user in database
+    user = User(
+        email=request.email,
+        hashed_password=hashed_password,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    
+    await create_audit_log(
+        db,
+        user_id=user.id,
+        action="register",
+        entity="user",
+        entity_id=str(user.id),
+        status="success",
+    )
+    
     access_token = create_access_token(
-        data={"sub": "1", "email": request.email}
+        data={"sub": str(user.id), "email": user.email}
     )
     
     return TokenResponse(access_token=access_token)

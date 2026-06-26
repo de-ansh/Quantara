@@ -4,8 +4,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import DBSession, CurrentUser
+from app.models.audit import AuditLog
 
 router = APIRouter()
 
@@ -28,6 +31,34 @@ class AuditLogsListResponse(BaseModel):
     total_count: int
 
 
+async def create_audit_log(
+    db: AsyncSession,
+    user_id: Optional[int],
+    action: str,
+    entity: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    status: str = "success",
+    error_message: Optional[str] = None,
+    data: Optional[dict] = None,
+) -> AuditLog:
+    """
+    Create and persist an audit log entry.
+    """
+    log = AuditLog(
+        user_id=user_id,
+        action=action,
+        entity=entity,
+        entity_id=entity_id,
+        status=status,
+        error_message=error_message,
+        data=data,
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return log
+
+
 @router.get("/logs", response_model=AuditLogsListResponse)
 async def get_audit_logs(
     current_user: CurrentUser,
@@ -47,24 +78,28 @@ async def get_audit_logs(
     Returns:
         List of audit logs
     """
-    # TODO: Fetch from database with filters
-    # Only return logs for current user
+    stmt = select(AuditLog).where(AuditLog.user_id == int(current_user["id"]))
     
-    # Mock audit logs
-    mock_logs = [
-        AuditLogResponse(
-            id=1,
-            user_id=int(current_user["id"]),
-            action="login",
-            entity=None,
-            entity_id=None,
-            status="success",
-            timestamp=datetime.utcnow(),
-            metadata={},
-        ),
-    ]
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+        
+    stmt = stmt.order_by(AuditLog.timestamp.desc()).limit(limit)
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
     
     return AuditLogsListResponse(
-        logs=mock_logs,
-        total_count=len(mock_logs),
+        logs=[
+            AuditLogResponse(
+                id=log.id,
+                user_id=log.user_id,
+                action=log.action,
+                entity=log.entity,
+                entity_id=log.entity_id,
+                status=log.status,
+                timestamp=log.timestamp,
+                metadata=log.data or {},
+            )
+            for log in logs
+        ],
+        total_count=len(logs),
     )
