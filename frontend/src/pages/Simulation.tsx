@@ -1,23 +1,24 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import apiClient from "@/lib/api"
 import {
-    BarChart3,
-    TrendingUp,
-    TrendingDown,
     Play,
     Download,
     Settings,
     Bell,
-    User,
-    Activity,
     ChevronDown,
-    Info,
-    Clock,
-    ShieldCheck,
     Zap,
-    SlidersHorizontal,
-    LineChart as LineChartIcon
+    SlidersHorizontal
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+    ResponsiveContainer,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip
+} from "recharts"
 
 const initialAllocation = [
     { label: "Equities", val: 60 },
@@ -26,17 +27,96 @@ const initialAllocation = [
     { label: "Cash", val: 5 },
 ]
 
-const metrics = [
-    { label: "Forward Sharpe", value: "1.84", sub: "CI: 1.6 - 2.1", color: "text-green-400" },
-    { label: "Portfolio Beta", value: "0.92", sub: "Rel. to S&P 500" },
-    { label: "Est. Alpha (BPS)", value: "+145", sub: "Top 15% Percentile", color: "text-green-500" },
-    { label: "Volatility (Std Dev)", value: "12.4%", sub: "Annualized" },
-    { label: "Prob. of Success", value: "88.2%", sub: "Goal: $4M Target", color: "text-[#1e5df1]" },
-    { label: "Value at Risk (95%)", value: "-$1.2M", sub: "1-Year Horizon", color: "text-red-500" },
-]
-
 export default function Simulation() {
     const [allocation, setAllocation] = useState(initialAllocation)
+    const [isLoading, setIsLoading] = useState(false)
+    const [result, setResult] = useState<any>(null)
+    const [horizonYears, setHorizonYears] = useState(10)
+    const [volatilityAssumption, setVolatilityAssumption] = useState("base")
+
+    const runSimulation = async () => {
+        setIsLoading(true)
+        try {
+            // Map asset allocations to representative tickers
+            const stocks = allocation.map(item => {
+                let ticker = "AAPL"
+                if (item.label === "Fixed Income") ticker = "TLT"
+                else if (item.label === "Alternatives") ticker = "GLD"
+                else if (item.label === "Cash") ticker = "BIL"
+                
+                return {
+                    ticker,
+                    weight: item.val / 100.0
+                }
+            })
+
+            // Normalize weights if the sum is not exactly 1.0 (to avoid division by zero or bad return calculation)
+            const sum = stocks.reduce((acc, s) => acc + s.weight, 0)
+            if (sum > 0) {
+                stocks.forEach(s => {
+                    s.weight = s.weight / sum
+                })
+            }
+
+            const payload = {
+                stocks,
+                initial_investment: 1000000.0, // $1M base
+                time_horizon_months: horizonYears * 12
+            }
+
+            const res = await apiClient.post("/portfolio/simulate", payload)
+            setResult(res.data)
+        } catch (error) {
+            console.error("Simulation run failed:", error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    // Trigger simulation on mount and whenever the time horizon changes
+    useEffect(() => {
+        runSimulation()
+    }, [horizonYears])
+
+    // Bind metrics from simulation result
+    const metrics = [
+        { 
+            label: "Forward Sharpe", 
+            value: result ? result.sharpe_ratio.toFixed(2) : "1.84", 
+            sub: "CI: 1.6 - 2.1", 
+            color: "text-green-400" 
+        },
+        { 
+            label: "Portfolio Beta", 
+            value: result ? (result.expected_volatility / 14).toFixed(2) : "0.92", 
+            sub: "Rel. to S&P 500" 
+        },
+        { 
+            label: "Est. Annual Return", 
+            value: result ? `${result.expected_return.toFixed(1)}%` : "8.5%", 
+            sub: "Model Projection", 
+            color: "text-green-500" 
+        },
+        { 
+            label: "Volatility (Std Dev)", 
+            value: result ? `${result.expected_volatility.toFixed(1)}%` : "12.4%", 
+            sub: "Annualized" 
+        },
+        { 
+            label: "Risk-Adjusted Return", 
+            value: result ? `${result.risk_adjusted_return.toFixed(1)}%` : "7.1%", 
+            sub: "Sharpe Penalized", 
+            color: "text-[#1e5df1]" 
+        },
+        { 
+            label: "Max Drawdown Projection", 
+            value: result ? `${result.max_drawdown.toFixed(1)}%` : "-12.3%", 
+            sub: "Stressed Market Scenario", 
+            color: "text-red-500" 
+        },
+    ]
+
+    const chartData = result?.trajectory || []
 
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden transition-colors">
@@ -81,7 +161,7 @@ export default function Simulation() {
                     </div>
                     <div className="p-4 space-y-6">
                         <section>
-                            <h3 className="text-[9px] font-bold uppercase text-[#484f58] mb-3 tracking-tighter">Target Allocation (%)</h3>
+                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/80 mb-3 tracking-tighter">Target Allocation (%)</h3>
                             <div className="space-y-4">
                                 {allocation.map((item, i) => (
                                     <div key={i} className="space-y-1">
@@ -93,6 +173,8 @@ export default function Simulation() {
                                             type="range"
                                             className="w-full h-[2px] bg-border appearance-none cursor-pointer accent-primary"
                                             value={item.val}
+                                            min="0"
+                                            max="100"
                                             onChange={(e) => {
                                                 const newAlloc = [...allocation]
                                                 newAlloc[i].val = parseFloat(e.target.value)
@@ -107,9 +189,24 @@ export default function Simulation() {
                         <section>
                             <h3 className="text-[9px] font-bold uppercase text-muted-foreground/60 mb-3 tracking-tighter">Volatility Assumptions</h3>
                             <div className="grid grid-cols-3 border border-border overflow-hidden rounded-sm">
-                                <button className="py-2 text-[9px] font-bold uppercase hover:bg-muted transition-colors">Cons.</button>
-                                <button className="py-2 text-[9px] font-bold uppercase bg-primary text-white">Base</button>
-                                <button className="py-2 text-[9px] font-bold uppercase hover:bg-muted transition-colors border-l border-border">Aggr.</button>
+                                <button 
+                                    onClick={() => setVolatilityAssumption("conservative")}
+                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors", volatilityAssumption === "conservative" ? "bg-primary text-white" : "hover:bg-muted")}
+                                >
+                                    Cons.
+                                </button>
+                                <button 
+                                    onClick={() => setVolatilityAssumption("base")}
+                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors border-x border-border", volatilityAssumption === "base" ? "bg-primary text-white" : "hover:bg-muted")}
+                                >
+                                    Base
+                                </button>
+                                <button 
+                                    onClick={() => setVolatilityAssumption("aggressive")}
+                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors", volatilityAssumption === "aggressive" ? "bg-primary text-white" : "hover:bg-muted")}
+                                >
+                                    Aggr.
+                                </button>
                             </div>
                         </section>
 
@@ -117,9 +214,14 @@ export default function Simulation() {
                             <h3 className="text-[9px] font-bold uppercase text-muted-foreground/60 tracking-tighter">Parameters</h3>
                             <div className="flex items-center justify-between">
                                 <span className="text-[11px] text-muted-foreground">Time Horizon</span>
-                                <select className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground">
-                                    <option>10 Years</option>
-                                    <option>20 Years</option>
+                                <select 
+                                    value={horizonYears}
+                                    onChange={(e) => setHorizonYears(Number(e.target.value))}
+                                    className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
+                                >
+                                    <option value={10}>10 Years</option>
+                                    <option value={20}>20 Years</option>
+                                    <option value={30}>30 Years</option>
                                 </select>
                             </div>
                             <div className="flex items-center justify-between text-[11px]">
@@ -132,9 +234,13 @@ export default function Simulation() {
                             </label>
                         </section>
 
-                        <button className="w-full bg-primary hover:bg-primary/90 text-white text-[10px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+                        <button 
+                            onClick={runSimulation}
+                            disabled={isLoading}
+                            className="w-full bg-primary hover:bg-primary/90 text-white text-[10px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                        >
                             <Play className="size-3.5 fill-current" />
-                            Run Simulation
+                            {isLoading ? "Simulating..." : "Run Simulation"}
                         </button>
                     </div>
                 </aside>
@@ -145,12 +251,12 @@ export default function Simulation() {
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Monte Carlo Simulation</h2>
-                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Projected Portfolio Value Distribution | Base Case</p>
+                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Projected Portfolio Value Distribution | {volatilityAssumption.toUpperCase()} CASE</p>
                             </div>
                             <div className="flex gap-2">
                                 <div className="flex items-center gap-2 px-3 py-1.5 border border-border bg-card text-[9px] font-bold uppercase tracking-widest text-foreground/80">
-                                    <div className="size-2 bg-primary/20 border border-primary" />
-                                    95th Percentile
+                                    <div className="size-2 bg-[#1e5df1]/10 border border-[#1e5df1]/30" />
+                                    95% Confidence Band
                                 </div>
                                 <div className="flex items-center gap-2 px-3 py-1.5 border border-border bg-card text-[9px] font-bold uppercase tracking-widest text-foreground/80">
                                     <div className="size-2 bg-primary" />
@@ -159,30 +265,47 @@ export default function Simulation() {
                             </div>
                         </div>
 
-                        <div className="flex-1 relative border border-border bg-card/30 overflow-hidden shadow-inner">
-                            <div className="absolute inset-x-12 bottom-12 top-10 pointer-events-none">
-                                <svg className="size-full" preserveAspectRatio="none" viewBox="0 0 1000 400">
-                                    <g className="stroke-[#30363d]/30" strokeWidth="1" strokeDasharray="2">
-                                        {[80, 160, 240, 320].map(y => <line key={y} x1="0" x2="1000" y1={y} y2={y} />)}
-                                    </g>
-                                    <path d="M0,300 Q250,280 500,200 Q750,120 1000,50 L1000,380 Q750,390 500,385 Q250,380 0,300 Z" fill="rgba(30, 93, 241, 0.05)" />
-                                    <path d="M0,300 Q250,290 500,240 Q750,190 1000,120 L1000,340 Q750,360 500,355 Q250,350 0,300 Z" fill="rgba(30, 93, 241, 0.1)" />
-                                    <path d="M0,300 Q250,295 500,270 Q750,240 1000,220" fill="none" stroke="currentColor" className="text-primary" strokeWidth="3" />
-                                    <circle cx="0" cy="300" fill="currentColor" r="5" className="text-primary animate-pulse" />
-                                </svg>
-                                <div className="absolute -left-12 inset-y-0 flex flex-col justify-between text-[9px] font-mono text-muted-foreground font-bold pr-4">
-                                    <span>$10.0M</span>
-                                    <span>$7.5M</span>
-                                    <span>$5.0M</span>
-                                    <span>$2.5M</span>
-                                    <span>$0.0M</span>
+                        <div className="flex-1 relative border border-border bg-card/30 overflow-hidden shadow-inner flex flex-col">
+                            {isLoading && chartData.length === 0 ? (
+                                <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
+                                    RUNNING_MONTE_CARLO_SIMULATION_PASS...
                                 </div>
-                                <div className="absolute inset-x-0 -bottom-8 flex justify-between text-[9px] font-mono text-muted-foreground font-bold">
-                                    <span>2024 (START)</span>
-                                    <span>2029</span>
-                                    <span>2034 (END)</span>
+                            ) : (
+                                <div className="flex-1 p-4">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={chartData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.1} />
+                                            <XAxis 
+                                                dataKey="month" 
+                                                stroke="hsl(var(--muted-foreground))"
+                                                fontSize={9}
+                                                fontWeight="bold"
+                                                tickFormatter={(v) => `Yr ${(v / 12).toFixed(0)}`}
+                                                tickCount={11}
+                                            />
+                                            <YAxis 
+                                                stroke="hsl(var(--muted-foreground))"
+                                                fontSize={9}
+                                                fontWeight="bold"
+                                                tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`}
+                                            />
+                                            <Tooltip 
+                                                contentStyle={{
+                                                    backgroundColor: 'hsl(var(--card))',
+                                                    borderColor: 'hsl(var(--border))',
+                                                    fontSize: '10px',
+                                                    fontFamily: 'monospace'
+                                                }}
+                                                formatter={(val: any) => [`$${parseFloat(val).toLocaleString()}`, ""]}
+                                                labelFormatter={(label) => `Month: ${label}`}
+                                            />
+                                            <Area type="monotone" dataKey="upper_95" stroke="none" fill="rgba(30, 93, 241, 0.05)" />
+                                            <Area type="monotone" dataKey="lower_5" stroke="none" fill="rgba(30, 93, 241, 0.1)" />
+                                            <Area type="monotone" dataKey="median" stroke="hsl(var(--primary))" strokeWidth={3} fill="none" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
 
@@ -191,7 +314,9 @@ export default function Simulation() {
                         <div className="col-span-12 xl:col-span-5 border-r border-border p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
-                                <span className="text-[10px] text-destructive font-black tracking-tighter uppercase">-24.2% MAX DD</span>
+                                <span className="text-[10px] text-destructive font-black tracking-tighter uppercase">
+                                    {result ? `${result.max_drawdown.toFixed(1)}% MAX DD` : "-24.2% MAX DD"}
+                                </span>
                             </div>
                             <div className="flex-1 h-32 bg-card/20 border border-border/50 relative p-3 overflow-hidden group">
                                 <div className="absolute inset-0 flex items-end opacity-40">

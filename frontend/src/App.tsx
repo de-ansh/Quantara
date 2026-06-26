@@ -41,6 +41,7 @@ function App() {
                   <Route path="/explorer" element={<ResearchExplorer />} />
                   <Route path="/signals" element={<Signals />} />
                   <Route path="/risk" element={<Risk />} />
+                  <Route path="/risk/:ticker" element={<Risk />} />
                   <Route path="/simulation" element={<Simulation />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/account" element={<Account />} />

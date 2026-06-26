@@ -13,6 +13,8 @@ import {
     CartesianGrid,
     Tooltip
 } from "recharts"
+import { useQuery } from "@tanstack/react-query"
+import apiClient from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -43,7 +45,7 @@ interface SentimentPoint {
     news: number
 }
 
-const accumulationData: AccumulationData[] = [
+const fallbackAccumulationData: AccumulationData[] = [
     { fund: "Vanguard Group Inc.", shares: "284,541,200", change: "+4.2%", value: "$342.1B", date: "Q4 2023", type: "buy" },
     { fund: "BlackRock Inc.", shares: "245,120,450", change: "+1.8%", value: "$295.4B", date: "Q4 2023", type: "buy" },
     { fund: "FMR LLC", shares: "112,450,100", change: "-2.1%", value: "$135.2B", date: "Q4 2023", type: "sell" },
@@ -51,7 +53,7 @@ const accumulationData: AccumulationData[] = [
     { fund: "Price (T.Rowe) Assoc", shares: "85,450,200", change: "+12.4%", value: "$102.8B", date: "Q4 2023", type: "buy" },
 ]
 
-const insiderData: InsiderData[] = [
+const fallbackInsiderData: InsiderData[] = [
     { person: "Huang Jen Hsun", role: "CEO", type: "Option Exercise", shares: "120,000", price: "$450.22", date: "2024-01-15" },
     { person: "Kress Colette", role: "CFO", type: "Automatic Sell", shares: "15,400", price: "$520.10", date: "2024-01-12" },
     { person: "Puri Ajay K", role: "Director", type: "Open Market Buy", shares: "2,500", price: "$490.45", date: "2024-01-10" },
@@ -74,10 +76,53 @@ const fallbackSignals = [
     { time: "14:02:45", type: "BULLISH", text: "FED RATE UPDATE: STATEMENTS SUGGEST HAWKISH PAUSE. TECH SECTOR INFLOWS DETECTED." },
     { time: "13:58:12", type: "NEUTRAL", text: "AAPL EARNINGS CALL PREP: ANALYST CONSENSUS SHIFTING TO OVERWEIGHT FOR Q3." },
     { time: "13:45:01", type: "BEARISH", text: "CRUDE OIL FUTURES (WTI) BREAKING BELOW $75 SUPPORT. ENERGY EXPOSURE WARNING." },
-];
+] as const;
 
 export default function Signals() {
-    const { data: liveSignals = [], isLoading } = useSignals({ refetchInterval: 10000 });
+    const { data: liveSignals = [], isLoading: loadingLive } = useSignals({ refetchInterval: 10000 });
+
+    // Fetch dynamic 13F Institutional Accumulation signals from DB
+    const { data: institutionalSignals = [], isLoading: loadingInst } = useQuery({
+        queryKey: ["signals", "institutional_buying"],
+        queryFn: async () => {
+            const res = await apiClient.get("/signals", { params: { signal_type: "institutional_buying", limit: 10 } })
+            return res.data.signals.map((s: any) => {
+                const changePct = s.metadata?.ownership_change_pct || s.strength / 10.0
+                return {
+                    fund: s.metadata?.institution_name || `Institutional Fund (${s.ticker})`,
+                    shares: (s.metadata?.shares_held || Math.round(s.strength * 1250000)).toLocaleString(),
+                    change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`,
+                    value: `$${((s.metadata?.shares_held || s.strength * 1250000) * 150 / 1e9).toFixed(1)}B`,
+                    date: new Date(s.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
+                    type: changePct >= 0 ? "buy" : "sell"
+                } as AccumulationData
+            })
+        }
+    })
+
+    // Fetch dynamic SEC Form 4 Insider transaction signals from DB
+    const { data: insiderSignals = [], isLoading: loadingInsider } = useQuery({
+        queryKey: ["signals", "insider_buying"],
+        queryFn: async () => {
+            const res = await apiClient.get("/signals", { params: { signal_type: "insider_buying", limit: 10 } })
+            return res.data.signals.map((s: any) => {
+                const isBuy = s.metadata?.buy_volume >= s.metadata?.sell_volume
+                return {
+                    person: s.metadata?.reporting_owner || `Insider (${s.ticker})`,
+                    role: s.metadata?.owner_relationship || "Director",
+                    type: s.metadata?.transaction_type || (isBuy ? "Purchase" : "Sale"),
+                    shares: (s.metadata?.shares_bought || Math.round(s.strength * 500)).toLocaleString(),
+                    price: `$${(s.metadata?.average_price || 120.0).toFixed(2)}`,
+                    date: new Date(s.timestamp).toISOString().split("T")[0]
+                } as InsiderData
+            })
+        }
+    })
+
+    const finalAccumulation = institutionalSignals.length > 0 ? institutionalSignals : fallbackAccumulationData
+    const finalInsider = insiderSignals.length > 0 ? insiderSignals : fallbackInsiderData
+
+    const isAnyLoading = loadingLive || loadingInst || loadingInsider
 
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
@@ -98,8 +143,9 @@ export default function Signals() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mr-2 animate-pulse flex items-center gap-1.5">
-                        <div className="size-1.5 rounded-full bg-q-risk-low" /> Processing Live Feeds
+                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mr-2 animate-pulse flex items-center gap-1.5 select-none">
+                        <div className="size-1.5 rounded-full bg-q-risk-low animate-ping" /> 
+                        {isAnyLoading ? "Synchronizing nodes..." : "Processing Live Feeds"}
                     </span>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                         <Download className="size-4" />
@@ -127,8 +173,8 @@ export default function Signals() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
-                                {accumulationData.map((row) => (
-                                    <TableRow key={row.fund} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
+                                {finalAccumulation.map((row, i) => (
+                                    <TableRow key={i} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
                                         <TableCell className="px-4 py-2 font-bold text-foreground uppercase tracking-tight">{row.fund}</TableCell>
                                         <TableCell className="px-4 py-2 text-right text-foreground">{row.shares}</TableCell>
                                         <TableCell className={cn("px-4 py-2 text-right font-black", row.type === "buy" ? "text-q-risk-low" : "text-q-risk-high")}>
@@ -161,7 +207,7 @@ export default function Signals() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
-                                {insiderData.map((row, i) => (
+                                {finalInsider.map((row, i) => (
                                     <TableRow key={i} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
                                         <TableCell className="px-4 py-2">
                                             <div className="font-bold text-foreground uppercase leading-none">{row.person}</div>
@@ -186,10 +232,10 @@ export default function Signals() {
                             <div className="size-2 rounded-full bg-q-risk-high animate-pulse shadow-[0_0_8px_rgba(var(--q-risk-high),1)]" />
                             Live Signal Feed
                         </CardTitle>
-                        {isLoading && <span className="text-[9px] font-bold animate-pulse text-muted-foreground uppercase">Syncing...</span>}
+                        {loadingLive && <span className="text-[9px] font-bold animate-pulse text-muted-foreground uppercase">Syncing...</span>}
                     </CardHeader>
                     <CardContent className="p-0 flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed relative">
-                        {isLoading && liveSignals.length === 0 && (
+                        {loadingLive && liveSignals.length === 0 && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10">
                                 <span className="animate-pulse tracking-widest">CONNECTING_TO_NODES...</span>
                             </div>
@@ -230,13 +276,13 @@ export default function Signals() {
                             </Button>
                         </div>
                     </CardHeader>
-                    <CardContent className="flex flex-col xl:flex-row flex-1 p-0 min-h-0">
-                        <div className="flex-1 p-6 relative min-h-[300px]">
+                    <CardContent className="p-4 flex-1 flex flex-col bg-background/5">
+                        <div className="flex-1 min-h-[280px]">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={sentimentData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="colorSocial" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                                            <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
                                             <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                                         </linearGradient>
                                         <linearGradient id="colorNews" x1="0" y1="0" x2="0" y2="1">
@@ -245,40 +291,11 @@ export default function Signals() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--q-border))" opacity={0.3} />
-                                    <XAxis
-                                        dataKey="time"
-                                        axisLine={false}
-                                        tickLine={false}
-                                        tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }}
-                                        dy={10}
-                                    />
-                                    <YAxis hide />
-                                    <Tooltip
-                                        contentStyle={{
-                                            backgroundColor: 'hsl(var(--q-surface))',
-                                            borderColor: 'hsl(var(--q-border))',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            textTransform: 'uppercase'
-                                        }}
-                                    />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="social"
-                                        stroke="hsl(var(--primary))"
-                                        fillOpacity={1}
-                                        fill="url(#colorSocial)"
-                                        strokeWidth={2}
-                                    />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="news"
-                                        stroke="hsl(var(--q-risk-low))"
-                                        fillOpacity={1}
-                                        fill="url(#colorNews)"
-                                        strokeWidth={1.5}
-                                        strokeDasharray="4 2"
-                                    />
+                                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
+                                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--q-surface))', borderColor: 'hsl(var(--q-border))', fontSize: '10px', fontWeight: 'bold' }} />
+                                    <Area type="monotone" dataKey="social" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#colorSocial)" />
+                                    <Area type="monotone" dataKey="news" stroke="hsl(var(--q-risk-low))" strokeWidth={2} fillOpacity={1} fill="url(#colorNews)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
@@ -286,14 +303,16 @@ export default function Signals() {
                 </Card>
             </main>
 
-            {/* Compliance Footer */}
-            <footer className="bg-background border-t border-q-border py-2.5 px-6 flex flex-col md:flex-row justify-between items-center gap-2 shrink-0">
-                <div className="flex items-center gap-4 text-[9px] font-black tracking-widest text-muted-foreground uppercase">
-                    <span className="flex items-center gap-1.5"><div className="size-1.5 rounded-full bg-q-risk-low" /> NLP Model: LLAMA-3-70B</span>
-                    <span className="flex items-center gap-1.5"><div className="size-1.5 rounded-full bg-q-risk-low" /> Latency: 42ms</span>
+            <footer className="h-10 border-t border-border bg-background flex items-center justify-between px-6 shrink-0 z-20 transition-colors">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-6 font-mono">
+                    <span className="flex items-center gap-2"><div className="size-2 bg-green-500 rounded-full" /> Feed Server: Active</span>
+                    <span>LATENCY: 12ms</span>
+                    <span>SESSION ID: #SF-2024-X492</span>
                 </div>
-                <span className="text-[9px] font-black tracking-widest text-muted-foreground uppercase">Last Global Scan: <span className="text-foreground">2024-02-17 12:45:01 UTC</span></span>
+                <p className="text-[9px] text-muted-foreground/60 uppercase font-bold tracking-widest italic">
+                    © 2024 Quantara Financial Intelligence Platforms. Institutional Grade.
+                </p>
             </footer>
         </div>
-    );
+    )
 }
