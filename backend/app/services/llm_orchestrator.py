@@ -191,11 +191,13 @@ class LLMOrchestrator:
                 
         info = await asyncio.to_thread(fetch_yf_info)
         
-        # Store in raw_data for risk_classification node
+        # Store in raw_data for risk_classification node and Stock DB record
         state["raw_data"]["sector"] = info.get("sector")
         state["raw_data"]["pe_ratio"] = info.get("trailingPE") or info.get("forwardPE")
         state["raw_data"]["price_to_book"] = info.get("priceToBook")
         state["raw_data"]["price_to_sales"] = info.get("priceToSalesTrailing12Months")
+        state["raw_data"]["market_cap"] = info.get("marketCap")
+        state["raw_data"]["price"] = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
         
         # 3. Compute metrics from SEC EDGAR data
         financials = state.get("raw_data", {}).get("financials", {})
@@ -467,23 +469,72 @@ Generate a structured analysis based on this data.
             
             risk_classification = state.get("risk_classification", {})
             risk_score = risk_classification.get("risk_score")
+            research_score = state.get("final_output", {}).get("confidence_score")
             
             sector = state.get("raw_data", {}).get("sector") or (stock.sector if stock else "Technology")
             
+            # Extract additional fields
+            pe_ratio = state.get("raw_data", {}).get("pe_ratio")
+            beta = state.get("computed_metrics", {}).get("beta")
+            raw_mcap = state.get("raw_data", {}).get("market_cap")
+            raw_price = state.get("raw_data", {}).get("price")
+            
+            def format_market_cap(val):
+                if not val: return "N/A"
+                try:
+                    val = float(val)
+                    if val >= 1e12: return f"{val / 1e12:.2f}T"
+                    elif val >= 1e9: return f"{val / 1e9:.2f}B"
+                    elif val >= 1e6: return f"{val / 1e6:.2f}M"
+                    return f"{val:,.0f}"
+                except Exception: return "N/A"
+                
+            def format_price(val):
+                if not val: return "N/A"
+                try: return f"${float(val):,.2f}"
+                except Exception: return "N/A"
+                
+            market_cap_str = format_market_cap(raw_mcap)
+            price_str = format_price(raw_price)
+            
+            # Deterministic Alpha Projection
+            research_val = research_score or 50.0
+            risk_val = risk_score or 50.0
+            alpha_val = (research_val * 0.2) - (risk_val * 0.05)
+            alpha_str = f"{'+' if alpha_val >= 0 else ''}{alpha_val:.1f}%"
+            
+            status = "neutral"
+            if alpha_val > 5.0:
+                status = "up"
+            elif alpha_val < -2.0:
+                status = "down"
+
             if not stock:
                 stock = Stock(
                     ticker=ticker,
                     name=ticker,
                     sector=sector,
                     risk_score=risk_score,
-                    research_score=state.get("final_output", {}).get("confidence_score")
+                    research_score=research_score,
+                    pe_ratio=pe_ratio,
+                    beta=beta,
+                    market_cap=market_cap_str,
+                    price=price_str,
+                    alpha_projection=alpha_str,
+                    status=status
                 )
                 db.add(stock)
             else:
                 stock.risk_score = risk_score
-                stock.research_score = state.get("final_output", {}).get("confidence_score")
+                stock.research_score = research_score
                 if sector and sector != "Unknown":
                     stock.sector = sector
+                stock.pe_ratio = pe_ratio
+                stock.beta = beta
+                stock.market_cap = market_cap_str
+                stock.price = price_str
+                stock.alpha_projection = alpha_str
+                stock.status = status
             
             await db.commit()
             

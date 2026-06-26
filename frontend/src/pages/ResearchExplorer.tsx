@@ -1,8 +1,10 @@
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import apiClient from "@/lib/api"
+import { useNavigate } from "react-router-dom"
 import {
     Search,
     ChevronDown,
-    Filter,
     Bookmark,
     Download,
     List,
@@ -11,40 +13,53 @@ import {
     TrendingDown,
     Minus,
     MoreHorizontal,
-    Activity,
     Clock,
     CheckCircle2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const filters = [
-    {
-        title: "Valuation",
-        metrics: [
-            { label: "P/E Ratio", range: "5.0x — 25.0x", left: 20, right: 30 },
-            { label: "EV/EBITDA", range: "8.2x — 18.0x", left: 40, right: 10 },
-        ]
-    },
-    {
-        title: "Risk Metrics",
-        metrics: [
-            { label: "Beta Range", range: "0.85 — 1.20", left: 30, right: 40 },
-        ]
-    }
-]
-
-const results = [
-    { ticker: "AAPL", price: "$189.42", cap: "2.94T", risk: 14, signal: "High", alpha: "+12.4%", status: "up" },
-    { ticker: "MSFT", price: "$415.20", cap: "3.08T", risk: 32, signal: "Strong", alpha: "+8.1%", status: "up" },
-    { ticker: "NVDA", price: "$822.79", cap: "2.06T", risk: 68, signal: "Neutral", alpha: "+21.3%", status: "neutral" },
-    { ticker: "TSLA", price: "$175.22", cap: "558.2B", risk: 72, signal: "Weak", alpha: "-4.2%", status: "down" },
-    { ticker: "GOOGL", price: "$151.24", cap: "1.89T", risk: 21, signal: "Strong", alpha: "+11.5%", status: "up" },
-    { ticker: "AMZN", price: "$178.12", cap: "1.85T", risk: 28, signal: "High", alpha: "+14.2%", status: "up" },
-    { ticker: "META", price: "$496.22", cap: "1.26T", risk: 18, signal: "Strong", alpha: "+16.8%", status: "up" },
-]
-
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
+    const navigate = useNavigate()
+
+    // Filter states
+    const [query, setQuery] = useState("")
+    const [peLimit, setPeLimit] = useState(50)
+    const [betaLimit, setBetaLimit] = useState(2.0)
+    const [selectedSignals, setSelectedSignals] = useState<string[]>([])
+
+    // Query backend Stock Search API
+    const { data, isLoading } = useQuery({
+        queryKey: ["stocksSearch", query, peLimit, betaLimit, selectedSignals],
+        queryFn: async () => {
+            const params: any = {}
+            if (query) params.query = query
+            if (peLimit < 50) params.pe_max = peLimit
+            if (betaLimit < 2.0) params.beta_max = betaLimit
+            if (selectedSignals.length > 0) params.signals = selectedSignals.join(",")
+
+            const res = await apiClient.get("/stocks/search", { params })
+            return res.data
+        }
+    })
+
+    const results = data?.stocks || []
+    const totalCount = data?.total_count || 0
+
+    const handleSignalToggle = (signal: string) => {
+        setSelectedSignals(prev =>
+            prev.includes(signal)
+                ? prev.filter(s => s !== signal)
+                : [...prev, signal]
+        )
+    }
+
+    const handleResetAll = () => {
+        setQuery("")
+        setPeLimit(50)
+        setBetaLimit(2.0)
+        setSelectedSignals([])
+    }
 
     return (
         <div className="flex flex-col h-full overflow-hidden bg-background transition-colors">
@@ -53,35 +68,60 @@ export default function ResearchExplorer() {
                 <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto no-scrollbar">
                     <div className="p-4 border-b border-border flex items-center justify-between">
                         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Institutional Filters</h2>
-                        <button className="text-[10px] text-primary hover:underline font-bold">Reset All</button>
+                        <button 
+                            onClick={handleResetAll}
+                            className="text-[10px] text-primary hover:underline font-bold"
+                        >
+                            Reset All
+                        </button>
                     </div>
 
-                    {filters.map((group, i) => (
-                        <details key={i} className="border-b border-border group" open>
-                            <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
-                                <span className="text-xs font-medium text-foreground">{group.title}</span>
-                                <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-                            </summary>
-                            <div className="px-4 pb-4 space-y-6">
-                                {group.metrics.map((metric, j) => (
-                                    <div key={j} className="space-y-3">
-                                        <div className="flex justify-between items-center text-[10px] font-mono">
-                                            <span className="text-muted-foreground/80">{metric.label}</span>
-                                            <span className="text-foreground font-bold">{metric.range}</span>
-                                        </div>
-                                        <div className="h-[2px] bg-border relative">
-                                            <div
-                                                className="h-[2px] bg-primary absolute"
-                                                style={{ left: `${metric.left}%`, right: `${metric.right}%` }}
-                                            />
-                                            <div className="size-[10px] bg-foreground absolute top-[-4px] rounded-full border-2 border-primary" style={{ left: `${metric.left}%` }} />
-                                            <div className="size-[10px] bg-foreground absolute top-[-4px] rounded-full border-2 border-primary" style={{ left: `${100 - metric.right}%` }} />
-                                        </div>
-                                    </div>
-                                ))}
+                    <details className="border-b border-border group" open>
+                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
+                            <span className="text-xs font-medium text-foreground">Valuation Limits</span>
+                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="px-4 pb-4 space-y-6">
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                    <span className="text-muted-foreground/80">MAX P/E Ratio</span>
+                                    <span className="text-foreground font-bold">{peLimit === 50 ? "Any" : `${peLimit}.0x`}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="5"
+                                    max="50"
+                                    value={peLimit}
+                                    onChange={(e) => setPeLimit(Number(e.target.value))}
+                                    className="w-full h-[2px] bg-border appearance-none cursor-pointer accent-primary"
+                                />
                             </div>
-                        </details>
-                    ))}
+                        </div>
+                    </details>
+
+                    <details className="border-b border-border group" open>
+                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
+                            <span className="text-xs font-medium text-foreground">Risk Limits</span>
+                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="px-4 pb-4 space-y-6">
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                    <span className="text-muted-foreground/80">MAX Beta</span>
+                                    <span className="text-foreground font-bold">{betaLimit === 2.0 ? "Any" : betaLimit.toFixed(2)}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="2.0"
+                                    step="0.05"
+                                    value={betaLimit}
+                                    onChange={(e) => setBetaLimit(Number(e.target.value))}
+                                    className="w-full h-[2px] bg-border appearance-none cursor-pointer accent-primary"
+                                />
+                            </div>
+                        </div>
+                    </details>
 
                     <details className="border-b border-border group" open>
                         <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
@@ -89,10 +129,19 @@ export default function ResearchExplorer() {
                             <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
                         </summary>
                         <div className="px-4 pb-4 space-y-2">
-                            {["Institutional Inflow", "Insider Buying", "Options Unusual Vol"].map((signal) => (
-                                <label key={signal} className="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer transition-colors">
-                                    <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
-                                    <span className="text-xs text-muted-foreground font-medium">{signal}</span>
+                            {[
+                                { key: "inflow", label: "Institutional Inflow" },
+                                { key: "insider", label: "Insider Buying" },
+                                { key: "sentiment", label: "Options/Sentiment Spike" }
+                            ].map((signal) => (
+                                <label key={signal.key} className="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedSignals.includes(signal.key)}
+                                        onChange={() => handleSignalToggle(signal.key)}
+                                        className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0"
+                                    />
+                                    <span className="text-xs text-muted-foreground font-medium">{signal.label}</span>
                                 </label>
                             ))}
                         </div>
@@ -103,12 +152,20 @@ export default function ResearchExplorer() {
                 <main className="flex-1 flex flex-col">
                     {/* Results Top Bar */}
                     <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card/50 transition-colors">
-                        <div className="flex items-center gap-4">
-                            <h2 className="text-sm font-semibold text-foreground">1,248 Results Discovery</h2>
-                            <span className="h-4 w-[px] bg-border" />
-                            <div className="flex gap-2">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 uppercase tracking-tight">PE &lt; 20x</span>
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 uppercase tracking-tight">Beta &lt; 1.2</span>
+                        <div className="flex items-center gap-4 flex-grow max-w-lg">
+                            <h2 className="text-sm font-semibold text-foreground select-none">
+                                {isLoading ? "Syncing..." : `${totalCount} Results Discovery`}
+                            </h2>
+                            <span className="h-4 w-px bg-border" />
+                            <div className="relative flex-1 group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder="Filter Ticker or Name..."
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    className="w-full bg-muted/50 border border-border rounded pl-9 pr-4 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition-all text-foreground"
+                                />
                             </div>
                         </div>
 
@@ -117,7 +174,7 @@ export default function ResearchExplorer() {
                                 <Bookmark className="size-3.5" />
                                 Save Search
                             </button>
-                            <div className="h-8 w-[px] bg-border mx-1" />
+                            <div className="h-8 w-[1px] bg-border mx-1" />
                             <button className="flex items-center gap-2 px-3 py-1.5 border border-border hover:bg-muted rounded text-xs font-bold transition-colors text-foreground/80">
                                 <Download className="size-3.5" />
                                 Export
@@ -141,55 +198,67 @@ export default function ResearchExplorer() {
 
                     {/* Results Table */}
                     <div className="flex-1 overflow-auto no-scrollbar bg-background">
-                        <table className="w-full border-collapse text-left">
-                            <thead className="sticky top-0 bg-card z-10 transition-colors">
-                                <tr className="border-b border-border">
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-12">
-                                        <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
-                                    </th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alpha Projection</th>
-                                    <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border font-mono text-xs">
-                                {results.map((row, i) => (
-                                    <tr key={i} className="hover:bg-muted/30 transition-colors group cursor-pointer">
-                                        <td className="px-6 py-4"><input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" /></td>
-                                        <td className="px-6 py-4 font-black text-foreground">{row.ticker}</td>
-                                        <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>
-                                        <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
-                                        <td className="px-6 py-4">
-                                            <span className={cn(
-                                                "px-2 py-0.5 rounded border",
-                                                row.risk < 20 ? "bg-green-500/10 text-green-400 border-green-500/20" :
-                                                    row.risk < 50 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
-                                                        "bg-red-500/10 text-red-400 border-red-500/20"
-                                            )}>
-                                                {row.risk}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className={cn(
-                                                "flex items-center gap-1.5 font-bold",
-                                                row.status === "up" ? "text-primary" : row.status === "down" ? "text-destructive" : "text-muted-foreground"
-                                            )}>
-                                                {row.status === "up" ? <TrendingUp className="size-4" /> : row.status === "down" ? <TrendingDown className="size-4" /> : <Minus className="size-4" />}
-                                                <span>{row.signal}</span>
-                                            </div>
-                                        </td>
-                                        <td className={cn("px-6 py-4 font-bold", row.alpha.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high")}>{row.alpha}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button className="text-muted-foreground hover:text-foreground transition-colors"><MoreHorizontal className="size-4" /></button>
-                                        </td>
+                        {isLoading && results.length === 0 ? (
+                            <div className="h-64 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
+                                FETCHING_DB_RECORDS...
+                            </div>
+                        ) : (
+                            <table className="w-full border-collapse text-left">
+                                <thead className="sticky top-0 bg-card z-10 transition-colors">
+                                    <tr className="border-b border-border">
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-12">
+                                            <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
+                                        </th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alpha Projection</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-border font-mono text-xs">
+                                    {results.map((row, i) => (
+                                        <tr 
+                                            key={i} 
+                                            onClick={() => navigate(`/research/${row.ticker}`)}
+                                            className="hover:bg-muted/30 transition-colors group cursor-pointer"
+                                        >
+                                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                                <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
+                                            </td>
+                                            <td className="px-6 py-4 font-black text-foreground">{row.ticker}</td>
+                                            <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={cn(
+                                                    "px-2 py-0.5 rounded border",
+                                                    row.risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                                                        row.risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
+                                                            "bg-red-500/10 text-red-400 border-red-500/20"
+                                                )}>
+                                                    {Math.round(row.risk)}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className={cn(
+                                                    "flex items-center gap-1.5 font-bold",
+                                                    row.status === "up" ? "text-primary" : row.status === "down" ? "text-destructive" : "text-muted-foreground"
+                                                )}>
+                                                    {row.status === "up" ? <TrendingUp className="size-4" /> : row.status === "down" ? <TrendingDown className="size-4" /> : <Minus className="size-4" />}
+                                                    <span>{row.signal}</span>
+                                                </div>
+                                            </td>
+                                            <td className={cn("px-6 py-4 font-bold", row.alpha.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high")}>{row.alpha}</td>
+                                            <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                                <button className="text-muted-foreground hover:text-foreground transition-colors"><MoreHorizontal className="size-4" /></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </main>
             </div>

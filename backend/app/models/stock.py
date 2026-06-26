@@ -25,6 +25,26 @@ class Stock(Base):
         Float, nullable=True, comment="Research quality score 0-100"
     )
     
+    # Explorer fields
+    pe_ratio: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, comment="Price-to-earnings ratio"
+    )
+    beta: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, comment="Beta vs market"
+    )
+    market_cap: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="Market cap formatted"
+    )
+    price: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="Current price formatted"
+    )
+    alpha_projection: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="Alpha projection percentage formatted"
+    )
+    status: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, comment="Signal trend status (up/down/neutral)"
+    )
+    
     # Metadata
     last_updated: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
