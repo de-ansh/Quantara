@@ -28,10 +28,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     
     logger.info("Database tables created")
     
+    # Start periodic background task for signal processing
+    import asyncio
+    from app.services.signal_engine import run_periodic_signal_processing
+    # Run every hour in production, but let's check settings/env or use 3600 seconds as default
+    bg_task = asyncio.create_task(run_periodic_signal_processing(interval_seconds=3600))
+    app.state.bg_task = bg_task
+    logger.info("Background signal processing task started")
+    
     yield
     
     # Shutdown
     logger.info("Shutting down application")
+    bg_task.cancel()
+    try:
+        await bg_task
+    except asyncio.CancelledError:
+        logger.info("Background signal processing task stopped")
+    except Exception as e:
+        logger.error(f"Error stopping background task: {e}")
+        
     await engine.dispose()
 
 

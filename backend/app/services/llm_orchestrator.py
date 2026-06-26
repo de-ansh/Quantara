@@ -9,13 +9,16 @@ This module implements a structured LLM orchestration layer with:
 - Comprehensive logging
 - No hallucinated numeric data allowed
 """
-from typing import Any, TypedDict, Annotated
+from typing import Any, TypedDict, Annotated, Optional
 from enum import Enum
+from datetime import datetime
+import asyncio
 
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -33,6 +36,7 @@ class AnalysisState(TypedDict):
     validation_errors: list[str]
     retry_count: int
     final_output: dict[str, Any] | None
+    db: Optional[AsyncSession]
 
 
 class StructuredAnalysisSchema(BaseModel):
@@ -152,27 +156,192 @@ class LLMOrchestrator:
         
         return state
     
-    def _compute_metrics(self, state: AnalysisState) -> AnalysisState:
+    async def _compute_metrics(self, state: AnalysisState) -> AnalysisState:
         """Compute financial metrics."""
-        logger.info(f"Computing metrics for {state['ticker']}")
+        ticker = state["ticker"]
+        logger.info(f"Computing metrics for {ticker}")
         
-        # TODO: Implement actual metric computation
+        # 1. Fetch 1 year of daily historical data for the ticker and benchmark (^GSPC) from Yahoo Finance
+        from app.providers.yahoo import YahooFinanceProvider
+        yahoo = YahooFinanceProvider()
+        
+        from datetime import datetime, timedelta
+        end_dt = datetime.utcnow()
+        start_dt = end_dt - timedelta(days=365)
+        start_date_str = start_dt.strftime("%Y-%m-%d")
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        
+        try:
+            df = await yahoo.get_historical_data(ticker, start_date=start_date_str, end_date=end_date_str)
+            benchmark_df = await yahoo.get_historical_data("^GSPC", start_date=start_date_str, end_date=end_date_str)
+            yahoo_metrics = yahoo.compute_metrics(df, benchmark_df)
+        except Exception as e:
+            logger.error(f"Error getting Yahoo Finance metrics for {ticker}: {e}")
+            yahoo_metrics = {}
+            
+        # 2. Fetch yfinance info in a thread pool to avoid blocking
+        import yfinance as yf
+        def fetch_yf_info():
+            try:
+                s = yf.Ticker(ticker)
+                return s.info
+            except Exception as ex:
+                logger.error(f"Error fetching yfinance info for {ticker}: {ex}")
+                return {}
+                
+        info = await asyncio.to_thread(fetch_yf_info)
+        
+        # Store in raw_data for risk_classification node
+        state["raw_data"]["sector"] = info.get("sector")
+        state["raw_data"]["pe_ratio"] = info.get("trailingPE") or info.get("forwardPE")
+        state["raw_data"]["price_to_book"] = info.get("priceToBook")
+        state["raw_data"]["price_to_sales"] = info.get("priceToSalesTrailing12Months")
+        
+        # 3. Compute metrics from SEC EDGAR data
+        financials = state.get("raw_data", {}).get("financials", {})
+        latest_rev = financials.get("revenue")
+        latest_net_inc = financials.get("net_income")
+        latest_assets = financials.get("total_assets")
+        latest_debt = financials.get("total_debt")
+        
+        # Compute revenue growth from historical annual revenue facts
+        rev_list = state.get("raw_data", {}).get("historical_metrics", {}).get("revenue", [])
+        annual_revenues = [r for r in rev_list if r.get("form") == "10-K"]
+        if len(annual_revenues) < 2:
+            annual_revenues = rev_list
+            
+        revenue_growth = 0.0
+        if len(annual_revenues) >= 2:
+            latest_val = annual_revenues[-1]["val"]
+            prev_val = annual_revenues[-2]["val"]
+            if prev_val and prev_val != 0:
+                revenue_growth = (latest_val - prev_val) / prev_val
+                
+        # Profit Margin
+        profit_margin = 0.0
+        if latest_rev and latest_rev != 0 and latest_net_inc is not None:
+            profit_margin = latest_net_inc / latest_rev
+            
+        # Return on Equity (ROE)
+        roe = 0.0
+        if latest_net_inc is not None and latest_assets:
+            equity = latest_assets - (latest_debt or 0)
+            if equity <= 0:
+                equity = latest_assets
+            if equity != 0:
+                roe = latest_net_inc / equity
+                
         state["computed_metrics"] = {
-            "revenue_growth": 0.0,
-            "profit_margin": 0.0,
-            "roe": 0.0,
+            "revenue_growth": float(revenue_growth),
+            "profit_margin": float(profit_margin),
+            "roe": float(roe),
+            "historical_volatility": yahoo_metrics.get("historical_volatility"),
+            "max_drawdown": yahoo_metrics.get("max_drawdown"),
+            "total_return": yahoo_metrics.get("total_return"),
+            "beta": yahoo_metrics.get("beta"),
         }
         
         return state
     
-    def _risk_classification(self, state: AnalysisState) -> AnalysisState:
+    async def _risk_classification(self, state: AnalysisState) -> AnalysisState:
         """Classify risk using risk engine."""
-        logger.info(f"Classifying risk for {state['ticker']}")
+        ticker = state["ticker"]
+        logger.info(f"Classifying risk for {ticker}")
         
-        # TODO: Call risk engine
+        from app.services.risk_engine import RiskEngine
+        engine = RiskEngine()
+        
+        computed = state.get("computed_metrics", {})
+        financials = state.get("raw_data", {}).get("financials", {})
+        
+        # Use computed or default metrics
+        volatility = computed.get("historical_volatility")
+        if volatility is None or volatility == 0.0:
+            volatility = 0.25
+        beta = computed.get("beta")
+        if beta is None:
+            beta = 1.0
+            
+        latest_assets = financials.get("total_assets") or 0.0
+        latest_debt = financials.get("total_debt") or 0.0
+        equity = latest_assets - latest_debt
+        debt_to_equity = (latest_debt / equity) if equity > 0 else 0.0
+        
+        # Compute quarterly earnings volatility
+        net_inc_list = [
+            r["val"] for r in state.get("raw_data", {}).get("historical_metrics", {}).get("net_income", [])
+        ]
+        if len(net_inc_list) >= 2:
+            import numpy as np
+            mean_val = np.mean(np.abs(net_inc_list))
+            earnings_volatility = float(np.std(net_inc_list) / mean_val) if mean_val > 0 else 0.0
+        else:
+            earnings_volatility = 0.15
+            
+        # Compute consecutive profitable quarters
+        net_inc_quarters = [
+            r for r in state.get("raw_data", {}).get("historical_metrics", {}).get("net_income", [])
+            if r.get("form") == "10-Q"
+        ]
+        if not net_inc_quarters:
+            net_inc_quarters = state.get("raw_data", {}).get("historical_metrics", {}).get("net_income", [])
+            
+        consecutive_profitable_quarters = 0
+        for r in reversed(net_inc_quarters):
+            if r["val"] > 0:
+                consecutive_profitable_quarters += 1
+            else:
+                break
+        if consecutive_profitable_quarters == 0 and any(r["val"] > 0 for r in net_inc_quarters):
+            consecutive_profitable_quarters = 4
+            
+        # Get sector & valuation ratios
+        raw_data = state.get("raw_data", {})
+        sector = raw_data.get("sector")
+        
+        # Fallback sector check from database
+        db = state.get("db")
+        if (not sector or sector == "Unknown") and db is not None:
+            from app.models.stock import Stock
+            from sqlalchemy import select
+            stmt = select(Stock).where(Stock.ticker == ticker)
+            res = await db.execute(stmt)
+            stock = res.scalar_one_or_none()
+            if stock and stock.sector:
+                sector = stock.sector
+        if not sector:
+            sector = "Technology"
+            
+        pe_ratio = raw_data.get("pe_ratio")
+        price_to_book = raw_data.get("price_to_book")
+        price_to_sales = raw_data.get("price_to_sales")
+        
+        analysis = engine.analyze_stock_risk(
+            ticker=ticker,
+            historical_volatility=volatility,
+            beta=beta,
+            debt_to_equity=debt_to_equity,
+            earnings_volatility=earnings_volatility,
+            consecutive_profitable_quarters=consecutive_profitable_quarters,
+            sector=sector,
+            pe_ratio=pe_ratio,
+            price_to_book=price_to_book,
+            price_to_sales=price_to_sales,
+        )
+        
         state["risk_classification"] = {
-            "risk_score": 50.0,
-            "risk_level": "Moderate",
+            "risk_score": float(analysis.overall_risk_score),
+            "risk_level": analysis.risk_level.value,
+            "components": {
+                "volatility_score": float(analysis.components.volatility_score),
+                "beta_score": float(analysis.components.beta_score),
+                "leverage_score": float(analysis.components.leverage_score),
+                "earnings_stability_score": float(analysis.components.earnings_stability_score),
+                "sector_risk_score": float(analysis.components.sector_risk_score),
+                "valuation_risk_score": float(analysis.components.valuation_risk_score),
+            },
+            "risk_band": analysis.risk_band,
+            "explanation": analysis.explanation,
         }
         
         return state
@@ -280,20 +449,79 @@ Generate a structured analysis based on this data.
         logger.info(f"Retrying generation for {state['ticker']}")
         return "retry"
     
-    def _store_result(self, state: AnalysisState) -> AnalysisState:
+    async def _store_result(self, state: AnalysisState) -> AnalysisState:
         """Store the final result."""
-        logger.info(f"Storing result for {state['ticker']}")
+        ticker = state["ticker"]
+        logger.info(f"Storing result for {ticker}")
         
-        # TODO: Store in database
-        
+        db = state.get("db")
+        if db is not None:
+            from app.models.research import ResearchReport
+            from app.models.stock import Stock
+            from sqlalchemy import select
+            
+            # Upsert Stock record
+            stmt = select(Stock).where(Stock.ticker == ticker)
+            result = await db.execute(stmt)
+            stock = result.scalar_one_or_none()
+            
+            risk_classification = state.get("risk_classification", {})
+            risk_score = risk_classification.get("risk_score")
+            
+            sector = state.get("raw_data", {}).get("sector") or (stock.sector if stock else "Technology")
+            
+            if not stock:
+                stock = Stock(
+                    ticker=ticker,
+                    name=ticker,
+                    sector=sector,
+                    risk_score=risk_score,
+                    research_score=state.get("final_output", {}).get("confidence_score")
+                )
+                db.add(stock)
+            else:
+                stock.risk_score = risk_score
+                stock.research_score = state.get("final_output", {}).get("confidence_score")
+                if sector and sector != "Unknown":
+                    stock.sector = sector
+            
+            await db.commit()
+            
+            # Upsert ResearchReport record
+            final_output = state.get("final_output")
+            if final_output:
+                stmt_report = select(ResearchReport).where(ResearchReport.ticker == ticker)
+                result_report = await db.execute(stmt_report)
+                report = result_report.scalar_one_or_none()
+                
+                if report:
+                    report.structured_json = final_output
+                    report.confidence_score = final_output.get("confidence_score", 0.0)
+                    report.summary = final_output.get("summary")
+                    report.version += 1
+                    report.updated_at = datetime.utcnow()
+                else:
+                    report = ResearchReport(
+                        ticker=ticker,
+                        structured_json=final_output,
+                        confidence_score=final_output.get("confidence_score", 0.0),
+                        summary=final_output.get("summary"),
+                        version=1,
+                    )
+                    db.add(report)
+                
+                await db.commit()
+                logger.info(f"Successfully stored research report for {ticker} in database")
+                
         return state
     
-    async def analyze_stock(self, ticker: str) -> dict[str, Any] | None:
+    async def analyze_stock(self, ticker: str, db: Optional[AsyncSession] = None) -> dict[str, Any] | None:
         """
         Run complete analysis workflow for a stock.
         
         Args:
             ticker: Stock ticker symbol
+            db: Database session
         
         Returns:
             Structured analysis or None if failed
@@ -310,6 +538,7 @@ Generate a structured analysis based on this data.
             "validation_errors": [],
             "retry_count": 0,
             "final_output": None,
+            "db": db,
         }
         
         try:

@@ -28,7 +28,8 @@ class SECProvider:
         "total_assets": ["Assets"],
         "total_debt": ["DebtAndCapitalLeaseObligations", "LongTermDebtAndCapitalLeaseObligations"],
         "cash_flow": ["NetCashProvidedByUsedInOperatingActivities"],
-        "shares_outstanding": ["EntityCommonStockSharesOutstanding", "WeightedAverageNumberOfSharesOutstandingBasic"]
+        "shares_outstanding": ["EntityCommonStockSharesOutstanding", "WeightedAverageNumberOfSharesOutstandingBasic"],
+        "eps": ["EarningsPerShareBasic", "EarningsPerShareDiluted"]
     }
 
     # Hardcoded CIK mapping for initial set of companies

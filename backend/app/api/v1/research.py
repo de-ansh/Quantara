@@ -40,16 +40,26 @@ async def get_stock_research(
     Returns:
         Research report
     """
-    # TODO: Check cache first
-    # TODO: Fetch from database if exists
+    from app.models.research import ResearchReport
+    from sqlalchemy import select
     
+    ticker_upper = ticker.upper()
+    
+    # Check cache / database first
+    stmt = select(ResearchReport).where(ResearchReport.ticker == ticker_upper)
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    
+    if report and report.structured_json:
+        return ResearchReportResponse(**report.structured_json)
+        
     # Generate new report
-    report = await research_engine.generate_research_report(ticker.upper())
+    report_data = await research_engine.generate_research_report(db, ticker_upper)
     
-    if not report:
+    if not report_data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate research report for {ticker}",
         )
     
-    return ResearchReportResponse(**report)
+    return ResearchReportResponse(**report_data)

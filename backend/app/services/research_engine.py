@@ -12,6 +12,7 @@ Structured research pipeline:
 """
 from typing import Any, Optional
 from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.services.llm_orchestrator import LLMOrchestrator
@@ -28,12 +29,14 @@ class ResearchEngine:
     
     async def generate_research_report(
         self,
+        db: AsyncSession,
         ticker: str,
     ) -> Optional[dict[str, Any]]:
         """
         Generate comprehensive research report for a stock.
         
         Args:
+            db: Database session
             ticker: Stock ticker symbol
         
         Returns:
@@ -43,7 +46,7 @@ class ResearchEngine:
         
         try:
             # Use LLM orchestrator to generate structured analysis
-            analysis = await self.llm_orchestrator.analyze_stock(ticker)
+            analysis = await self.llm_orchestrator.analyze_stock(ticker, db)
             
             if analysis:
                 logger.info(f"Research report generated successfully for {ticker}")

@@ -48,31 +48,34 @@ async def get_signals(
     Returns:
         List of signals
     """
-    # TODO: Fetch from database with filters
+    from app.models.signal import Signal as DBSignal
+    from sqlalchemy import select, desc
     
-    # Mock signals
-    mock_signals = [
+    stmt = select(DBSignal)
+    
+    if ticker:
+        stmt = stmt.where(DBSignal.ticker == ticker.upper())
+    if signal_type:
+        stmt = stmt.where(DBSignal.signal_type == signal_type)
+        
+    stmt = stmt.order_by(desc(DBSignal.timestamp)).limit(limit)
+    result = await db.execute(stmt)
+    db_signals = result.scalars().all()
+    
+    signals_response = [
         SignalResponse(
-            id=1,
-            ticker="AAPL",
-            signal_type="earnings_surprise",
-            strength=85.0,
-            confidence=95.0,
-            timestamp=datetime.utcnow(),
-            metadata={"surprise_pct": 15.5},
-        ),
-        SignalResponse(
-            id=2,
-            ticker="MSFT",
-            signal_type="institutional_buying",
-            strength=75.0,
-            confidence=85.0,
-            timestamp=datetime.utcnow(),
-            metadata={"ownership_change_pct": 3.2},
-        ),
+            id=sig.id,
+            ticker=sig.ticker,
+            signal_type=sig.signal_type,
+            strength=sig.strength,
+            confidence=sig.confidence,
+            timestamp=sig.timestamp,
+            metadata=sig.data or {}
+        )
+        for sig in db_signals
     ]
     
     return SignalsListResponse(
-        signals=mock_signals,
-        total_count=len(mock_signals),
+        signals=signals_response,
+        total_count=len(signals_response),
     )
