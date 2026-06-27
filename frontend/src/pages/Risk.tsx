@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import {
     BarChart3,
-    AlertTriangle,
     Zap,
     Download,
     Droplets,
@@ -14,8 +13,6 @@ import {
     Database,
     Cloud,
     Network,
-    Info,
-    Clock,
     Search
 } from "lucide-react"
 import { cn } from "@/lib/utils"
