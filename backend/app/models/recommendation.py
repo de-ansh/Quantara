@@ -1,8 +1,8 @@
 """Recommendation model for personalized stock recommendations."""
-from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import String, Float, DateTime, Integer, JSON, ForeignKey, Text, Index
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -20,7 +20,7 @@ class Recommendation(Base):
     ticker: Mapped[str] = mapped_column(
         String(10), ForeignKey("stocks.ticker"), nullable=False, index=True
     )
-    
+
     # Scores
     final_score: Mapped[float] = mapped_column(
         Float, nullable=False, comment="Final recommendation score 0-100"
@@ -37,22 +37,22 @@ class Recommendation(Base):
     macro_fit_score: Mapped[float] = mapped_column(
         Float, nullable=False, comment="Macro environment fit score"
     )
-    
+
     # Explanation
     explanation_text: Mapped[str] = mapped_column(
         Text, nullable=False, comment="Human-readable explanation"
     )
-    
+
     # Reasoning Metadata
     reasoning_metadata: Mapped[dict] = mapped_column(
         JSON, nullable=False, comment="Detailed reasoning breakdown and factors"
     )
-    
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
     )
-    expires_at: Mapped[Optional[datetime]] = mapped_column(
+    expires_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="When this recommendation expires"
     )
     is_active: Mapped[bool] = mapped_column(

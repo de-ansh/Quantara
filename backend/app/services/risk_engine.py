@@ -16,17 +16,18 @@ Risk Score Formula:
 
 All scores normalized to 0-100 scale.
 """
+
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """Risk level classifications."""
+
     CONSERVATIVE = "Conservative"
     MODERATE = "Moderate"
     AGGRESSIVE = "Aggressive"
@@ -35,6 +36,7 @@ class RiskLevel(str, Enum):
 @dataclass
 class RiskComponents:
     """Individual risk component scores."""
+
     volatility_score: float
     beta_score: float
     leverage_score: float
@@ -46,6 +48,7 @@ class RiskComponents:
 @dataclass
 class RiskAnalysis:
     """Complete risk analysis result."""
+
     ticker: str
     overall_risk_score: float
     risk_level: RiskLevel
@@ -87,74 +90,70 @@ class RiskEngine:
     }
 
     def calculate_volatility_score(
-        self, 
-        historical_volatility: float,
-        volatility_percentile: Optional[float] = None
+        self, historical_volatility: float, volatility_percentile: float | None = None
     ) -> float:
         """
         Calculate volatility risk score.
-        
+
         Args:
             historical_volatility: Annualized volatility (e.g., 0.25 for 25%)
             volatility_percentile: Percentile rank vs market (0-100)
-        
+
         Returns:
             Volatility score (0-100, higher = riskier)
         """
         # Convert volatility to percentage
         vol_pct = historical_volatility * 100
-        
+
         # Normalize: 0% vol = 0 score, 100% vol = 100 score
         # Most stocks fall in 10-50% range
         base_score = min(vol_pct * 2, 100)
-        
+
         # Adjust by percentile if available
         if volatility_percentile is not None:
             base_score = (base_score * 0.6) + (volatility_percentile * 0.4)
-        
+
         return min(max(base_score, 0), 100)
 
     def calculate_beta_score(self, beta: float) -> float:
         """
         Calculate beta risk score.
-        
+
         Args:
             beta: Stock beta vs market (e.g., 1.5)
-        
+
         Returns:
             Beta score (0-100, higher = riskier)
         """
         # Beta of 1.0 = market risk (50 score)
         # Beta of 0.0 = no risk (0 score)
         # Beta of 2.0+ = very high risk (100 score)
-        
+
         if beta < 0:
             # Negative beta is actually lower risk (inverse correlation)
             return max(0, 50 + (beta * 25))
-        
+
         # Normalize: beta 0-2 maps to score 0-100
         score = beta * 50
         return min(max(score, 0), 100)
 
     def calculate_leverage_score(
-        self,
-        debt_to_equity: float,
-        interest_coverage: Optional[float] = None
+        self, debt_to_equity: float, interest_coverage: float | None = None
     ) -> float:
         """
         Calculate leverage risk score.
-        
+
         Args:
             debt_to_equity: Debt-to-equity ratio
             interest_coverage: Interest coverage ratio (EBIT/Interest)
-        
+
         Returns:
             Leverage score (0-100, higher = riskier)
         """
         # D/E ratio scoring
         # 0.0 = 0 score, 1.0 = 50 score, 3.0+ = 100 score
         de_score = min((debt_to_equity / 3.0) * 100, 100)
-        
+
         # Interest coverage adjustment
         if interest_coverage is not None:
             if interest_coverage < 1.5:
@@ -166,29 +165,27 @@ class RiskEngine:
                 coverage_penalty = 5
             else:
                 coverage_penalty = 0
-            
+
             de_score = min(de_score + coverage_penalty, 100)
-        
+
         return min(max(de_score, 0), 100)
 
     def calculate_earnings_stability_score(
-        self,
-        earnings_volatility: float,
-        consecutive_profitable_quarters: int
+        self, earnings_volatility: float, consecutive_profitable_quarters: int
     ) -> float:
         """
         Calculate earnings stability risk score.
-        
+
         Args:
             earnings_volatility: Standard deviation of quarterly earnings
             consecutive_profitable_quarters: Number of consecutive profitable quarters
-        
+
         Returns:
             Earnings stability score (0-100, higher = riskier)
         """
         # High volatility = high risk
         volatility_score = min(earnings_volatility * 100, 100)
-        
+
         # More consecutive profitable quarters = lower risk
         if consecutive_profitable_quarters >= 12:
             stability_bonus = -30
@@ -198,17 +195,17 @@ class RiskEngine:
             stability_bonus = -10
         else:
             stability_bonus = 20  # Penalty for inconsistent profitability
-        
+
         final_score = volatility_score + stability_bonus
         return min(max(final_score, 0), 100)
 
     def calculate_sector_risk_score(self, sector: str) -> float:
         """
         Calculate sector-based risk score.
-        
+
         Args:
             sector: Sector name
-        
+
         Returns:
             Sector risk score (0-100, higher = riskier)
         """
@@ -216,72 +213,72 @@ class RiskEngine:
 
     def calculate_valuation_risk_score(
         self,
-        pe_ratio: Optional[float] = None,
-        price_to_book: Optional[float] = None,
-        price_to_sales: Optional[float] = None,
+        pe_ratio: float | None = None,
+        price_to_book: float | None = None,
+        price_to_sales: float | None = None,
     ) -> float:
         """
         Calculate valuation risk score.
-        
+
         Args:
             pe_ratio: Price-to-earnings ratio
             price_to_book: Price-to-book ratio
             price_to_sales: Price-to-sales ratio
-        
+
         Returns:
             Valuation risk score (0-100, higher = riskier)
         """
         scores = []
-        
+
         if pe_ratio is not None and pe_ratio > 0:
             # P/E scoring: 0-15 = low risk, 15-30 = moderate, 30+ = high
             pe_score = min((pe_ratio / 50) * 100, 100)
             scores.append(pe_score)
-        
+
         if price_to_book is not None and price_to_book > 0:
             # P/B scoring: 0-2 = low risk, 2-5 = moderate, 5+ = high
             pb_score = min((price_to_book / 8) * 100, 100)
             scores.append(pb_score)
-        
+
         if price_to_sales is not None and price_to_sales > 0:
             # P/S scoring: 0-2 = low risk, 2-5 = moderate, 5+ = high
             ps_score = min((price_to_sales / 8) * 100, 100)
             scores.append(ps_score)
-        
+
         # Average available valuation metrics
         if scores:
             return sum(scores) / len(scores)
-        
+
         return 50  # Default to moderate risk if no data
 
     def calculate_overall_risk(self, components: RiskComponents) -> float:
         """
         Calculate overall risk score from components.
-        
+
         Args:
             components: Individual risk component scores
-        
+
         Returns:
             Overall risk score (0-100)
         """
         overall = (
-            self.WEIGHTS["volatility"] * components.volatility_score +
-            self.WEIGHTS["beta"] * components.beta_score +
-            self.WEIGHTS["leverage"] * components.leverage_score +
-            self.WEIGHTS["earnings_stability"] * components.earnings_stability_score +
-            self.WEIGHTS["sector"] * components.sector_risk_score +
-            self.WEIGHTS["valuation"] * components.valuation_risk_score
+            self.WEIGHTS["volatility"] * components.volatility_score
+            + self.WEIGHTS["beta"] * components.beta_score
+            + self.WEIGHTS["leverage"] * components.leverage_score
+            + self.WEIGHTS["earnings_stability"] * components.earnings_stability_score
+            + self.WEIGHTS["sector"] * components.sector_risk_score
+            + self.WEIGHTS["valuation"] * components.valuation_risk_score
         )
-        
+
         return min(max(overall, 0), 100)
 
     def classify_risk_level(self, risk_score: float) -> RiskLevel:
         """
         Classify risk score into risk level.
-        
+
         Args:
             risk_score: Overall risk score (0-100)
-        
+
         Returns:
             Risk level classification
         """
@@ -295,10 +292,10 @@ class RiskEngine:
     def get_risk_band(self, risk_score: float) -> str:
         """
         Get risk band description.
-        
+
         Args:
             risk_score: Overall risk score (0-100)
-        
+
         Returns:
             Risk band string (e.g., "0-33")
         """
@@ -310,21 +307,17 @@ class RiskEngine:
             return "67-100"
 
     def generate_explanation(
-        self,
-        ticker: str,
-        risk_score: float,
-        risk_level: RiskLevel,
-        components: RiskComponents
+        self, ticker: str, risk_score: float, risk_level: RiskLevel, components: RiskComponents
     ) -> str:
         """
         Generate human-readable risk explanation.
-        
+
         Args:
             ticker: Stock ticker
             risk_score: Overall risk score
             risk_level: Risk level classification
             components: Risk components
-        
+
         Returns:
             Explanation text
         """
@@ -337,22 +330,18 @@ class RiskEngine:
             "Sector": components.sector_risk_score,
             "Valuation": components.valuation_risk_score,
         }
-        
-        sorted_components = sorted(
-            component_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
+
+        sorted_components = sorted(component_scores.items(), key=lambda x: x[1], reverse=True)
+
         top_risks = sorted_components[:2]
-        
+
         explanation = (
             f"{ticker} has an overall risk score of {risk_score:.1f}, "
             f"classified as {risk_level.value}. "
             f"Primary risk factors are {top_risks[0][0]} ({top_risks[0][1]:.1f}) "
             f"and {top_risks[1][0]} ({top_risks[1][1]:.1f})."
         )
-        
+
         return explanation
 
     def analyze_stock_risk(
@@ -364,15 +353,15 @@ class RiskEngine:
         earnings_volatility: float,
         consecutive_profitable_quarters: int,
         sector: str,
-        volatility_percentile: Optional[float] = None,
-        interest_coverage: Optional[float] = None,
-        pe_ratio: Optional[float] = None,
-        price_to_book: Optional[float] = None,
-        price_to_sales: Optional[float] = None,
+        volatility_percentile: float | None = None,
+        interest_coverage: float | None = None,
+        pe_ratio: float | None = None,
+        price_to_book: float | None = None,
+        price_to_sales: float | None = None,
     ) -> RiskAnalysis:
         """
         Perform complete risk analysis on a stock.
-        
+
         Args:
             ticker: Stock ticker symbol
             historical_volatility: Annualized volatility
@@ -386,21 +375,19 @@ class RiskEngine:
             pe_ratio: Optional P/E ratio
             price_to_book: Optional P/B ratio
             price_to_sales: Optional P/S ratio
-        
+
         Returns:
             Complete risk analysis
         """
         logger.info(f"Analyzing risk for {ticker}")
-        
+
         # Calculate individual components
         components = RiskComponents(
             volatility_score=self.calculate_volatility_score(
                 historical_volatility, volatility_percentile
             ),
             beta_score=self.calculate_beta_score(beta),
-            leverage_score=self.calculate_leverage_score(
-                debt_to_equity, interest_coverage
-            ),
+            leverage_score=self.calculate_leverage_score(debt_to_equity, interest_coverage),
             earnings_stability_score=self.calculate_earnings_stability_score(
                 earnings_volatility, consecutive_profitable_quarters
             ),
@@ -409,18 +396,18 @@ class RiskEngine:
                 pe_ratio, price_to_book, price_to_sales
             ),
         )
-        
+
         # Calculate overall risk
         overall_risk = self.calculate_overall_risk(components)
         risk_level = self.classify_risk_level(overall_risk)
         risk_band = self.get_risk_band(overall_risk)
         explanation = self.generate_explanation(ticker, overall_risk, risk_level, components)
-        
+
         logger.info(
             f"Risk analysis complete for {ticker}: "
             f"score={overall_risk:.1f}, level={risk_level.value}"
         )
-        
+
         return RiskAnalysis(
             ticker=ticker,
             overall_risk_score=overall_risk,

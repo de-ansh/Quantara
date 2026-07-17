@@ -1,10 +1,10 @@
 """Research API endpoints."""
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status, Header
+
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel
 
-from app.core.dependencies import DBSession, CurrentUser
+from app.core.dependencies import CurrentUser, DBSession
 from app.services.research_engine import ResearchEngine
 
 router = APIRouter()
@@ -13,6 +13,7 @@ research_engine = ResearchEngine()
 
 class ResearchReportResponse(BaseModel):
     """Research report response schema."""
+
     ticker: str
     summary: str
     key_insights: list[str]
@@ -25,6 +26,7 @@ class ResearchReportResponse(BaseModel):
 
 class StockSearchItem(BaseModel):
     """Stock item schema for explorer list."""
+
     ticker: str
     name: str
     price: str
@@ -37,6 +39,7 @@ class StockSearchItem(BaseModel):
 
 class StockSearchListResponse(BaseModel):
     """Stock search list response schema."""
+
     stocks: list[StockSearchItem]
     total_count: int
 
@@ -45,24 +48,25 @@ class StockSearchListResponse(BaseModel):
 async def search_stocks(
     current_user: CurrentUser,
     db: DBSession,
-    query: Optional[str] = None,
-    pe_min: Optional[float] = None,
-    pe_max: Optional[float] = None,
-    beta_min: Optional[float] = None,
-    beta_max: Optional[float] = None,
-    risk_min: Optional[float] = None,
-    risk_max: Optional[float] = None,
-    signals: Optional[str] = None,
+    query: str | None = None,
+    pe_min: float | None = None,
+    pe_max: float | None = None,
+    beta_min: float | None = None,
+    beta_max: float | None = None,
+    risk_min: float | None = None,
+    risk_max: float | None = None,
+    signals: str | None = None,
 ) -> StockSearchListResponse:
     """
     Search stocks with criteria filters.
     """
-    from app.models.stock import Stock
+    from sqlalchemy import or_, select
+
     from app.models.signal import Signal
-    from sqlalchemy import select, or_
-    
+    from app.models.stock import Stock
+
     stmt = select(Stock)
-    
+
     # 1. Join with signals if signal filters applied
     if signals:
         signal_list = [s.strip().lower() for s in signals.split(",") if s.strip()]
@@ -75,20 +79,15 @@ async def search_stocks(
                     mapped_types.append("insider_buying")
                 elif "options" in s or "vol" in s or "sentiment" in s:
                     mapped_types.append("sentiment_spike")
-            
+
             if mapped_types:
                 sig_stmt = select(Signal.ticker).where(Signal.signal_type.in_(mapped_types))
                 sig_res = await db.execute(sig_stmt)
-                matching_tickers = {r for r in sig_res.scalars().all()}
+                matching_tickers = set(sig_res.scalars().all())
                 stmt = stmt.where(Stock.ticker.in_(matching_tickers))
-                
+
     if query:
-        stmt = stmt.where(
-            or_(
-                Stock.ticker.ilike(f"%{query}%"),
-                Stock.name.ilike(f"%{query}%")
-            )
-        )
+        stmt = stmt.where(or_(Stock.ticker.ilike(f"%{query}%"), Stock.name.ilike(f"%{query}%")))
     if pe_min is not None:
         stmt = stmt.where(Stock.pe_ratio >= pe_min)
     if pe_max is not None:
@@ -101,10 +100,10 @@ async def search_stocks(
         stmt = stmt.where(Stock.risk_score >= risk_min)
     if risk_max is not None:
         stmt = stmt.where(Stock.risk_score <= risk_max)
-        
+
     result = await db.execute(stmt)
     db_stocks = result.scalars().all()
-    
+
     response_items = []
     for stock in db_stocks:
         sig_str = "Neutral"
@@ -115,7 +114,7 @@ async def search_stocks(
                 sig_str = "High"
             elif stock.research_score < 40:
                 sig_str = "Weak"
-                
+
         response_items.append(
             StockSearchItem(
                 ticker=stock.ticker,
@@ -125,14 +124,11 @@ async def search_stocks(
                 risk=stock.risk_score or 50.0,
                 signal=sig_str,
                 alpha=stock.alpha_projection or "+0.0%",
-                status=stock.status or "neutral"
+                status=stock.status or "neutral",
             )
         )
-        
-    return StockSearchListResponse(
-        stocks=response_items,
-        total_count=len(response_items)
-    )
+
+    return StockSearchListResponse(stocks=response_items, total_count=len(response_items))
 
 
 @router.get("/stocks/{ticker}/research", response_model=ResearchReportResponse)
@@ -140,42 +136,43 @@ async def get_stock_research(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
-    x_openai_api_key: Optional[str] = Header(None, alias="X-OpenAI-API-Key"),
-    x_sec_user_agent: Optional[str] = Header(None, alias="X-SEC-User-Agent"),
+    x_openai_api_key: str | None = Header(None, alias="X-OpenAI-API-Key"),
+    x_sec_user_agent: str | None = Header(None, alias="X-SEC-User-Agent"),
 ) -> ResearchReportResponse:
     """
     Get research report for a stock.
-    
+
     Args:
         ticker: Stock ticker symbol
         current_user: Authenticated user
         db: Database session
-    
+
     Returns:
         Research report
     """
-    from app.models.research import ResearchReport
     from sqlalchemy import select
-    
+
+    from app.models.research import ResearchReport
+
     ticker_upper = ticker.upper()
-    
+
     # Check cache / database first
     stmt = select(ResearchReport).where(ResearchReport.ticker == ticker_upper)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
-    
+
     if report and report.structured_json:
         return ResearchReportResponse(**report.structured_json)
-        
+
     # Generate new report
     report_data = await research_engine.generate_research_report(
         db, ticker_upper, openai_api_key=x_openai_api_key, sec_user_agent=x_sec_user_agent
     )
-    
+
     if not report_data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate research report for {ticker}",
         )
-    
+
     return ResearchReportResponse(**report_data)

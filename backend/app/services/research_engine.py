@@ -10,8 +10,9 @@ Structured research pipeline:
 6. Enforce JSON schema validation
 7. Store structured output
 """
-from typing import Any, Optional
-from datetime import datetime
+
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -22,49 +23,49 @@ logger = get_logger(__name__)
 
 class ResearchEngine:
     """Structured research pipeline engine."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         """Initialize research engine."""
         self.llm_orchestrator = LLMOrchestrator()
-    
+
     async def generate_research_report(
         self,
         db: AsyncSession,
         ticker: str,
-        openai_api_key: Optional[str] = None,
-        sec_user_agent: Optional[str] = None,
-    ) -> Optional[dict[str, Any]]:
+        openai_api_key: str | None = None,
+        sec_user_agent: str | None = None,
+    ) -> dict[str, Any] | None:
         """
         Generate comprehensive research report for a stock.
-        
+
         Args:
             db: Database session
             ticker: Stock ticker symbol
             openai_api_key: Optional OpenAI API key override
             sec_user_agent: Optional SEC User Agent override
-        
+
         Returns:
             Structured research report or None if failed
         """
         logger.info(f"Generating research report for {ticker}")
-        
+
         try:
             # Use LLM orchestrator to generate structured analysis
             analysis = await self.llm_orchestrator.analyze_stock(
                 ticker, db, openai_api_key=openai_api_key, sec_user_agent=sec_user_agent
             )
-            
+
             if analysis:
                 logger.info(f"Research report generated successfully for {ticker}")
-                return analysis
+                return analysis  # type: ignore[no-any-return]
             else:
                 logger.error(f"Failed to generate research report for {ticker}")
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error generating research report for {ticker}: {e}")
             return None
-    
+
     def calculate_research_score(
         self,
         confidence_score: float,
@@ -73,20 +74,16 @@ class ResearchEngine:
     ) -> float:
         """
         Calculate overall research quality score.
-        
+
         Args:
             confidence_score: LLM confidence score (0-100)
             data_completeness: Data completeness score (0-100)
             analysis_depth: Analysis depth score (0-100)
-        
+
         Returns:
             Research score (0-100)
         """
         # Weighted average
-        score = (
-            0.4 * confidence_score +
-            0.3 * data_completeness +
-            0.3 * analysis_depth
-        )
-        
+        score = 0.4 * confidence_score + 0.3 * data_completeness + 0.3 * analysis_depth
+
         return min(max(score, 0), 100)

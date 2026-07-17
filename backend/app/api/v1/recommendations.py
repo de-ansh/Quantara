@@ -1,10 +1,10 @@
 """Recommendations API endpoints."""
-from typing import List
+
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.core.dependencies import DBSession, CurrentUser
+from app.core.dependencies import CurrentUser, DBSession
 from app.services.recommendation_engine import RecommendationEngine
 
 router = APIRouter()
@@ -13,6 +13,7 @@ recommendation_engine = RecommendationEngine()
 
 class RecommendationScoresResponse(BaseModel):
     """Recommendation scores response schema."""
+
     research_score: float
     signal_score: float
     risk_alignment_score: float
@@ -22,6 +23,7 @@ class RecommendationScoresResponse(BaseModel):
 
 class RecommendationResponse(BaseModel):
     """Single recommendation response schema."""
+
     ticker: str
     rank: int
     scores: RecommendationScoresResponse
@@ -31,7 +33,8 @@ class RecommendationResponse(BaseModel):
 
 class RecommendationsListResponse(BaseModel):
     """List of recommendations response schema."""
-    recommendations: List[RecommendationResponse]
+
+    recommendations: list[RecommendationResponse]
     total_count: int
     user_risk_level: str
 
@@ -44,19 +47,19 @@ async def get_recommendations(
 ) -> RecommendationsListResponse:
     """
     Get personalized stock recommendations.
-    
+
     Args:
         current_user: Authenticated user
         db: Database session
         limit: Number of recommendations to return
-    
+
     Returns:
         List of personalized recommendations
     """
     # TODO: Fetch user risk profile from database
     user_risk_level = "Moderate"
     user_volatility_tolerance = 60.0
-    
+
     # TODO: Fetch stocks from database with scores
     # Mock stock data
     mock_stocks = [
@@ -82,13 +85,13 @@ async def get_recommendations(
             "signal_score": 65.0,
         },
     ]
-    
+
     # Filter by risk band
     filtered_stocks = recommendation_engine.filter_by_risk_band(
         mock_stocks,
         user_risk_level,
     )
-    
+
     # Rank recommendations
     recommendations = recommendation_engine.rank_recommendations(
         filtered_stocks,
@@ -96,7 +99,7 @@ async def get_recommendations(
         user_volatility_tolerance,
         top_n=limit,
     )
-    
+
     # Convert to response format
     response_recommendations = [
         RecommendationResponse(
@@ -114,7 +117,7 @@ async def get_recommendations(
         )
         for rec in recommendations
     ]
-    
+
     return RecommendationsListResponse(
         recommendations=response_recommendations,
         total_count=len(response_recommendations),

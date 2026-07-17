@@ -9,11 +9,10 @@ Implements the final recommendation scoring algorithm:
 
 Filters stocks by user risk band and ranks top N recommendations.
 """
+
 from dataclasses import dataclass
-from typing import List, Optional
 
 from app.core.logging import get_logger
-from app.services.risk_engine import RiskLevel
 
 logger = get_logger(__name__)
 
@@ -21,6 +20,7 @@ logger = get_logger(__name__)
 @dataclass
 class RecommendationScore:
     """Individual recommendation score components."""
+
     research_score: float
     signal_score: float
     risk_alignment_score: float
@@ -31,6 +31,7 @@ class RecommendationScore:
 @dataclass
 class StockRecommendation:
     """Complete stock recommendation."""
+
     ticker: str
     scores: RecommendationScore
     explanation: str
@@ -40,7 +41,7 @@ class StockRecommendation:
 
 class RecommendationEngine:
     """Recommendation scoring and ranking engine."""
-    
+
     # Component weights
     WEIGHTS = {
         "research": 0.4,
@@ -48,7 +49,7 @@ class RecommendationEngine:
         "risk_alignment": 0.2,
         "macro_fit": 0.1,
     }
-    
+
     def calculate_risk_alignment_score(
         self,
         stock_risk_score: float,
@@ -57,12 +58,12 @@ class RecommendationEngine:
     ) -> float:
         """
         Calculate how well stock risk aligns with user profile.
-        
+
         Args:
             stock_risk_score: Stock's risk score (0-100)
             user_risk_level: User's risk level (Conservative/Moderate/Aggressive)
             user_volatility_tolerance: User's volatility tolerance (0-100)
-        
+
         Returns:
             Alignment score (0-100, higher = better alignment)
         """
@@ -72,29 +73,30 @@ class RecommendationEngine:
             "Moderate": (34, 66),
             "Aggressive": (67, 100),
         }
-        
+
         min_risk, max_risk = risk_bands.get(user_risk_level, (0, 100))
-        
+
         # Check if stock is in user's risk band
+        base_score: float = 100.0
         if min_risk <= stock_risk_score <= max_risk:
             # Perfect alignment
-            base_score = 100
+            base_score = 100.0
         else:
             # Calculate distance from band
             if stock_risk_score < min_risk:
                 distance = min_risk - stock_risk_score
             else:
                 distance = stock_risk_score - max_risk
-            
+
             # Penalize based on distance
-            base_score = max(0, 100 - (distance * 2))
-        
+            base_score = float(max(0, 100 - (distance * 2)))
+
         # Adjust by volatility tolerance
         volatility_factor = user_volatility_tolerance / 100
         adjusted_score = base_score * (0.7 + (volatility_factor * 0.3))
-        
+
         return min(max(adjusted_score, 0), 100)
-    
+
     def calculate_macro_fit_score(
         self,
         sector: str,
@@ -102,17 +104,17 @@ class RecommendationEngine:
     ) -> float:
         """
         Calculate macro environment fit score.
-        
+
         Args:
             sector: Stock sector
             current_market_regime: Current market regime (bull/bear/neutral)
-        
+
         Returns:
             Macro fit score (0-100)
         """
         # Simplified sector rotation logic
         # In production, this would use actual macro indicators
-        
+
         sector_scores = {
             "bull": {
                 "Technology": 80,
@@ -138,18 +140,12 @@ class RecommendationEngine:
                 "Technology": 40,
                 "Consumer Discretionary": 35,
             },
-            "neutral": {
-                sector: 50 for sector in [
-                    "Technology", "Healthcare", "Financials", "Energy",
-                    "Utilities", "Consumer Staples", "Consumer Discretionary",
-                    "Industrials", "Materials", "Real Estate"
-                ]
-            },
+            "neutral": dict.fromkeys(["Technology", "Healthcare", "Financials", "Energy", "Utilities", "Consumer Staples", "Consumer Discretionary", "Industrials", "Materials", "Real Estate"], 50),
         }
-        
+
         regime_scores = sector_scores.get(current_market_regime, sector_scores["neutral"])
         return regime_scores.get(sector, 50)
-    
+
     def calculate_final_score(
         self,
         research_score: float,
@@ -159,25 +155,25 @@ class RecommendationEngine:
     ) -> float:
         """
         Calculate final recommendation score.
-        
+
         Args:
             research_score: Research quality score (0-100)
             signal_score: Signal strength score (0-100)
             risk_alignment_score: Risk alignment score (0-100)
             macro_fit_score: Macro fit score (0-100)
-        
+
         Returns:
             Final score (0-100)
         """
         final = (
-            self.WEIGHTS["research"] * research_score +
-            self.WEIGHTS["signal"] * signal_score +
-            self.WEIGHTS["risk_alignment"] * risk_alignment_score +
-            self.WEIGHTS["macro_fit"] * macro_fit_score
+            self.WEIGHTS["research"] * research_score
+            + self.WEIGHTS["signal"] * signal_score
+            + self.WEIGHTS["risk_alignment"] * risk_alignment_score
+            + self.WEIGHTS["macro_fit"] * macro_fit_score
         )
-        
+
         return min(max(final, 0), 100)
-    
+
     def generate_explanation(
         self,
         ticker: str,
@@ -187,13 +183,13 @@ class RecommendationEngine:
     ) -> str:
         """
         Generate human-readable recommendation explanation.
-        
+
         Args:
             ticker: Stock ticker
             scores: Recommendation scores
             sector: Stock sector
             user_risk_level: User's risk level
-        
+
         Returns:
             Explanation text
         """
@@ -204,21 +200,21 @@ class RecommendationEngine:
             f"good alignment with your {user_risk_level} risk profile ({scores.risk_alignment_score:.1f}), "
             f"and favorable macro conditions for {sector} ({scores.macro_fit_score:.1f})."
         )
-        
+
         return explanation
-    
+
     def filter_by_risk_band(
         self,
-        stocks: List[dict],
+        stocks: list[dict],
         user_risk_level: str,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """
         Filter stocks by user's risk band.
-        
+
         Args:
             stocks: List of stock data dictionaries
             user_risk_level: User's risk level
-        
+
         Returns:
             Filtered list of stocks
         """
@@ -227,44 +223,42 @@ class RecommendationEngine:
             "Moderate": (34, 66),
             "Aggressive": (67, 100),
         }
-        
+
         min_risk, max_risk = risk_bands.get(user_risk_level, (0, 100))
-        
+
         filtered = [
-            stock for stock in stocks
-            if min_risk <= stock.get("risk_score", 50) <= max_risk
+            stock for stock in stocks if min_risk <= stock.get("risk_score", 50) <= max_risk
         ]
-        
+
         logger.info(
-            f"Filtered {len(stocks)} stocks to {len(filtered)} "
-            f"for {user_risk_level} risk level"
+            f"Filtered {len(stocks)} stocks to {len(filtered)} " f"for {user_risk_level} risk level"
         )
-        
+
         return filtered
-    
+
     def rank_recommendations(
         self,
-        stocks: List[dict],
+        stocks: list[dict],
         user_risk_level: str,
         user_volatility_tolerance: float,
         top_n: int = 10,
-    ) -> List[StockRecommendation]:
+    ) -> list[StockRecommendation]:
         """
         Rank stocks and return top N recommendations.
-        
+
         Args:
             stocks: List of stock data with scores
             user_risk_level: User's risk level
             user_volatility_tolerance: User's volatility tolerance
             top_n: Number of top recommendations to return
-        
+
         Returns:
             List of ranked recommendations
         """
         logger.info(f"Ranking {len(stocks)} stocks for recommendations")
-        
+
         recommendations = []
-        
+
         for stock in stocks:
             # Calculate risk alignment
             risk_alignment = self.calculate_risk_alignment_score(
@@ -272,12 +266,10 @@ class RecommendationEngine:
                 user_risk_level,
                 user_volatility_tolerance,
             )
-            
+
             # Calculate macro fit
-            macro_fit = self.calculate_macro_fit_score(
-                stock.get("sector", "Unknown")
-            )
-            
+            macro_fit = self.calculate_macro_fit_score(stock.get("sector", "Unknown"))
+
             # Calculate final score
             final_score = self.calculate_final_score(
                 stock.get("research_score", 50),
@@ -285,7 +277,7 @@ class RecommendationEngine:
                 risk_alignment,
                 macro_fit,
             )
-            
+
             scores = RecommendationScore(
                 research_score=stock.get("research_score", 50),
                 signal_score=stock.get("signal_score", 50),
@@ -293,14 +285,14 @@ class RecommendationEngine:
                 macro_fit_score=macro_fit,
                 final_score=final_score,
             )
-            
+
             explanation = self.generate_explanation(
                 stock["ticker"],
                 scores,
                 stock.get("sector", "Unknown"),
                 user_risk_level,
             )
-            
+
             recommendations.append(
                 StockRecommendation(
                     ticker=stock["ticker"],
@@ -317,14 +309,14 @@ class RecommendationEngine:
                     rank=0,  # Will be set after sorting
                 )
             )
-        
+
         # Sort by final score
         recommendations.sort(key=lambda x: x.scores.final_score, reverse=True)
-        
+
         # Assign ranks
         for i, rec in enumerate(recommendations[:top_n], 1):
             rec.rank = i
-        
+
         logger.info(f"Generated top {top_n} recommendations")
-        
+
         return recommendations[:top_n]
