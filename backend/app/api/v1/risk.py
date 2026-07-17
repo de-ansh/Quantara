@@ -1,10 +1,11 @@
 """Risk analysis API endpoints."""
-from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Header
+
+
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
-from app.core.dependencies import DBSession, CurrentUser
-from app.services.risk_engine import RiskEngine, RiskLevel
+from app.core.dependencies import CurrentUser, DBSession
+from app.services.risk_engine import RiskEngine
 
 router = APIRouter()
 risk_engine = RiskEngine()
@@ -12,6 +13,7 @@ risk_engine = RiskEngine()
 
 class RiskComponentsResponse(BaseModel):
     """Risk components response schema."""
+
     volatility_score: float
     beta_score: float
     leverage_score: float
@@ -22,6 +24,7 @@ class RiskComponentsResponse(BaseModel):
 
 class RiskAnalysisResponse(BaseModel):
     """Risk analysis response schema."""
+
     ticker: str
     overall_risk_score: float
     risk_level: str
@@ -35,25 +38,26 @@ async def get_stock_risk_analysis(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
-    x_sec_user_agent: Optional[str] = Header(None, alias="X-SEC-User-Agent"),
+    x_sec_user_agent: str | None = Header(None, alias="X-SEC-User-Agent"),
 ) -> RiskAnalysisResponse:
     """
     Get risk analysis for a stock.
-    
+
     Args:
         ticker: Stock ticker symbol
         current_user: Authenticated user
         db: Database session
-    
+
     Returns:
         Risk analysis
     """
     # Fetch actual financial data and execute deterministic risk engine
-    from app.services.llm_orchestrator import LLMOrchestrator
+    from app.services.llm_orchestrator import AnalysisState, LLMOrchestrator
+
     orchestrator = LLMOrchestrator()
-    
+
     # Initialize transient state
-    initial_state = {
+    initial_state: AnalysisState = {
         "ticker": ticker.upper(),
         "raw_data": {},
         "computed_metrics": {},
@@ -63,18 +67,20 @@ async def get_stock_risk_analysis(
         "retry_count": 0,
         "final_output": None,
         "db": db,
+        "openai_api_key": None,
         "sec_user_agent": x_sec_user_agent,
     }
-    
+
     try:
         # Run nodes sequentially to compute metrics and execute risk engine
         state = await orchestrator._retrieve_data(initial_state)
         state = await orchestrator._compute_metrics(state)
         state = await orchestrator._risk_classification(state)
         risk_data = state.get("risk_classification", {})
-    except Exception as e:
+    except Exception:
         # Graceful fallback if external APIs or calculations fail
         from app.services.risk_engine import RiskEngine
+
         engine = RiskEngine()
         analysis = engine.analyze_stock_risk(
             ticker=ticker.upper(),
@@ -101,7 +107,7 @@ async def get_stock_risk_analysis(
             },
             "explanation": analysis.explanation,
         }
-        
+
     components = risk_data.get("components", {})
     return RiskAnalysisResponse(
         ticker=ticker.upper(),

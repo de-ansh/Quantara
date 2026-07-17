@@ -1,8 +1,8 @@
 """Signal model for tracking market signals and events."""
-from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import String, Float, DateTime, Integer, Index, ForeignKey, JSON
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -17,32 +17,29 @@ class Signal(Base):
     ticker: Mapped[str] = mapped_column(
         String(10), ForeignKey("stocks.ticker"), nullable=False, index=True
     )
-    
+
     # Signal Information
     signal_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True,
-        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike"
+        String(50),
+        nullable=False,
+        index=True,
+        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike",
     )
-    strength: Mapped[float] = mapped_column(
-        Float, nullable=False, comment="Signal strength 0-100"
-    )
+    strength: Mapped[float] = mapped_column(Float, nullable=False, comment="Signal strength 0-100")
     confidence: Mapped[float] = mapped_column(
         Float, nullable=False, comment="Confidence score 0-100"
     )
-    
+
     # Additional Data
-    data: Mapped[Optional[dict]] = mapped_column(
-        JSON, nullable=True,
-        comment="Additional signal-specific data"
+    data: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, comment="Additional signal-specific data"
     )
-    
+
     # Timestamps
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_ticker_type_time", "ticker", "signal_type", "timestamp"),

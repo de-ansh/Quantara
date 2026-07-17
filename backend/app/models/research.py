@@ -1,8 +1,8 @@
 """Research report model for storing structured analysis."""
-from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import String, Float, DateTime, Integer, JSON, ForeignKey, Text
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -17,27 +17,27 @@ class ResearchReport(Base):
     ticker: Mapped[str] = mapped_column(
         String(10), ForeignKey("stocks.ticker"), nullable=False, index=True
     )
-    
+
     # Structured Data
     structured_json: Mapped[dict] = mapped_column(
         JSON, nullable=False, comment="Structured research data validated by schema"
     )
-    
+
     # Vector Embedding
-    vector_embedding_id: Mapped[Optional[str]] = mapped_column(
+    vector_embedding_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Reference to vector DB embedding"
     )
-    
+
     # Quality Metrics
     confidence_score: Mapped[float] = mapped_column(
         Float, nullable=False, comment="Confidence in analysis 0-100"
     )
-    
+
     # Summary
-    summary: Mapped[Optional[str]] = mapped_column(
+    summary: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Human-readable summary"
     )
-    
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True

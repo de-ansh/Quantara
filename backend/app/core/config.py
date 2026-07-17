@@ -1,5 +1,6 @@
 """Core configuration using Pydantic Settings."""
-from typing import List
+
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,9 +41,11 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_max_tokens: int = 4096
     openai_temperature: float = 0.1
-    
+
     # SEC EDGAR
-    sec_user_agent: str = Field("Quantara admin@example.com", description="SEC EDGAR User-Agent string")
+    sec_user_agent: str = Field(
+        "Quantara admin@example.com", description="SEC EDGAR User-Agent string"
+    )
 
     # Vector Database
     vector_db_type: str = "pinecone"
@@ -67,7 +70,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins")
     @classmethod
-    def parse_cors_origins(cls, v: str) -> List[str]:
+    def parse_cors_origins(cls, v: str) -> list[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in v.split(",")]
 

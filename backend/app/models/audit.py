@@ -1,8 +1,8 @@
 """Audit log model for tracking all system actions and AI reasoning."""
-from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import String, DateTime, Integer, JSON, ForeignKey, Text, Index
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -14,43 +14,44 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True, index=True
     )
-    
+
     # Action Information
     action: Mapped[str] = mapped_column(
-        String(100), nullable=False, index=True,
-        comment="Action type: login, update_profile, generate_recommendation, etc."
+        String(100),
+        nullable=False,
+        index=True,
+        comment="Action type: login, update_profile, generate_recommendation, etc.",
     )
-    entity: Mapped[Optional[str]] = mapped_column(
+    entity: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Entity type affected"
     )
-    entity_id: Mapped[Optional[str]] = mapped_column(
+    entity_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="ID of affected entity"
     )
-    
+
     # AI Reasoning
-    reasoning_snapshot: Mapped[Optional[dict]] = mapped_column(
+    reasoning_snapshot: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, comment="AI reasoning, prompts, and outputs"
     )
-    
+
     # Request Details
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Additional Context
-    data: Mapped[Optional[dict]] = mapped_column(
+    data: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, comment="Additional context and data"
     )
-    
+
     # Status
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="success",
-        comment="success, failure, error"
+        String(20), nullable=False, default="success", comment="success, failure, error"
     )
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Timestamp
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
