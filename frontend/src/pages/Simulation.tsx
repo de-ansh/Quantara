@@ -3,13 +3,15 @@ import apiClient from "@/lib/api"
 import { useQuery } from "@tanstack/react-query"
 import {
     Play,
-    Download,
-    Settings,
-    Bell,
-    ChevronDown,
     Zap,
     SlidersHorizontal,
     AlertTriangle,
+    Plus,
+    Trash2,
+    RefreshCw,
+    LineChart,
+    Grid,
+    ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -22,19 +24,31 @@ import {
     Tooltip
 } from "recharts"
 
-const initialAllocation = [
-    { label: "Equities", val: 60 },
-    { label: "Fixed Income", val: 25 },
-    { label: "Alternatives", val: 10 },
-    { label: "Cash", val: 5 },
+interface Holding {
+    id: string
+    ticker: string
+    weight: number
+}
+
+const defaultHoldings: Holding[] = [
+    { id: "1", ticker: "AAPL", weight: 35 },
+    { id: "2", ticker: "NVDA", weight: 25 },
+    { id: "3", ticker: "TLT", weight: 20 },
+    { id: "4", ticker: "GLD", weight: 12 },
+    { id: "5", ticker: "BIL", weight: 8 },
 ]
 
+const QUICK_CHIPS = ["MSFT", "GOOGL", "AMZN", "TSLA", "META", "SPY"]
+
 export default function Simulation() {
-    const [allocation, setAllocation] = useState(initialAllocation)
+    const [holdings, setHoldings] = useState<Holding[]>(defaultHoldings)
+    const [newTickerInput, setNewTickerInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [result, setResult] = useState<any>(null)
     const [horizonYears, setHorizonYears] = useState(10)
-    const [volatilityAssumption, setVolatilityAssumption] = useState("base")
+    const [volatilityAssumption, setVolatilityAssumption] = useState<"conservative" | "base" | "aggressive">("base")
+    const [initialInvestment, setInitialInvestment] = useState(1000000)
+    const [activeView, setActiveView] = useState<"chart" | "correlation">("chart")
 
     const { data: marketData } = useQuery({
         queryKey: ["marketStatus"],
@@ -45,34 +59,57 @@ export default function Simulation() {
         refetchInterval: 5000,
     })
 
+    const totalWeight = holdings.reduce((sum, h) => sum + h.weight, 0)
+
+    const handleNormalize = () => {
+        if (totalWeight <= 0) return
+        setHoldings(prev =>
+            prev.map(h => ({
+                ...h,
+                weight: Math.round((h.weight / totalWeight) * 100 * 10) / 10
+            }))
+        )
+    }
+
+    const handleAddTicker = (tickerToAdd?: string) => {
+        const sym = (tickerToAdd || newTickerInput).trim().toUpperCase()
+        if (!sym) return
+        if (holdings.some(h => h.ticker === sym)) {
+            setNewTickerInput("")
+            return
+        }
+        setHoldings(prev => [
+            ...prev,
+            { id: `${Date.now()}-${sym}`, ticker: sym, weight: 10 }
+        ])
+        setNewTickerInput("")
+    }
+
+    const handleRemoveTicker = (id: string) => {
+        if (holdings.length <= 1) return
+        setHoldings(prev => prev.filter(h => h.id !== id))
+    }
+
+    const handleWeightChange = (id: string, newWeight: number) => {
+        setHoldings(prev =>
+            prev.map(h => (h.id === id ? { ...h, weight: newWeight } : h))
+        )
+    }
+
     const runSimulation = async () => {
         setIsLoading(true)
         try {
-            // Map asset allocations to representative tickers
-            const stocks = allocation.map(item => {
-                let ticker = "AAPL"
-                if (item.label === "Fixed Income") ticker = "TLT"
-                else if (item.label === "Alternatives") ticker = "GLD"
-                else if (item.label === "Cash") ticker = "BIL"
-                
-                return {
-                    ticker,
-                    weight: item.val / 100.0
-                }
-            })
-
-            // Normalize weights if the sum is not exactly 1.0 (to avoid division by zero or bad return calculation)
-            const sum = stocks.reduce((acc, s) => acc + s.weight, 0)
-            if (sum > 0) {
-                stocks.forEach(s => {
-                    s.weight = s.weight / sum
-                })
-            }
+            const sum = holdings.reduce((acc, s) => acc + s.weight, 0)
+            const stocks = holdings.map(item => ({
+                ticker: item.ticker,
+                weight: sum > 0 ? (item.weight / sum) : (1.0 / holdings.length)
+            }))
 
             const payload = {
                 stocks,
-                initial_investment: 1000000.0, // $1M base
-                time_horizon_months: horizonYears * 12
+                initial_investment: initialInvestment,
+                time_horizon_months: horizonYears * 12,
+                volatility_mode: volatilityAssumption,
             }
 
             const res = await apiClient.post("/portfolio/simulate", payload)
@@ -84,10 +121,10 @@ export default function Simulation() {
         }
     }
 
-    // Trigger simulation on mount and whenever the time horizon changes
+    // Trigger simulation on mount and parameter change
     useEffect(() => {
         runSimulation()
-    }, [horizonYears])
+    }, [horizonYears, volatilityAssumption, initialInvestment])
 
     // Bind metrics from simulation result
     const metrics = [
@@ -105,24 +142,24 @@ export default function Simulation() {
         { 
             label: "Est. Annual Return", 
             value: result ? `${result.expected_return.toFixed(1)}%` : "8.5%", 
-            sub: "Model Projection", 
+            sub: `${volatilityAssumption.toUpperCase()} Assumption`, 
             color: "text-green-500" 
         },
         { 
             label: "Volatility (Std Dev)", 
             value: result ? `${result.expected_volatility.toFixed(1)}%` : "12.4%", 
-            sub: "Annualized" 
+            sub: "Annualized MPT" 
         },
         { 
-            label: "Risk-Adjusted Return", 
-            value: result ? `${result.risk_adjusted_return.toFixed(1)}%` : "7.1%", 
-            sub: "Sharpe Penalized", 
-            color: "text-[#1e5df1]" 
+            label: "Diversification Benefit", 
+            value: result ? `+${(result.diversification_benefit_pct || 0).toFixed(1)}%` : "+14.2%", 
+            sub: "Covariance Dampening", 
+            color: "text-emerald-400" 
         },
         { 
             label: "Max Drawdown Projection", 
             value: result ? `${result.max_drawdown.toFixed(1)}%` : "-12.3%", 
-            sub: "Stressed Market Scenario", 
+            sub: "Stressed Scenario", 
             color: "text-red-500" 
         },
     ]
@@ -141,11 +178,12 @@ export default function Simulation() {
                         <h1 className="text-sm font-black tracking-tighter uppercase">Quantara</h1>
                     </div>
                     <nav className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
-                        <span className="text-primary">Portfolio Simulation</span>
+                        <span className="text-primary">Portfolio Simulation Studio</span>
                         <div className="h-3 w-[1px] bg-border" />
-                        <span className="hover:text-foreground cursor-pointer transition-colors">Risk Engine</span>
-                        <div className="h-3 w-[1px] bg-border" />
-                        <span className="hover:text-foreground cursor-pointer transition-colors">Reporting</span>
+                        <span className="flex items-center gap-1 text-emerald-400">
+                            <ShieldCheck className="size-3" />
+                            MPT Covariance Engine Active
+                        </span>
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
@@ -157,11 +195,6 @@ export default function Simulation() {
                     <div className="flex items-center gap-2 px-2 py-1 bg-green-500/10 border border-green-500/20 text-green-400 text-[9px] font-bold uppercase tracking-widest">
                         <div className="size-1.5 bg-green-500 rounded-full animate-pulse" />
                         Market Open
-                    </div>
-                    <div className="flex items-center gap-2 border-l border-border pl-4 text-muted-foreground">
-                        <Bell className="size-4 hover:text-foreground cursor-pointer" />
-                        <Settings className="size-4 hover:text-foreground cursor-pointer" />
-                        <div className="size-6 bg-muted rounded-sm ml-1" />
                     </div>
                 </div>
             </div>
@@ -179,67 +212,153 @@ export default function Simulation() {
             )}
 
             <main className="flex flex-1 overflow-hidden">
-                {/* Controls */}
-                <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
-                    <div className="p-3 border-b border-border bg-muted/20">
+                {/* Controls Sidebar */}
+                <aside className="w-80 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+                    <div className="p-3 border-b border-border bg-muted/20 flex items-center justify-between">
                         <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             <SlidersHorizontal className="size-3.5" />
-                            Model Controls
+                            Holdings & Allocation
                         </h2>
+                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                            <span className={cn(
+                                "px-1.5 py-0.5 rounded-sm font-bold",
+                                Math.abs(totalWeight - 100) < 0.5 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400"
+                            )}>
+                                Total: {totalWeight.toFixed(0)}%
+                            </span>
+                            <button
+                                onClick={handleNormalize}
+                                title="Normalize weights to 100%"
+                                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                            >
+                                <RefreshCw className="size-3" />
+                            </button>
+                        </div>
                     </div>
+
                     <div className="p-4 space-y-6">
-                        <section>
-                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/80 mb-3 tracking-tighter">Target Allocation (%)</h3>
-                            <div className="space-y-4">
-                                {allocation.map((item, i) => (
-                                    <div key={i} className="space-y-1">
-                                        <div className="flex justify-between text-[11px] font-mono">
-                                            <span className="text-muted-foreground">{item.label}</span>
-                                            <span className="font-bold text-foreground">{item.val.toFixed(1)}%</span>
+                        {/* Dynamic Stock List */}
+                        <section className="space-y-3">
+                            <div className="space-y-3">
+                                {holdings.map((item) => (
+                                    <div key={item.id} className="p-2 border border-border/70 bg-background/50 rounded-sm space-y-1.5">
+                                        <div className="flex items-center justify-between text-[11px] font-mono">
+                                            <span className="font-bold text-foreground tracking-wider">{item.ticker}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-primary">{item.weight.toFixed(1)}%</span>
+                                                {holdings.length > 1 && (
+                                                    <button
+                                                        onClick={() => handleRemoveTicker(item.id)}
+                                                        className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                                                    >
+                                                        <Trash2 className="size-3" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                         <input
                                             type="range"
                                             className="w-full h-[2px] bg-border appearance-none cursor-pointer accent-primary"
-                                            value={item.val}
+                                            value={item.weight}
                                             min="0"
                                             max="100"
-                                            onChange={(e) => {
-                                                const newAlloc = [...allocation]
-                                                newAlloc[i].val = parseFloat(e.target.value)
-                                                setAllocation(newAlloc)
-                                            }}
+                                            step="1"
+                                            onChange={(e) => handleWeightChange(item.id, parseFloat(e.target.value))}
                                         />
                                     </div>
                                 ))}
                             </div>
+
+                            {/* Add Ticker Input */}
+                            <div className="pt-2">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Add ticker (e.g. MSFT)..."
+                                        value={newTickerInput}
+                                        onChange={(e) => setNewTickerInput(e.target.value.toUpperCase())}
+                                        onKeyDown={(e) => e.key === "Enter" && handleAddTicker()}
+                                        className="flex-1 bg-background border border-border px-2.5 py-1.5 text-[11px] font-mono uppercase focus:outline-none focus:border-primary rounded-sm"
+                                    />
+                                    <button
+                                        onClick={() => handleAddTicker()}
+                                        disabled={!newTickerInput.trim()}
+                                        className="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 text-[10px] font-bold uppercase rounded-sm flex items-center gap-1 disabled:opacity-40"
+                                    >
+                                        <Plus className="size-3" /> Add
+                                    </button>
+                                </div>
+
+                                {/* Quick Chips */}
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {QUICK_CHIPS.map(chip => (
+                                        <button
+                                            key={chip}
+                                            onClick={() => handleAddTicker(chip)}
+                                            className="text-[9px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm transition-colors"
+                                        >
+                                            +{chip}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </section>
 
+                        {/* Volatility Assumptions */}
                         <section>
-                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/60 mb-3 tracking-tighter">Volatility Assumptions</h3>
+                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/70 mb-2 tracking-tighter">
+                                Volatility Scenario
+                            </h3>
                             <div className="grid grid-cols-3 border border-border overflow-hidden rounded-sm">
                                 <button 
                                     onClick={() => setVolatilityAssumption("conservative")}
-                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors", volatilityAssumption === "conservative" ? "bg-primary text-white" : "hover:bg-muted")}
+                                    className={cn(
+                                        "py-2 text-[9px] font-bold uppercase transition-colors", 
+                                        volatilityAssumption === "conservative" ? "bg-primary text-white" : "hover:bg-muted"
+                                    )}
                                 >
                                     Cons.
                                 </button>
                                 <button 
                                     onClick={() => setVolatilityAssumption("base")}
-                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors border-x border-border", volatilityAssumption === "base" ? "bg-primary text-white" : "hover:bg-muted")}
+                                    className={cn(
+                                        "py-2 text-[9px] font-bold uppercase transition-colors border-x border-border", 
+                                        volatilityAssumption === "base" ? "bg-primary text-white" : "hover:bg-muted"
+                                    )}
                                 >
                                     Base
                                 </button>
                                 <button 
                                     onClick={() => setVolatilityAssumption("aggressive")}
-                                    className={cn("py-2 text-[9px] font-bold uppercase transition-colors", volatilityAssumption === "aggressive" ? "bg-primary text-white" : "hover:bg-muted")}
+                                    className={cn(
+                                        "py-2 text-[9px] font-bold uppercase transition-colors", 
+                                        volatilityAssumption === "aggressive" ? "bg-primary text-white" : "hover:bg-muted"
+                                    )}
                                 >
                                     Aggr.
                                 </button>
                             </div>
                         </section>
 
+                        {/* Parameters */}
                         <section className="space-y-3">
-                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/60 tracking-tighter">Parameters</h3>
+                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
+                                Parameters
+                            </h3>
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-muted-foreground">Initial Capital</span>
+                                <select 
+                                    value={initialInvestment}
+                                    onChange={(e) => setInitialInvestment(Number(e.target.value))}
+                                    className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
+                                >
+                                    <option value={100000}>$100,000</option>
+                                    <option value={500000}>$500,000</option>
+                                    <option value={1000000}>$1,000,000</option>
+                                    <option value={2500000}>$2,500,000</option>
+                                    <option value={5000000}>$5,000,000</option>
+                                </select>
+                            </div>
                             <div className="flex items-center justify-between">
                                 <span className="text-[11px] text-muted-foreground">Time Horizon</span>
                                 <select 
@@ -247,19 +366,16 @@ export default function Simulation() {
                                     onChange={(e) => setHorizonYears(Number(e.target.value))}
                                     className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
                                 >
+                                    <option value={5}>5 Years</option>
                                     <option value={10}>10 Years</option>
                                     <option value={20}>20 Years</option>
                                     <option value={30}>30 Years</option>
                                 </select>
                             </div>
                             <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-muted-foreground">Iterations</span>
-                                <span className="font-mono font-bold text-foreground">10,000</span>
+                                <span className="text-muted-foreground">MPT Covariance</span>
+                                <span className="font-mono font-bold text-emerald-400">ENABLED</span>
                             </div>
-                            <label className="flex items-center justify-between cursor-pointer">
-                                <span className="text-[11px] text-muted-foreground">Inflation Adjusted</span>
-                                <input type="checkbox" defaultChecked className="size-3.5 rounded-none bg-background border-border text-primary focus:ring-0" />
-                            </label>
                         </section>
 
                         <button 
@@ -268,37 +384,60 @@ export default function Simulation() {
                             className="w-full bg-primary hover:bg-primary/90 text-white text-[10px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
                         >
                             <Play className="size-3.5 fill-current" />
-                            {isLoading ? "Simulating..." : "Run Simulation"}
+                            {isLoading ? "Simulating..." : "Recalculate Simulation"}
                         </button>
                     </div>
                 </aside>
 
-                {/* Workspace */}
+                {/* Workspace Panel */}
                 <div className="flex-1 flex flex-col min-w-0">
                     <div className="flex-1 p-6 flex flex-col">
-                        <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center justify-between mb-4">
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Monte Carlo Simulation</h2>
-                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Projected Portfolio Value Distribution | {volatilityAssumption.toUpperCase()} CASE</p>
+                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                                    Projected Portfolio Trajectory | {volatilityAssumption.toUpperCase()} SCENARIO
+                                </p>
                             </div>
-                            <div className="flex gap-2">
-                                <div className="flex items-center gap-2 px-3 py-1.5 border border-border bg-card text-[9px] font-bold uppercase tracking-widest text-foreground/80">
-                                    <div className="size-2 bg-[#1e5df1]/10 border border-[#1e5df1]/30" />
-                                    95% Confidence Band
+                            <div className="flex items-center gap-2">
+                                {/* View Toggle */}
+                                <div className="flex border border-border rounded-sm overflow-hidden bg-card mr-2">
+                                    <button
+                                        onClick={() => setActiveView("chart")}
+                                        className={cn(
+                                            "flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors",
+                                            activeView === "chart" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
+                                        )}
+                                    >
+                                        <LineChart className="size-3" /> Trajectory
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveView("correlation")}
+                                        className={cn(
+                                            "flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors border-l border-border",
+                                            activeView === "correlation" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
+                                        )}
+                                    >
+                                        <Grid className="size-3" /> Correlation Matrix
+                                    </button>
                                 </div>
-                                <div className="flex items-center gap-2 px-3 py-1.5 border border-border bg-card text-[9px] font-bold uppercase tracking-widest text-foreground/80">
-                                    <div className="size-2 bg-primary" />
-                                    Median Outcome
-                                </div>
+
+                                {result?.diversification_benefit_pct > 0 && (
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[9px] font-bold uppercase tracking-widest text-emerald-400 font-mono">
+                                        <ShieldCheck className="size-3" />
+                                        +{result.diversification_benefit_pct.toFixed(1)}% MPT Gain
+                                    </div>
+                                )}
                             </div>
                         </div>
 
+                        {/* Main View Area */}
                         <div className="flex-1 relative border border-border bg-card/30 overflow-hidden shadow-inner flex flex-col">
                             {isLoading && chartData.length === 0 ? (
                                 <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
                                     RUNNING_MONTE_CARLO_SIMULATION_PASS...
                                 </div>
-                            ) : (
+                            ) : activeView === "chart" ? (
                                 <div className="flex-1 p-4">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <AreaChart data={chartData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
@@ -333,13 +472,66 @@ export default function Simulation() {
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </div>
+                            ) : (
+                                /* Correlation Matrix Table */
+                                <div className="flex-1 p-6 overflow-auto">
+                                    <div className="mb-4">
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                                            Asset Pairwise Correlation Matrix ($\rho_{'{i,j}'}$)
+                                        </h3>
+                                        <p className="text-[10px] text-muted-foreground font-mono">
+                                            Evaluated by Quantara Portfolio Analytics Engine. Green indicates negative correlation (risk reduction).
+                                        </p>
+                                    </div>
+                                    <div className="overflow-x-auto border border-border">
+                                        <table className="w-full text-xs font-mono">
+                                            <thead>
+                                                <tr className="border-b border-border bg-muted/40">
+                                                    <th className="p-3 text-left font-bold text-muted-foreground uppercase">Ticker</th>
+                                                    {holdings.map(h => (
+                                                        <th key={h.ticker} className="p-3 text-center font-bold text-foreground">
+                                                            {h.ticker}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {holdings.map(h1 => (
+                                                    <tr key={h1.ticker} className="border-b border-border/50 hover:bg-muted/20">
+                                                        <td className="p-3 font-bold text-foreground bg-muted/20">{h1.ticker}</td>
+                                                        {holdings.map(h2 => {
+                                                            const corr = result?.correlation_matrix?.[h1.ticker]?.[h2.ticker] ?? (h1.ticker === h2.ticker ? 1.0 : 0.4)
+                                                            const isSelf = h1.ticker === h2.ticker
+                                                            const isNegative = corr < 0
+                                                            const isHigh = corr > 0.6 && !isSelf
+                                                            return (
+                                                                <td 
+                                                                    key={h2.ticker} 
+                                                                    className={cn(
+                                                                        "p-3 text-center tabular-nums font-semibold",
+                                                                        isSelf ? "text-muted-foreground bg-muted/10" :
+                                                                        isNegative ? "text-green-400 bg-green-500/10 font-bold" :
+                                                                        isHigh ? "text-blue-400 bg-blue-500/10" :
+                                                                        "text-foreground"
+                                                                    )}
+                                                                >
+                                                                    {corr.toFixed(2)}
+                                                                </td>
+                                                            )
+                                                        })}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
 
                     {/* Stats Bar */}
                     <div className="h-72 border-t border-border grid grid-cols-12 shrink-0 bg-background transition-colors">
-                        <div className="col-span-12 xl:col-span-5 border-r border-border p-6">
+                        <div className="col-span-12 xl:col-span-4 border-r border-border p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
                                 <span className="text-[10px] text-destructive font-black tracking-tighter uppercase">
@@ -361,7 +553,7 @@ export default function Simulation() {
                             </div>
                         </div>
 
-                        <div className="col-span-12 xl:col-span-7 bg-card/20 p-6">
+                        <div className="col-span-12 xl:col-span-8 bg-card/20 p-6">
                             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">Projected Portfolio Metrics</h3>
                             <div className="grid grid-cols-3 gap-px bg-border border border-border">
                                 {metrics.map((m, i) => (

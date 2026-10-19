@@ -13,12 +13,12 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 1 | 0 | 1 | 0 | 0 |
-| **Portfolio & Simulation (PORT)** | 1 | 0 | 1 | 0 | 0 |
+| **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 3 | 0 | 2 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **14** | **0** | **9** | **5** | **0** |
+| **Total** | **13** | **0** | **8** | **5** | **0** |
 
 ---
 
@@ -124,13 +124,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Return correlation matrix, covariance matrix, individual asset volatilities, and diversification benefit in simulation response.
   - [x] 100% test coverage in `backend/app/tests/test_portfolio_simulation.py`.
 
-### [QTR-PORT-03] Dynamic Stock Allocation & Volatility Mode in `Simulation.tsx`
+### [QTR-PORT-03] Dynamic Stock Allocation & Volatility Mode in `Simulation.tsx` ✅
 - **Category**: Portfolio Management
-- **Component**: [`frontend/src/pages/Simulation.tsx`](frontend/src/pages/Simulation.tsx)
+- **Component**: [`frontend/src/pages/Simulation.tsx`](frontend/src/pages/Simulation.tsx), [`backend/app/api/v1/portfolio.py`](backend/app/api/v1/portfolio.py)
 - **Description**: Stocks locked to 4 preset asset buckets (`AAPL`, `TLT`, `GLD`, `BIL`); volatility mode selector ("Cons.", "Base", "Aggr.") ignored.
 - **Acceptance Criteria**:
-  - [ ] Allow users to add custom tickers from DB and adjust weight sliders.
-  - [ ] Send `volatility_mode` and `initial_investment` to `/portfolio/simulate`.
+  - [x] Allow users to add custom tickers from DB/quick chips and adjust weight sliders.
+  - [x] Add weight normalization to 100% and remove asset capability.
+  - [x] Send `volatility_mode` ("conservative", "base", "aggressive") and `initial_investment` to `/portfolio/simulate`.
+  - [x] Render dynamic diversification benefit badge and correlation matrix view tab.
 
 ### [QTR-RSK-01] Dynamic Correlation & Segment Matrix in `Risk.tsx`
 - **Category**: Risk Analytics

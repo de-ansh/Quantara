@@ -196,3 +196,59 @@ async def test_simulate_portfolio_with_db_stocks(mock_current_user):
     assert res.expected_volatility > 0
     assert res.correlation_matrix["AAPL"]["MSFT"] == 0.72  # intra-sector technology
     assert len(res.trajectory) == 61
+
+
+@pytest.mark.asyncio
+async def test_simulate_portfolio_volatility_modes(mock_current_user):
+    """Test volatility_mode adjusts volatility and expected return projections."""
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = mock_result
+
+    stocks = [
+        PortfolioStock(ticker="AAPL", weight=0.6),
+        PortfolioStock(ticker="TLT", weight=0.4),
+    ]
+
+    base_res = await simulate_portfolio(
+        request=SimulationRequest(
+            stocks=stocks,
+            initial_investment=100000.0,
+            time_horizon_months=12,
+            volatility_mode="base",
+        ),
+        current_user=mock_current_user,
+        db=mock_db,
+    )
+
+    cons_res = await simulate_portfolio(
+        request=SimulationRequest(
+            stocks=stocks,
+            initial_investment=100000.0,
+            time_horizon_months=12,
+            volatility_mode="conservative",
+        ),
+        current_user=mock_current_user,
+        db=mock_db,
+    )
+
+    aggr_res = await simulate_portfolio(
+        request=SimulationRequest(
+            stocks=stocks,
+            initial_investment=100000.0,
+            time_horizon_months=12,
+            volatility_mode="aggressive",
+        ),
+        current_user=mock_current_user,
+        db=mock_db,
+    )
+
+    # Conservative should have higher volatility and lower return than Base
+    assert cons_res.expected_volatility > base_res.expected_volatility
+    assert cons_res.expected_return < base_res.expected_return
+
+    # Aggressive should have lower perceived volatility and higher return than Base
+    assert aggr_res.expected_volatility < base_res.expected_volatility
+    assert aggr_res.expected_return > base_res.expected_return
+
