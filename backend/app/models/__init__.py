@@ -1,6 +1,7 @@
 """Models package initialization."""
 
 from app.models.audit import AuditLog
+from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.recommendation import Recommendation
 from app.models.research import ResearchReport
 from app.models.signal import Signal
@@ -14,4 +15,6 @@ __all__ = [
     "ResearchReport",
     "Recommendation",
     "AuditLog",
+    "Portfolio",
+    "PortfolioPosition",
 ]

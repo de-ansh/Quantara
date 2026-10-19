@@ -48,6 +48,10 @@ export interface SignalEvent {
 export interface User {
     id: string
     email: string
+    risk_level?: string | null
+    volatility_tolerance?: number | null
+    investment_horizon?: number | null
+    sector_preferences?: Record<string, any> | null
 }
 
 export interface AuthState {

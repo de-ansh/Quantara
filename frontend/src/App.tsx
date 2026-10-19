@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/context/ThemeProvider"
 import { AuthProvider } from "@/context/AuthContext"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import MainLayout from "@/layouts/MainLayout"
+import ProtectedRoute from "@/components/ProtectedRoute"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,16 +36,16 @@ function App() {
             <MainLayout>
               <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-background text-muted-foreground font-mono text-xs">LOADING_RESOURCES...</div>}>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/research" element={<StockDetail />} />
-                  <Route path="/research/:ticker" element={<StockDetail />} />
-                  <Route path="/explorer" element={<ResearchExplorer />} />
-                  <Route path="/signals" element={<Signals />} />
-                  <Route path="/risk" element={<Risk />} />
-                  <Route path="/risk/:ticker" element={<Risk />} />
-                  <Route path="/simulation" element={<Simulation />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="/account" element={<Account />} />
+                  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/research" element={<ProtectedRoute><StockDetail /></ProtectedRoute>} />
+                  <Route path="/research/:ticker" element={<ProtectedRoute><StockDetail /></ProtectedRoute>} />
+                  <Route path="/explorer" element={<ProtectedRoute><ResearchExplorer /></ProtectedRoute>} />
+                  <Route path="/signals" element={<ProtectedRoute><Signals /></ProtectedRoute>} />
+                  <Route path="/risk" element={<ProtectedRoute><Risk /></ProtectedRoute>} />
+                  <Route path="/risk/:ticker" element={<ProtectedRoute><Risk /></ProtectedRoute>} />
+                  <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                  <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
                 </Routes>

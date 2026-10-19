@@ -37,7 +37,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'pnpm run dev --port 5179',
+    command: 'npm run dev -- --port 5179',
     url: 'http://localhost:5179',
     reuseExistingServer: false,
     stdout: 'ignore',
