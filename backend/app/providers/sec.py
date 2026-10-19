@@ -450,3 +450,267 @@ class SECProvider:
                 logger.error(f"Error fetching insider transactions for {ticker}: {e}")
 
         return all_transactions
+
+    def parse_form13f_xml(self, xml_content: str) -> list[dict[str, Any]]:
+        """
+        Parse SEC Form 13F Information Table XML to extract institutional holdings.
+
+        Args:
+            xml_content: Raw XML string of Form 13F Information Table.
+
+        Returns:
+            List of structured institutional holding records.
+        """
+        holdings = []
+        try:
+            root = ET.fromstring(xml_content)
+
+            def _find_text(element: ET.Element, local_tag: str) -> str | None:
+                for child in element.iter():
+                    tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                    if tag.lower() == local_tag.lower() and child.text:
+                        return child.text.strip()
+                return None
+
+            # Find all infoTable elements regardless of XML namespace
+            info_tables = []
+            for elem in root.iter():
+                tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                if tag.lower() == "infotable":
+                    info_tables.append(elem)
+
+            for table in info_tables:
+                issuer = _find_text(table, "nameOfIssuer") or "Unknown"
+                title_class = _find_text(table, "titleOfClass") or "COM"
+                cusip = _find_text(table, "cusip") or ""
+
+                # Value
+                val_text = _find_text(table, "value")
+                value = 0.0
+                if val_text:
+                    try:
+                        value = float(val_text.replace(",", ""))
+                    except ValueError:
+                        pass
+
+                # Shares / Principal Amount
+                shares_text = _find_text(table, "sshPrnamt")
+                shares = 0.0
+                if shares_text:
+                    try:
+                        shares = float(shares_text.replace(",", ""))
+                    except ValueError:
+                        pass
+
+                share_type = _find_text(table, "sshPrnamtType") or "SH"
+                put_call = _find_text(table, "putCall")
+                investment_discretion = _find_text(table, "investmentDiscretion") or "SOLE"
+
+                # Voting authority
+                voting_auth = {"sole": 0.0, "shared": 0.0, "none": 0.0}
+                for child in table.iter():
+                    c_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                    c_tag_lower = c_tag.lower()
+                    if c_tag_lower in ("sole", "shared", "none") and child.text:
+                        try:
+                            voting_auth[c_tag_lower] = float(child.text.strip().replace(",", ""))
+                        except ValueError:
+                            pass
+
+                holdings.append(
+                    {
+                        "name_of_issuer": issuer.upper(),
+                        "title_of_class": title_class.upper(),
+                        "cusip": cusip.upper(),
+                        "value": value,
+                        "shares": shares,
+                        "share_type": share_type.upper(),
+                        "put_call": put_call.upper() if put_call else None,
+                        "investment_discretion": investment_discretion.upper(),
+                        "voting_authority": voting_auth,
+                    }
+                )
+
+        except ET.ParseError as e:
+            logger.error(f"Error parsing Form 13F XML: {e}")
+
+        return holdings
+
+    def detect_institutional_accumulation(
+        self,
+        previous_holdings: list[dict[str, Any]],
+        current_holdings: list[dict[str, Any]],
+        min_increase_pct: float = 5.0,
+    ) -> list[dict[str, Any]]:
+        """
+        Detect significant quarter-over-quarter institutional accumulation across holdings.
+
+        Args:
+            previous_holdings: List of holdings from previous quarter Form 13F.
+            current_holdings: List of holdings from current quarter Form 13F.
+            min_increase_pct: Minimum percentage increase in shares to qualify as accumulation.
+
+        Returns:
+            List of accumulated positions sorted by percentage change descending.
+        """
+        prev_by_cusip: dict[str, dict[str, Any]] = {}
+        prev_by_name: dict[str, dict[str, Any]] = {}
+
+        for h in previous_holdings:
+            cusip = h.get("cusip", "").strip()
+            name = h.get("name_of_issuer", "").strip()
+            if cusip:
+                prev_by_cusip[cusip] = h
+            if name:
+                prev_by_name[name] = h
+
+        accumulations = []
+
+        for curr in current_holdings:
+            cusip = curr.get("cusip", "").strip()
+            name = curr.get("name_of_issuer", "").strip()
+            current_shares = float(curr.get("shares") or 0.0)
+            current_value = float(curr.get("value") or 0.0)
+
+            if current_shares <= 0:
+                continue
+
+            prev = None
+            if cusip and cusip in prev_by_cusip:
+                prev = prev_by_cusip[cusip]
+            elif name and name in prev_by_name:
+                prev = prev_by_name[name]
+
+            if prev is None:
+                # Brand new position entered this quarter
+                accumulations.append(
+                    {
+                        "name_of_issuer": name,
+                        "title_of_class": curr.get("title_of_class", "COM"),
+                        "cusip": cusip,
+                        "previous_shares": 0.0,
+                        "current_shares": current_shares,
+                        "share_change": current_shares,
+                        "change_pct": 100.0,
+                        "previous_value": 0.0,
+                        "current_value": current_value,
+                        "value_change": current_value,
+                        "is_new_position": True,
+                        "is_accumulation": True,
+                    }
+                )
+            else:
+                prev_shares = float(prev.get("shares") or 0.0)
+                prev_value = float(prev.get("value") or 0.0)
+
+                if prev_shares > 0:
+                    share_delta = current_shares - prev_shares
+                    change_pct = (share_delta / prev_shares) * 100.0
+
+                    if change_pct >= min_increase_pct:
+                        accumulations.append(
+                            {
+                                "name_of_issuer": name,
+                                "title_of_class": curr.get("title_of_class", "COM"),
+                                "cusip": cusip,
+                                "previous_shares": prev_shares,
+                                "current_shares": current_shares,
+                                "share_change": share_delta,
+                                "change_pct": round(change_pct, 2),
+                                "previous_value": prev_value,
+                                "current_value": current_value,
+                                "value_change": current_value - prev_value,
+                                "is_new_position": False,
+                                "is_accumulation": True,
+                            }
+                        )
+
+        accumulations.sort(key=lambda x: x["change_pct"], reverse=True)
+        return accumulations
+
+    async def fetch_13f_holdings(
+        self, manager_cik: str, limit: int = 2
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch recent Form 13F institutional holdings filings for an institutional manager CIK.
+
+        Args:
+            manager_cik: 10-digit CIK of the institutional investment manager.
+            limit: Number of recent 13F filings to process (e.g. 2 for QoQ comparison).
+
+        Returns:
+            List of parsed filings with metadata and holdings list.
+        """
+        cik = str(manager_cik).strip().zfill(10)
+        url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+        filing_batches = []
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, headers=self.headers, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+
+                if "filings" not in data or "recent" not in data["filings"]:
+                    return []
+
+                recent = data["filings"]["recent"]
+                forms = recent.get("form", [])
+                accns = recent.get("accessionNumber", [])
+                filing_dates = recent.get("filingDate", [])
+                report_dates = recent.get("reportDate", [])
+
+                indices = [i for i, f in enumerate(forms) if f in ("13F-HR", "13F-HR/A")]
+
+                processed = 0
+                for idx in indices:
+                    if processed >= limit:
+                        break
+
+                    accn = accns[idx]
+                    accn_nodash = accn.replace("-", "")
+                    cik_nopad = str(int(cik))
+                    filing_date = filing_dates[idx] if idx < len(filing_dates) else None
+                    report_date = report_dates[idx] if idx < len(report_dates) else None
+
+                    idx_url = f"https://www.sec.gov/Archives/edgar/data/{cik_nopad}/{accn_nodash}/index.json"
+                    idx_resp = await client.get(idx_url, headers=self.headers, timeout=10.0)
+                    if idx_resp.status_code != 200:
+                        continue
+
+                    idx_data = idx_resp.json()
+
+                    xml_filename = None
+                    for item in idx_data.get("directory", {}).get("item", []):
+                        name = item.get("name", "")
+                        if name.endswith(".xml") and not name.endswith("_htm.xml"):
+                            if "infotable" in name.lower() or "13f" in name.lower():
+                                xml_filename = name
+                                break
+                            elif xml_filename is None:
+                                xml_filename = name
+
+                    if xml_filename:
+                        xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_nopad}/{accn_nodash}/{xml_filename}"
+                        xml_resp = await client.get(xml_url, headers=self.headers, timeout=10.0)
+                        if xml_resp.status_code == 200:
+                            holdings = self.parse_form13f_xml(xml_resp.text)
+                            filing_batches.append(
+                                {
+                                    "manager_cik": cik,
+                                    "accession_number": accn,
+                                    "filing_date": filing_date,
+                                    "report_date": report_date,
+                                    "holdings_count": len(holdings),
+                                    "holdings": holdings,
+                                }
+                            )
+                            processed += 1
+
+            except httpx.HTTPError as e:
+                logger.error(f"HTTP error fetching 13F filings for manager {manager_cik}: {e}")
+            except Exception as e:
+                logger.error(f"Error fetching 13F filings for manager {manager_cik}: {e}")
+
+        return filing_batches
+

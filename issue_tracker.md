@@ -13,10 +13,10 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
-| **Signal Engine & Ingestion (SIG)**| 2 | 0 | 1 | 1 | 0 |
+| **Signal Engine & Ingestion (SIG)**| 1 | 0 | 0 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **7** | **0** | **2** | **5** | **0** |
+| **Total** | **6** | **0** | **1** | **5** | **0** |
 
 ---
 
@@ -166,13 +166,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Schedule `detect_institutional_buying` accumulation in background loop.
   - [x] 100% test coverage in `backend/app/tests/test_signal_engine.py`.
 
-### [QTR-SIG-02] Real SEC Form 13F Filing Ingestion for Institutional Buying
+### [QTR-SIG-02] Real SEC Form 13F Filing Ingestion for Institutional Buying ✅
 - **Category**: Signal Engine
 - **Component**: [`backend/app/providers/sec.py`](backend/app/providers/sec.py)
 - **Description**: 13F institutional holdings parsing is missing; only Form 4 XML is implemented.
 - **Acceptance Criteria**:
-  - [ ] Implement XML parser for SEC Form 13F filings.
-  - [ ] Detect significant quarter-over-quarter institutional accumulation.
+  - [x] Implement XML parser for SEC Form 13F filings.
+  - [x] Detect significant quarter-over-quarter institutional accumulation.
+  - [x] Support async Form 13F filing retrieval for institutional managers.
+  - [x] 100% test coverage in `backend/app/tests/providers/test_sec_form13f.py`.
 
 ### [QTR-NAV-01] Universal Search & Command Palette (`Ctrl+K`) ✅
 - **Category**: Navigation & Shell
