@@ -62,4 +62,60 @@ test.describe('Authentication Flow', () => {
     const errorContainer = page.locator('text=Request failed with status code 401');
     await expect(errorContainer).toBeVisible();
   });
+
+  test('should redirect unauthenticated users attempting to access /risk and /simulation', async ({ page }) => {
+    // Navigate directly to private routes without token in storage
+    await page.goto('/risk');
+    await expect(page).toHaveURL(/\/login/);
+
+    await page.goto('/simulation');
+    await expect(page).toHaveURL(/\/login/);
+  });
+
+  test('should allow user to open profile dropdown and log out', async ({ page }) => {
+    // Inject mock authenticated session in localStorage before loading
+    await page.addInitScript(() => {
+      localStorage.setItem('quantara_token', 'mock_jwt_token_123');
+      localStorage.setItem(
+        'quantara_user',
+        JSON.stringify({
+          id: '1',
+          email: 'analyst@quantara.com',
+          risk_level: 'Moderate',
+          volatility_tolerance: 60.0,
+        })
+      );
+    });
+
+    // Mock API requests
+    await page.route('**/api/v1/**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({}),
+      });
+    });
+
+    await page.goto('/');
+    await expect(page).toHaveURL('/');
+
+    // Click profile dropdown trigger
+    const userTrigger = page.getByText('analyst');
+    await expect(userTrigger).toBeVisible();
+    await userTrigger.click();
+
+    // Verify dropdown content
+    await expect(page.getByText('Account Profile')).toBeVisible();
+    const logoutBtn = page.getByText('Sign Out Session');
+    await expect(logoutBtn).toBeVisible();
+
+    // Click logout
+    await logoutBtn.click();
+
+    // Should redirect to login and clear token
+    await expect(page).toHaveURL(/\/login/);
+    const token = await page.evaluate(() => localStorage.getItem('quantara_token'));
+    expect(token).toBeNull();
+  });
 });
+

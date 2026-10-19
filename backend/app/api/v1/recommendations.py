@@ -1,10 +1,13 @@
-"""Recommendations API endpoints."""
-
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from app.core.dependencies import CurrentUser, DBSession
+from app.models.recommendation import Recommendation
+from app.models.signal import Signal
+from app.models.stock import Stock
 from app.services.recommendation_engine import RecommendationEngine
 
 router = APIRouter()
@@ -56,43 +59,54 @@ async def get_recommendations(
     Returns:
         List of personalized recommendations
     """
-    # TODO: Fetch user risk profile from database
-    user_risk_level = "Moderate"
-    user_volatility_tolerance = 60.0
+    # 1. Fetch user risk profile from current authenticated user
+    user_risk_level = current_user.get("risk_level") or "Moderate"
+    user_volatility_tolerance = (
+        float(current_user.get("volatility_tolerance"))
+        if current_user.get("volatility_tolerance") is not None
+        else 60.0
+    )
 
-    # TODO: Fetch stocks from database with scores
-    # Mock stock data
-    mock_stocks = [
+    # 2. Fetch active stocks from database
+    stmt = select(Stock)
+    result = await db.execute(stmt)
+    stocks_db = result.scalars().all()
+
+    if not stocks_db:
+        return RecommendationsListResponse(
+            recommendations=[],
+            total_count=0,
+            user_risk_level=user_risk_level,
+        )
+
+    # 3. Aggregate recent signal strength per ticker across all signals
+    sig_stmt = select(Signal.ticker, func.avg(Signal.strength)).group_by(Signal.ticker)
+    sig_result = await db.execute(sig_stmt)
+    signal_averages = dict(sig_result.all())
+
+    # Build candidate stock dictionaries
+    candidate_stocks = [
         {
-            "ticker": "AAPL",
-            "sector": "Technology",
-            "risk_score": 55.0,
-            "research_score": 85.0,
-            "signal_score": 75.0,
-        },
-        {
-            "ticker": "MSFT",
-            "sector": "Technology",
-            "risk_score": 50.0,
-            "research_score": 90.0,
-            "signal_score": 80.0,
-        },
-        {
-            "ticker": "JNJ",
-            "sector": "Healthcare",
-            "risk_score": 35.0,
-            "research_score": 80.0,
-            "signal_score": 65.0,
-        },
+            "ticker": s.ticker,
+            "sector": s.sector or "Technology",
+            "risk_score": s.risk_score if s.risk_score is not None else 50.0,
+            "research_score": s.research_score if s.research_score is not None else 50.0,
+            "signal_score": float(signal_averages.get(s.ticker) or 50.0),
+        }
+        for s in stocks_db
     ]
 
-    # Filter by risk band
+    # 4. Filter by risk band
     filtered_stocks = recommendation_engine.filter_by_risk_band(
-        mock_stocks,
+        candidate_stocks,
         user_risk_level,
     )
 
-    # Rank recommendations
+    # Fallback to candidates if risk band filtering yields empty set to prevent blank screen
+    if not filtered_stocks:
+        filtered_stocks = candidate_stocks
+
+    # 5. Rank recommendations
     recommendations = recommendation_engine.rank_recommendations(
         filtered_stocks,
         user_risk_level,
@@ -100,7 +114,39 @@ async def get_recommendations(
         top_n=limit,
     )
 
-    # Convert to response format
+    # 6. Persist recommendations into database
+    user_id_int = int(current_user["id"])
+    active_stmt = select(Recommendation).where(
+        Recommendation.user_id == user_id_int,
+        Recommendation.is_active == True,
+    )
+    prev_active = (await db.execute(active_stmt)).scalars().all()
+    for prev in prev_active:
+        prev.is_active = False
+
+    now = datetime.utcnow()
+    expires = now + timedelta(days=1)
+
+    for rec in recommendations:
+        db_rec = Recommendation(
+            user_id=user_id_int,
+            ticker=rec.ticker,
+            final_score=rec.scores.final_score,
+            research_score=rec.scores.research_score,
+            signal_score=rec.scores.signal_score,
+            risk_alignment_score=rec.scores.risk_alignment_score,
+            macro_fit_score=rec.scores.macro_fit_score,
+            explanation_text=rec.explanation,
+            reasoning_metadata=rec.reasoning_metadata,
+            created_at=now,
+            expires_at=expires,
+            is_active=True,
+        )
+        db.add(db_rec)
+
+    await db.commit()
+
+    # 7. Convert to response format
     response_recommendations = [
         RecommendationResponse(
             ticker=rec.ticker,

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
     LayoutDashboard,
     BarChart3,
@@ -23,6 +23,14 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/context/AuthContext"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const PUBLIC_ROUTES = ["/login", "/register"]
 
@@ -46,8 +54,9 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
     const { theme, setTheme } = useTheme()
-    const { user } = useAuth()
+    const { user, logout } = useAuth()
     const location = useLocation()
+    const navigate = useNavigate()
     const [sidebarOpen, setSidebarOpen] = useState(true)
 
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
@@ -159,17 +168,51 @@ export default function MainLayout({ children }: MainLayoutProps) {
                             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                         </Button>
                         <Separator orientation="vertical" className="h-6" />
-                        <div className="flex items-center space-x-3 group cursor-pointer">
-                            <div className="flex flex-col items-end mr-1">
-                                <span className="text-sm font-bold tracking-tight text-foreground">{user?.email?.split('@')[0] || "Trader"}</span>
-                                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Institutional Node</span>
-                            </div>
-                            <Avatar className="h-9 w-9 border border-primary/20 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
-                                <AvatarFallback className="bg-primary/10 text-primary font-bold uppercase">
-                                    {user?.email?.[0] || "U"}
-                                </AvatarFallback>
-                            </Avatar>
-                        </div>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <div className="flex items-center space-x-3 group cursor-pointer outline-none select-none">
+                                    <div className="flex flex-col items-end mr-1">
+                                        <span className="text-sm font-bold tracking-tight text-foreground">{user?.email?.split('@')[0] || "Trader"}</span>
+                                        <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Institutional Node</span>
+                                    </div>
+                                    <Avatar className="h-9 w-9 border border-primary/20 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
+                                        <AvatarFallback className="bg-primary/10 text-primary font-bold uppercase">
+                                            {user?.email?.[0] || "U"}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                </div>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel className="font-normal">
+                                    <div className="flex flex-col space-y-1">
+                                        <p className="text-xs font-bold leading-none text-foreground">{user?.email || "Analyst Session"}</p>
+                                        <p className="text-[10px] leading-none text-muted-foreground font-mono">
+                                            {user?.risk_level ? `${user.risk_level} Risk Tier` : "Standard Access"}
+                                        </p>
+                                    </div>
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => navigate("/account")}>
+                                    <User className="mr-2 h-4 w-4" />
+                                    <span>Account Profile</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                                    <Settings className="mr-2 h-4 w-4" />
+                                    <span>System Settings</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        logout()
+                                        navigate("/login")
+                                    }}
+                                    className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                                >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    <span>Sign Out Session</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </header>
 
