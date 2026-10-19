@@ -1,12 +1,317 @@
-"""Portfolio simulation API endpoints."""
+"""Portfolio simulation and management API endpoints."""
 
+from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 
 from app.core.dependencies import CurrentUser, DBSession
+from app.models.portfolio import Portfolio, PortfolioPosition
+from app.models.stock import Stock
 
 router = APIRouter()
+
+
+class PositionBase(BaseModel):
+    """Position request schema."""
+
+    ticker: str
+    weight: float = Field(..., ge=0, le=1, description="Portfolio weight (0.0 - 1.0)")
+    shares: float = Field(0.0, ge=0)
+    cost_basis: float = Field(0.0, ge=0)
+
+
+class PositionResponse(PositionBase):
+    """Position response schema."""
+
+    id: int
+    portfolio_id: int
+
+
+class PortfolioCreate(BaseModel):
+    """Portfolio creation request schema."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = None
+    initial_investment: float = Field(100000.0, gt=0)
+    positions: list[PositionBase] = []
+
+
+class PortfolioUpdate(BaseModel):
+    """Portfolio update request schema."""
+
+    name: str | None = None
+    description: str | None = None
+    initial_investment: float | None = Field(None, gt=0)
+    positions: list[PositionBase] | None = None
+
+
+class PortfolioResponse(BaseModel):
+    """Portfolio response schema."""
+
+    id: int
+    user_id: int
+    name: str
+    description: str | None
+    initial_investment: float
+    positions: list[PositionResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PortfoliosListResponse(BaseModel):
+    """List of portfolios response schema."""
+
+    portfolios: list[PortfolioResponse]
+    total_count: int
+
+
+@router.get("/", response_model=PortfoliosListResponse)
+async def list_portfolios(
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PortfoliosListResponse:
+    """List all portfolios for current user."""
+    user_id = int(current_user["id"])
+    stmt = (
+        select(Portfolio)
+        .where(Portfolio.user_id == user_id)
+        .order_by(desc(Portfolio.updated_at))
+    )
+    result = await db.execute(stmt)
+    portfolios = result.scalars().all()
+
+    items = [
+        PortfolioResponse(
+            id=p.id,
+            user_id=p.user_id,
+            name=p.name,
+            description=p.description,
+            initial_investment=p.initial_investment,
+            positions=[
+                PositionResponse(
+                    id=pos.id,
+                    portfolio_id=pos.portfolio_id,
+                    ticker=pos.ticker,
+                    weight=pos.weight,
+                    shares=pos.shares,
+                    cost_basis=pos.cost_basis,
+                )
+                for pos in p.positions
+            ],
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in portfolios
+    ]
+
+    return PortfoliosListResponse(portfolios=items, total_count=len(items))
+
+
+@router.post("/", response_model=PortfolioResponse, status_code=status.HTTP_201_CREATED)
+async def create_portfolio(
+    request: PortfolioCreate,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PortfolioResponse:
+    """Create a new portfolio with initial positions."""
+    user_id = int(current_user["id"])
+    now = datetime.utcnow()
+    new_portfolio = Portfolio(
+        user_id=user_id,
+        name=request.name,
+        description=request.description,
+        initial_investment=request.initial_investment,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(new_portfolio)
+    await db.flush()
+
+    for pos in request.positions:
+        ticker_upper = pos.ticker.upper()
+        # Verify or auto-seed stock dependency for FK integrity
+        stock_check = await db.execute(select(Stock).where(Stock.ticker == ticker_upper))
+        if not stock_check.scalar_one_or_none():
+            db.add(Stock(ticker=ticker_upper, name=ticker_upper))
+            await db.flush()
+
+        p_pos = PortfolioPosition(
+            portfolio=new_portfolio,
+            portfolio_id=new_portfolio.id or 0,
+            ticker=ticker_upper,
+            weight=pos.weight,
+            shares=pos.shares,
+            cost_basis=pos.cost_basis,
+        )
+        db.add(p_pos)
+
+    await db.commit()
+    await db.refresh(new_portfolio)
+
+    return PortfolioResponse(
+        id=new_portfolio.id or 1,
+        user_id=new_portfolio.user_id,
+        name=new_portfolio.name,
+        description=new_portfolio.description,
+        initial_investment=new_portfolio.initial_investment,
+        positions=[
+            PositionResponse(
+                id=pos.id or 0,
+                portfolio_id=pos.portfolio_id or new_portfolio.id or 1,
+                ticker=pos.ticker,
+                weight=pos.weight,
+                shares=pos.shares,
+                cost_basis=pos.cost_basis,
+            )
+            for pos in new_portfolio.positions
+        ],
+        created_at=new_portfolio.created_at or now,
+        updated_at=new_portfolio.updated_at or now,
+    )
+
+
+@router.get("/{portfolio_id}", response_model=PortfolioResponse)
+async def get_portfolio(
+    portfolio_id: int,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PortfolioResponse:
+    """Get portfolio by ID."""
+    user_id = int(current_user["id"])
+    stmt = select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == user_id)
+    result = await db.execute(stmt)
+    portfolio = result.scalar_one_or_none()
+
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found",
+        )
+
+    return PortfolioResponse(
+        id=portfolio.id,
+        user_id=portfolio.user_id,
+        name=portfolio.name,
+        description=portfolio.description,
+        initial_investment=portfolio.initial_investment,
+        positions=[
+            PositionResponse(
+                id=pos.id,
+                portfolio_id=pos.portfolio_id,
+                ticker=pos.ticker,
+                weight=pos.weight,
+                shares=pos.shares,
+                cost_basis=pos.cost_basis,
+            )
+            for pos in portfolio.positions
+        ],
+        created_at=portfolio.created_at,
+        updated_at=portfolio.updated_at,
+    )
+
+
+@router.put("/{portfolio_id}", response_model=PortfolioResponse)
+async def update_portfolio(
+    portfolio_id: int,
+    request: PortfolioUpdate,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PortfolioResponse:
+    """Update portfolio metadata or rebalance positions."""
+    user_id = int(current_user["id"])
+    stmt = select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == user_id)
+    result = await db.execute(stmt)
+    portfolio = result.scalar_one_or_none()
+
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found",
+        )
+
+    if request.name is not None:
+        portfolio.name = request.name
+    if request.description is not None:
+        portfolio.description = request.description
+    if request.initial_investment is not None:
+        portfolio.initial_investment = request.initial_investment
+
+    if request.positions is not None:
+        # Remove previous positions
+        del_stmt = select(PortfolioPosition).where(PortfolioPosition.portfolio_id == portfolio.id)
+        existing = (await db.execute(del_stmt)).scalars().all()
+        for ep in existing:
+            await db.delete(ep)
+        portfolio.positions.clear()
+        await db.flush()
+
+        # Add new positions
+        for pos in request.positions:
+            ticker_upper = pos.ticker.upper()
+            stock_check = await db.execute(select(Stock).where(Stock.ticker == ticker_upper))
+            if not stock_check.scalar_one_or_none():
+                db.add(Stock(ticker=ticker_upper, name=ticker_upper))
+                await db.flush()
+
+            p_pos = PortfolioPosition(
+                portfolio=portfolio,
+                portfolio_id=portfolio.id,
+                ticker=ticker_upper,
+                weight=pos.weight,
+                shares=pos.shares,
+                cost_basis=pos.cost_basis,
+            )
+            db.add(p_pos)
+
+    portfolio.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(portfolio)
+
+    return PortfolioResponse(
+        id=portfolio.id,
+        user_id=portfolio.user_id,
+        name=portfolio.name,
+        description=portfolio.description,
+        initial_investment=portfolio.initial_investment,
+        positions=[
+            PositionResponse(
+                id=pos.id or 0,
+                portfolio_id=pos.portfolio_id or portfolio.id,
+                ticker=pos.ticker,
+                weight=pos.weight,
+                shares=pos.shares,
+                cost_basis=pos.cost_basis,
+            )
+            for pos in portfolio.positions
+        ],
+        created_at=portfolio.created_at or datetime.utcnow(),
+        updated_at=portfolio.updated_at or datetime.utcnow(),
+    )
+
+
+@router.delete("/{portfolio_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_portfolio(
+    portfolio_id: int,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> None:
+    """Delete portfolio by ID."""
+    user_id = int(current_user["id"])
+    stmt = select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == user_id)
+    result = await db.execute(stmt)
+    portfolio = result.scalar_one_or_none()
+
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found",
+        )
+
+    await db.delete(portfolio)
+    await db.commit()
+    return None
 
 
 class PortfolioStock(BaseModel):
