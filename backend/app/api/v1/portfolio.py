@@ -328,6 +328,9 @@ class SimulationRequest(BaseModel):
     stocks: list[PortfolioStock]
     initial_investment: float = Field(..., gt=0)
     time_horizon_months: int = Field(..., ge=1, le=360)
+    volatility_mode: str = Field(
+        "base", description="Volatility assumption: 'conservative', 'base', or 'aggressive'"
+    )
 
 
 class TrajectoryPoint(BaseModel):
@@ -448,6 +451,17 @@ async def simulate_portfolio(
 
     portfolio_return = analytics.portfolio_return
     portfolio_vol = analytics.portfolio_volatility
+
+    # Scale metrics based on user's scenario assumption
+    vol_mode = (request.volatility_mode or "base").lower()
+    if vol_mode == "conservative":
+        portfolio_vol *= 1.20
+        portfolio_return *= 0.90
+        portfolio_max_dd *= 1.25
+    elif vol_mode == "aggressive":
+        portfolio_vol *= 0.85
+        portfolio_return *= 1.10
+        portfolio_max_dd *= 0.85
 
     rf = 0.025  # Risk-free rate
     sharpe = (portfolio_return - rf) / portfolio_vol if portfolio_vol > 0 else 0.0
