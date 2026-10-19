@@ -8,11 +8,6 @@ import {
     Download,
     Droplets,
     Globe,
-    Cpu,
-    Monitor,
-    Database,
-    Cloud,
-    Network,
     Search
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -30,20 +25,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 
-const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META"]
+const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "TLT", "GLD"]
 
-const matrix = [
-    { label: "CPU TECH", val: "0.82", color: "bg-q-risk-high/90", icon: Cpu },
-    { label: "GPU CLOUD", val: "0.71", color: "bg-q-risk-high/70", icon: Cloud },
-    { label: "NETWORKING", val: "0.45", color: "bg-q-risk-high/40", icon: Network },
-    { label: "AUTO AI", val: "0.22", color: "bg-q-risk-low/40", icon: Monitor },
-    { label: "GAMING", val: "0.15", color: "bg-q-risk-low/60", icon: Monitor },
-    { label: "DATA CENTER", val: "0.78", color: "bg-q-risk-high/80", icon: Database },
-    { label: "AI INFRA", val: "0.55", color: "bg-q-risk-high/50", icon: Monitor },
-    { label: "RESEARCH", val: "0.28", color: "bg-q-risk-low/30", icon: Monitor },
-    { label: "OMNIVERSE", val: "0.12", color: "bg-q-risk-low/70", icon: Monitor },
-    { label: "EDGE COMP", val: "0.08", color: "bg-q-risk-low/80", icon: Monitor },
-]
 
 const drawdownData = [
     { time: "0", historical: 100 },
@@ -69,13 +52,27 @@ export default function Risk() {
     const activeTicker = (urlTicker || localTicker).toUpperCase()
 
     // Fetch dynamic stock risk details from backend
-    const { data: riskData, isLoading, refetch } = useQuery({
+    const { data: riskData, isLoading, refetch: refetchRisk } = useQuery({
         queryKey: ["stockRisk", activeTicker],
         queryFn: async () => {
             const res = await apiClient.get(`/stocks/${activeTicker}/risk`)
             return res.data
         }
     })
+
+    // Fetch dynamic peer and benchmark correlation data
+    const { data: corrData, refetch: refetchCorr } = useQuery({
+        queryKey: ["stockCorrelation", activeTicker],
+        queryFn: async () => {
+            const res = await apiClient.get(`/stocks/${activeTicker}/correlation`)
+            return res.data
+        }
+    })
+
+    const handleRefetch = () => {
+        refetchRisk()
+        refetchCorr()
+    }
 
     const handleSelectTicker = (t: string) => {
         setLocalTicker(t)
@@ -211,7 +208,7 @@ export default function Risk() {
                         Export Data
                     </Button>
                     <Button
-                        onClick={() => refetch()}
+                        onClick={handleRefetch}
                         disabled={isLoading}
                         size="sm"
                         className="bg-primary hover:brightness-110 text-primary-foreground text-[10px] font-black uppercase tracking-[0.15em] h-9 px-4"
@@ -405,35 +402,75 @@ export default function Risk() {
                             </CardContent>
                         </Card>
 
-                        {/* Heatmap */}
+                        {/* Dynamic Peer Correlation Matrix */}
                         <Card className="bg-q-surface border-q-border shadow-none overflow-hidden">
-                            <CardHeader className="p-6 border-b border-q-border bg-background/20">
-                                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Risk Concentration Matrix</CardTitle>
-                                <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Attribution across asset sub-segments</p>
+                            <CardHeader className="p-6 border-b border-q-border bg-background/20 flex-row items-center justify-between space-y-0">
+                                <div>
+                                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Sector Peer & Cross-Asset Correlation</CardTitle>
+                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
+                                        Pairwise co-movement with {activeTicker} ({corrData?.sector || "Technology"})
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 font-mono text-[9px] font-black uppercase">
+                                    <span className="text-muted-foreground">S&P 500:</span>
+                                    <Badge variant="outline" className="text-primary font-mono font-bold bg-primary/10 border-primary/30">
+                                        ρ = {corrData?.benchmark_correlation ? corrData.benchmark_correlation.toFixed(2) : "0.72"}
+                                    </Badge>
+                                </div>
                             </CardHeader>
                             <CardContent className="p-4 bg-background/5 border-b border-q-border/30">
-                                <div className="grid grid-cols-5 gap-1.5 h-64">
-                                    {matrix.map((m, i) => (
-                                        <div key={i} className={cn("p-2 text-[9px] font-black flex flex-col justify-between transition-all hover:scale-105 hover:z-10 cursor-crosshair border border-white/5 text-white rounded-sm group shadow-lg", m.color)}>
-                                            <div className="flex justify-between items-start">
-                                                <span className="leading-tight uppercase tracking-tighter opacity-90 group-hover:opacity-100">{m.label}</span>
-                                                {m.icon && <m.icon className="size-3 opacity-40 group-hover:opacity-100 transition-opacity" />}
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 h-64 overflow-y-auto custom-scrollbar">
+                                    {(corrData?.peers || []).map((peer: any) => {
+                                        const corr = peer.correlation
+                                        const isNegative = corr < 0
+                                        const isHigh = corr >= 0.65
+                                        const isLow = corr < 0.35 && !isNegative
+                                        const colorClass = isNegative 
+                                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
+                                            : isHigh
+                                            ? "bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30"
+                                            : isLow
+                                            ? "bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30"
+                                            : "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30"
+
+                                        return (
+                                            <div
+                                                key={peer.ticker}
+                                                onClick={() => handleSelectTicker(peer.ticker)}
+                                                className={cn(
+                                                    "p-2.5 text-[9px] font-black flex flex-col justify-between transition-all hover:scale-105 hover:z-10 cursor-pointer border rounded-sm group shadow-md",
+                                                    colorClass
+                                                )}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <span className="font-mono text-xs font-black tracking-tight">{peer.ticker}</span>
+                                                        <div className="text-[7.5px] font-bold text-muted-foreground uppercase truncate max-w-[80px]">
+                                                            {peer.sector}
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[7.5px] font-mono px-1 py-0.5 rounded bg-background/50 border border-current/20">
+                                                        β {peer.beta.toFixed(1)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-end justify-between mt-2">
+                                                    <span className="text-[7.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                                                        {peer.relationship}
+                                                    </span>
+                                                    <span className="font-mono font-black text-xs">
+                                                        {corr >= 0 ? `+${corr.toFixed(2)}` : corr.toFixed(2)}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <span className="text-right font-mono font-black scale-90 group-hover:scale-100 transition-transform">{m.val}</span>
-                                        </div>
-                                    ))}
-                                    {[...Array(10)].map((_, i) => (
-                                        <div key={i + 10} className="bg-q-risk-low/5 p-2 text-[9px] font-black flex flex-col justify-between opacity-30 border border-q-border/20 rounded-sm">
-                                            <span className="uppercase tracking-tighter text-muted-foreground">OTHER</span>
-                                            <span className="text-right font-mono text-muted-foreground">0.02</span>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </CardContent>
-                            <div className="p-4 px-6 bg-q-surface flex justify-between items-center text-[9px] font-black font-mono text-muted-foreground uppercase tracking-[0.2em]">
-                                <span className="flex items-center gap-2"><div className="size-2 bg-q-risk-low rounded-full" /> Min Risk</span>
-                                <div className="flex-grow mx-8 h-1.5 bg-gradient-to-r from-q-risk-low via-primary to-q-risk-high rounded-full opacity-60" />
-                                <span className="flex items-center gap-2"><div className="size-2 bg-q-risk-high rounded-full" /> Max Risk</span>
+                            <div className="p-4 px-6 bg-q-surface flex flex-wrap justify-between items-center text-[9px] font-black font-mono text-muted-foreground uppercase tracking-[0.2em] gap-2">
+                                <span className="flex items-center gap-1.5 text-emerald-400"><div className="size-2 bg-emerald-500 rounded-full" /> Negative / Hedge</span>
+                                <span className="flex items-center gap-1.5 text-blue-400"><div className="size-2 bg-blue-500 rounded-full" /> Low Correlation</span>
+                                <span className="flex items-center gap-1.5 text-amber-400"><div className="size-2 bg-amber-500 rounded-full" /> Moderate</span>
+                                <span className="flex items-center gap-1.5 text-red-400"><div className="size-2 bg-red-500 rounded-full" /> High Concentration</span>
                             </div>
                         </Card>
                     </div>

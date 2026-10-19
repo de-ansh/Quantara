@@ -124,3 +124,113 @@ async def get_stock_risk_analysis(
         ),
         explanation=risk_data.get("explanation", ""),
     )
+
+
+class PeerCorrelation(BaseModel):
+    """Peer correlation response schema."""
+
+    ticker: str
+    name: str
+    sector: str
+    correlation: float
+    beta: float
+    relationship: str
+
+
+class StockCorrelationResponse(BaseModel):
+    """Stock correlation response schema."""
+
+    ticker: str
+    sector: str
+    benchmark_correlation: float
+    peers: list[PeerCorrelation]
+
+
+@router.get("/stocks/{ticker}/correlation", response_model=StockCorrelationResponse)
+async def get_stock_correlations(
+    ticker: str,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> StockCorrelationResponse:
+    """
+    Get dynamic cross-asset and sector peer correlations for a stock.
+
+    Args:
+        ticker: Stock ticker symbol
+        current_user: Authenticated user
+        db: Database session
+
+    Returns:
+        Structured correlation dataset with sector peers and macro hedges
+    """
+    from sqlalchemy import select
+
+    from app.models.stock import Stock
+    from app.services.portfolio_analytics import PortfolioAnalyticsEngine
+
+    ticker_upper = ticker.upper()
+
+    # Query active stock to determine sector and beta
+    stmt = select(Stock).where(Stock.ticker == ticker_upper)
+    res = await db.execute(stmt)
+    stock = res.scalar_one_or_none()
+
+    active_sector = stock.sector if stock and stock.sector else "Technology"
+    active_beta = stock.beta if stock and stock.beta else 1.1
+
+    # Diverse multi-asset candidate pool
+    CANDIDATE_PEERS = [
+        {"ticker": "AAPL", "name": "Apple Inc.", "sector": "Technology", "beta": 1.2},
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "sector": "Technology", "beta": 1.1},
+        {"ticker": "NVDA", "name": "NVIDIA Corp.", "sector": "Technology", "beta": 1.7},
+        {"ticker": "GOOGL", "name": "Alphabet Inc.", "sector": "Communication Services", "beta": 1.1},
+        {"ticker": "AMZN", "name": "Amazon.com Inc.", "sector": "Consumer Discretionary", "beta": 1.15},
+        {"ticker": "TSLA", "name": "Tesla Inc.", "sector": "Consumer Discretionary", "beta": 1.5},
+        {"ticker": "JNJ", "name": "Johnson & Johnson", "sector": "Healthcare", "beta": 0.6},
+        {"ticker": "JPM", "name": "JPMorgan Chase & Co.", "sector": "Financials", "beta": 1.1},
+        {"ticker": "XOM", "name": "Exxon Mobil Corp.", "sector": "Energy", "beta": 0.9},
+        {"ticker": "TLT", "name": "20+ Year Treasury Bond ETF", "sector": "Fixed Income", "beta": 0.15},
+        {"ticker": "GLD", "name": "SPDR Gold Shares", "sector": "Commodities", "beta": 0.05},
+        {"ticker": "BIL", "name": "SPDR 1-3M T-Bill (Cash)", "sector": "Cash", "beta": 0.0},
+    ]
+
+    peers: list[PeerCorrelation] = []
+    for cand in CANDIDATE_PEERS:
+        if cand["ticker"] == ticker_upper:
+            continue
+
+        corr = PortfolioAnalyticsEngine.estimate_pairwise_correlation(
+            ticker_upper,
+            cand["ticker"],
+            sector_a=active_sector,
+            sector_b=cand["sector"],
+        )
+
+        if cand["sector"] == active_sector:
+            rel = "Direct Sector Peer"
+        elif cand["sector"] in ("Fixed Income", "Commodities", "Cash"):
+            rel = "Macro / Risk Hedge" if corr <= 0 else "Low Correlation Asset"
+        else:
+            rel = "Cross-Sector Equity"
+
+        peers.append(
+            PeerCorrelation(
+                ticker=cand["ticker"],
+                name=cand["name"],
+                sector=cand["sector"],
+                correlation=round(corr, 2),
+                beta=cand["beta"],
+                relationship=rel,
+            )
+        )
+
+    # Benchmark correlation with S&P 500 estimated from beta
+    benchmark_corr = min(0.95, max(0.10, round(0.55 + (active_beta - 1.0) * 0.25, 2)))
+
+    return StockCorrelationResponse(
+        ticker=ticker_upper,
+        sector=active_sector,
+        benchmark_correlation=benchmark_corr,
+        peers=peers[:10],
+    )
+

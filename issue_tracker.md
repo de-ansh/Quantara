@@ -14,11 +14,11 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
-| **Risk Analytics & Views (RSK)** | 3 | 0 | 2 | 1 | 0 |
+| **Risk Analytics & Views (RSK)** | 2 | 0 | 1 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **12** | **0** | **7** | **5** | **0** |
+| **Total** | **11** | **0** | **6** | **5** | **0** |
 
 ---
 
@@ -136,13 +136,14 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Send `volatility_mode` ("conservative", "base", "aggressive") and `initial_investment` to `/portfolio/simulate`.
   - [x] Render dynamic diversification benefit badge and correlation matrix view tab.
 
-### [QTR-RSK-01] Dynamic Correlation & Segment Matrix in `Risk.tsx`
+### [QTR-RSK-01] Dynamic Correlation & Segment Matrix in `Risk.tsx` ✅
 - **Category**: Risk Analytics
-- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx)
+- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx), [`backend/app/api/v1/risk.py`](backend/app/api/v1/risk.py)
 - **Description**: Correlation matrix displays hardcoded semiconductor segments ("CPU TECH", "GPU CLOUD") for all stocks.
 - **Acceptance Criteria**:
-  - [ ] Provide backend endpoint returning sector peer correlations for the active stock.
-  - [ ] Render dynamic correlation matrix.
+  - [x] Provide backend endpoint `GET /api/v1/stocks/{ticker}/correlation` returning sector peer correlations and benchmark exposure.
+  - [x] Render dynamic correlation matrix and risk badges in `Risk.tsx` for any selected stock.
+  - [x] Unit test coverage in `backend/app/tests/test_risk_engine.py`.
 
 ### [QTR-RSK-02] Dynamic Drawdown Curve in `Risk.tsx`
 - **Category**: Risk Analytics
