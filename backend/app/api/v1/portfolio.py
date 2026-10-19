@@ -9,6 +9,7 @@ from sqlalchemy import desc, select
 from app.core.dependencies import CurrentUser, DBSession
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.stock import Stock
+from app.services.portfolio_analytics import PortfolioAnalyticsEngine
 
 router = APIRouter()
 
@@ -347,6 +348,18 @@ class SimulationResult(BaseModel):
     max_drawdown: float
     risk_adjusted_return: float
     trajectory: list[TrajectoryPoint]
+    diversification_benefit_pct: float = Field(
+        0.0, description="Volatility reduction achieved through diversification (%)"
+    )
+    asset_volatilities: dict[str, float] = Field(
+        default_factory=dict, description="Individual asset annualized volatilities"
+    )
+    correlation_matrix: dict[str, dict[str, float]] = Field(
+        default_factory=dict, description="Pairwise asset correlation matrix"
+    )
+    covariance_matrix: list[list[float]] = Field(
+        default_factory=list, description="Asset covariance matrix (w^T * Sigma * w)"
+    )
 
 
 @router.post("/simulate", response_model=SimulationResult)
@@ -356,7 +369,7 @@ async def simulate_portfolio(
     db: DBSession,
 ) -> SimulationResult:
     """
-    Run portfolio simulation.
+    Run portfolio simulation using Markowitz Modern Portfolio Theory covariance.
 
     Args:
         request: Simulation parameters
@@ -364,7 +377,7 @@ async def simulate_portfolio(
         db: Database session
 
     Returns:
-        Simulation results
+        Simulation results with MPT covariance metrics and trajectories
     """
     import math
 
@@ -386,14 +399,18 @@ async def simulate_portfolio(
         "BIL": {"return": 0.025, "volatility": 0.01, "beta": 0.00, "max_dd": -0.01},
     }
 
-    portfolio_return = 0.0
-    portfolio_vol = 0.0
+    tickers: list[str] = []
+    weights: list[float] = []
+    vols: list[float] = []
+    returns: list[float] = []
+    sectors: dict[str, str | None] = {}
     portfolio_beta = 0.0
     portfolio_max_dd = 0.0
 
     for item in request.stocks:
         ticker_upper = item.ticker.upper()
-        weight = item.weight
+        tickers.append(ticker_upper)
+        weights.append(item.weight)
 
         stmt = select(Stock).where(Stock.ticker == ticker_upper)
         res = await db.execute(stmt)
@@ -404,6 +421,7 @@ async def simulate_portfolio(
             stock_beta = db_stock.beta or 1.0
             stock_return = 0.02 + (db_stock.research_score or 50.0) * 0.0015
             stock_max_dd = -stock_vol * 1.2
+            sectors[ticker_upper] = db_stock.sector
         else:
             m = DEFAULT_METRICS.get(
                 ticker_upper, {"return": 0.08, "volatility": 0.15, "beta": 1.0, "max_dd": -0.15}
@@ -412,14 +430,24 @@ async def simulate_portfolio(
             stock_vol = m["volatility"]
             stock_beta = m["beta"]
             stock_max_dd = m["max_dd"]
+            sectors[ticker_upper] = None
 
-        portfolio_return += weight * stock_return
-        portfolio_vol += weight * stock_vol
-        portfolio_beta += weight * stock_beta
+        returns.append(stock_return)
+        vols.append(stock_vol)
+        portfolio_beta += item.weight * stock_beta
         portfolio_max_dd = min(portfolio_max_dd, stock_max_dd)
 
-    # Apply simple diversification benefit to volatility
-    portfolio_vol = portfolio_vol * 0.95
+    # Calculate MPT Covariance Matrix & Portfolio Risk
+    analytics = PortfolioAnalyticsEngine.calculate_portfolio_metrics(
+        tickers=tickers,
+        weights=weights,
+        volatilities=vols,
+        expected_returns=returns,
+        sectors=sectors,
+    )
+
+    portfolio_return = analytics.portfolio_return
+    portfolio_vol = analytics.portfolio_volatility
 
     rf = 0.025  # Risk-free rate
     sharpe = (portfolio_return - rf) / portfolio_vol if portfolio_vol > 0 else 0.0
@@ -452,4 +480,8 @@ async def simulate_portfolio(
         max_drawdown=round(portfolio_max_dd * 100, 2),
         risk_adjusted_return=round(risk_adjusted * 100, 2),
         trajectory=trajectory,
+        diversification_benefit_pct=analytics.diversification_benefit_pct,
+        asset_volatilities=analytics.asset_volatilities,
+        correlation_matrix=analytics.correlation_matrix,
+        covariance_matrix=analytics.covariance_matrix,
     )

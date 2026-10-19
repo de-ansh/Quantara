@@ -13,12 +13,12 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 1 | 0 | 1 | 0 | 0 |
-| **Portfolio & Simulation (PORT)** | 2 | 0 | 2 | 0 | 0 |
+| **Portfolio & Simulation (PORT)** | 1 | 0 | 1 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 3 | 0 | 2 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **15** | **0** | **10** | **5** | **0** |
+| **Total** | **14** | **0** | **9** | **5** | **0** |
 
 ---
 
@@ -114,13 +114,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [ ] Fetch and cache `https://www.sec.gov/files/company_tickers.json` to resolve any US ticker to its CIK.
   - [ ] Fall back to static map if SEC directory fetch fails.
 
-### [QTR-PORT-02] Covariance Matrix & Asset Correlation in Portfolio Simulation
+### [QTR-PORT-02] Covariance Matrix & Asset Correlation in Portfolio Simulation ✅
 - **Category**: Portfolio Management
-- **Component**: [`backend/app/api/v1/portfolio.py`](backend/app/api/v1/portfolio.py)
+- **Component**: [`backend/app/api/v1/portfolio.py`](backend/app/api/v1/portfolio.py), [`backend/app/services/portfolio_analytics.py`](backend/app/services/portfolio_analytics.py)
 - **Description**: Portfolio volatility is currently estimated assuming zero covariance between assets.
 - **Acceptance Criteria**:
-  - [ ] Calculate historical covariance matrix across portfolio components from Yahoo Finance daily return series.
-  - [ ] Use $w^T \Sigma w$ for true portfolio variance in Monte Carlo trajectory generation.
+  - [x] Model cross-asset correlation and covariance matrix across portfolio components (`PortfolioAnalyticsEngine`).
+  - [x] Use $w^T \Sigma w$ for true portfolio variance in Monte Carlo trajectory generation.
+  - [x] Return correlation matrix, covariance matrix, individual asset volatilities, and diversification benefit in simulation response.
+  - [x] 100% test coverage in `backend/app/tests/test_portfolio_simulation.py`.
 
 ### [QTR-PORT-03] Dynamic Stock Allocation & Volatility Mode in `Simulation.tsx`
 - **Category**: Portfolio Management
