@@ -1,46 +1,81 @@
 import { useState, useEffect } from "react"
 import { useTheme } from "@/context/use-theme"
+import apiClient from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Key, Globe, Eye, EyeOff, Save, RotateCcw, Settings as SettingsIcon, Sun, Moon } from "lucide-react"
+import { Key, Globe, Eye, EyeOff, Save, RotateCcw, Settings as SettingsIcon, Sun, Moon, ShieldCheck } from "lucide-react"
 
 export default function Settings() {
     const { theme, setTheme } = useTheme()
     const [openaiKey, setOpenaiKey] = useState("")
     const [secUserAgent, setSecUserAgent] = useState("")
+    const [hasServerKey, setHasServerKey] = useState(false)
+    const [serverConfiguredKey, setServerConfiguredKey] = useState<string | null>(null)
     const [showKey, setShowKey] = useState(false)
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
 
     useEffect(() => {
         const storedKey = localStorage.getItem("openai_api_key") || ""
         const storedUA = localStorage.getItem("sec_user_agent") || ""
-        setOpenaiKey(storedKey)
-        setSecUserAgent(storedUA)
+        if (storedKey) setOpenaiKey(storedKey)
+        if (storedUA) setSecUserAgent(storedUA)
+
+        // Hydrate from server-side credentials storage
+        apiClient.get<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials")
+            .then(res => {
+                if (res.data) {
+                    if (res.data.has_openai_key) {
+                        setHasServerKey(true)
+                        setServerConfiguredKey(res.data.openai_key_masked)
+                    }
+                    if (res.data.sec_user_agent) {
+                        setSecUserAgent(res.data.sec_user_agent)
+                        localStorage.setItem("sec_user_agent", res.data.sec_user_agent)
+                    }
+                }
+            })
+            .catch(() => {
+                // Fall back to local storage if offline or unauthenticated
+            })
     }, [])
 
-    const handleSave = () => {
+    const handleSave = async () => {
         setSaveStatus("saving")
-        setTimeout(() => {
+        try {
+            const payload: { openai_api_key?: string; sec_user_agent?: string } = {}
             if (openaiKey.trim()) {
+                payload.openai_api_key = openaiKey.trim()
                 localStorage.setItem("openai_api_key", openaiKey.trim())
-            } else {
-                localStorage.removeItem("openai_api_key")
+            }
+            if (secUserAgent.trim()) {
+                payload.sec_user_agent = secUserAgent.trim()
+                localStorage.setItem("sec_user_agent", secUserAgent.trim())
             }
 
-            if (secUserAgent.trim()) {
-                localStorage.setItem("sec_user_agent", secUserAgent.trim())
-            } else {
-                localStorage.removeItem("sec_user_agent")
+            const res = await apiClient.put<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials", payload)
+            if (res.data) {
+                setHasServerKey(res.data.has_openai_key)
+                setServerConfiguredKey(res.data.openai_key_masked)
             }
             setSaveStatus("saved")
-            setTimeout(() => setSaveStatus("idle"), 2000)
-        }, 800)
+            setTimeout(() => setSaveStatus("idle"), 2500)
+        } catch {
+            setSaveStatus("idle")
+        }
     }
 
-    const handleReset = () => {
+    const handleReset = async () => {
+        setSaveStatus("saving")
+        try {
+            await apiClient.put("/users/credentials", { openai_api_key: "", sec_user_agent: "" })
+        } catch {
+            // Ignore server reset errors in offline mode
+        }
         setOpenaiKey("")
         setSecUserAgent("")
+        setHasServerKey(false)
+        setServerConfiguredKey(null)
         localStorage.removeItem("openai_api_key")
         localStorage.removeItem("sec_user_agent")
         setSaveStatus("saved")
@@ -108,24 +143,38 @@ export default function Settings() {
                 {/* API Credentials */}
                 <Card className="bg-card border-border shadow-none">
                     <CardHeader className="p-4 pb-2 border-b border-border/50">
-                        <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">API Credentials & Overrides</CardTitle>
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">API Credentials & Overrides</CardTitle>
+                            {hasServerKey && (
+                                <Badge variant="outline" className="text-[9px] font-mono text-green-400 border-green-500/30 bg-green-500/10 flex items-center gap-1 font-bold uppercase">
+                                    <ShieldCheck className="size-3" /> Server-Encrypted
+                                </Badge>
+                            )}
+                        </div>
                         <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
-                            These credentials override environment configurations and are stored locally
+                            Encrypted server-side using AES-CBC Fernet and synchronized with your session
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="p-6 space-y-4">
                         {/* OpenAI API Key */}
                         <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                                <Key className="size-3.5 text-primary" />
-                                OpenAI API Key
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                    <Key className="size-3.5 text-primary" />
+                                    OpenAI API Key
+                                </label>
+                                {serverConfiguredKey && (
+                                    <span className="text-[10px] font-mono text-muted-foreground">
+                                        Active: {serverConfiguredKey}
+                                    </span>
+                                )}
+                            </div>
                             <div className="relative">
                                 <input
                                     type={showKey ? "text" : "password"}
                                     value={openaiKey}
                                     onChange={(e) => setOpenaiKey(e.target.value)}
-                                    placeholder="sk-proj-..."
+                                    placeholder={hasServerKey ? "•••••••••••• (Leave blank to retain active server key)" : "sk-proj-..."}
                                     className="w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm pl-4 pr-10 py-2.5 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50 font-mono"
                                 />
                                 <button

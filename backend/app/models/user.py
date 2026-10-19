@@ -31,6 +31,14 @@ class User(Base):
         JSON, nullable=True, comment="Preferred sectors and weights"
     )
 
+    # External Credentials & Overrides
+    openai_api_key: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="Encrypted external OpenAI API key"
+    )
+    sec_user_agent: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Custom SEC User-Agent header"
+    )
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
