@@ -13,10 +13,10 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
-| **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
+| **Signal Engine & Ingestion (SIG)**| 2 | 0 | 1 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **8** | **0** | **3** | **5** | **0** |
+| **Total** | **7** | **0** | **2** | **5** | **0** |
 
 ---
 
@@ -156,13 +156,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Generate deterministic forward stressed shock simulation trajectory.
   - [x] Unit test coverage in `backend/app/tests/test_risk_engine.py`.
 
-### [QTR-SIG-01] Wire Sentiment & Institutional Ingestion into Periodic Worker
+### [QTR-SIG-01] Wire Sentiment & Institutional Ingestion into Periodic Worker ✅
 - **Category**: Signal Engine
 - **Component**: [`backend/app/services/signal_engine.py`](backend/app/services/signal_engine.py)
 - **Description**: Periodic background task only checks Form 4 insider transactions and company facts EPS; sentiment spike detection is never called.
 - **Acceptance Criteria**:
-  - [ ] Schedule `detect_sentiment_spike` in background loop.
-  - [ ] Save detected sentiment signals to `signals` DB table.
+  - [x] Schedule `detect_sentiment_spike` in background loop.
+  - [x] Save detected sentiment signals to `signals` DB table.
+  - [x] Schedule `detect_institutional_buying` accumulation in background loop.
+  - [x] 100% test coverage in `backend/app/tests/test_signal_engine.py`.
 
 ### [QTR-SIG-02] Real SEC Form 13F Filing Ingestion for Institutional Buying
 - **Category**: Signal Engine
