@@ -31,3 +31,7 @@ logs/
 .temp
 .tmp
 *.bak
+.coverage
+.pytest_cache/
+htmlcov/
+

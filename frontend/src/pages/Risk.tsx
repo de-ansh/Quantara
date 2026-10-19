@@ -28,20 +28,12 @@ import { Separator } from "@/components/ui/separator"
 const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "TLT", "GLD"]
 
 
-const drawdownData = [
-    { time: "0", historical: 100 },
-    { time: "1", historical: 95 },
-    { time: "2", historical: 98 },
-    { time: "3", historical: 85 },
-    { time: "4", historical: 88 },
-    { time: "5", historical: 70 },
-    { time: "6", historical: 75 },
-    { time: "7", historical: 60 },
-    { time: "8", historical: 65, projected: 65 },
-    { time: "9", historical: 65, projected: 55 },
-    { time: "10", historical: 65, projected: 58 },
-    { time: "11", historical: 65, projected: 45 },
-]
+interface DrawdownPoint {
+    time: string
+    historical?: number | null
+    projected?: number | null
+    drawdown_pct?: number | null
+}
 
 export default function Risk() {
     const { ticker: urlTicker } = useParams()
@@ -348,19 +340,50 @@ export default function Risk() {
                             <CardHeader className="p-6 border-b border-q-border bg-background/20 flex-row items-center justify-between space-y-0">
                                 <div>
                                     <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Historical Max Drawdown</CardTitle>
-                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Historical vs. Projected Stressed Performance</p>
+                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
+                                        Historical vs. Projected Stressed Performance
+                                        {riskData?.max_drawdown !== undefined && (
+                                            <span className="ml-2 font-mono text-q-risk-high font-bold">
+                                                [1Y Max DD: {(riskData.max_drawdown * 100).toFixed(1)}%]
+                                            </span>
+                                        )}
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-4 text-[9px] font-black font-mono tracking-widest">
                                     <div className="flex items-center gap-1.5 text-primary"><div className="size-2 bg-primary rounded-full" /> HIST</div>
-                                    <div className="flex items-center gap-1.5 text-q-risk-high"><div className="size-2 bg-q-risk-high rounded-full" /> PROJ</div>
+                                    <div className="flex items-center gap-1.5 text-q-risk-high"><div className="size-2 bg-q-risk-high rounded-full" /> PROJ STRESS</div>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-6">
                                 <div className="h-64 relative">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={drawdownData}>
+                                        <LineChart
+                                            data={
+                                                riskData?.drawdown_series && riskData.drawdown_series.length > 0
+                                                    ? riskData.drawdown_series
+                                                    : [
+                                                        { time: "Jan '24", historical: 100 },
+                                                        { time: "Feb '24", historical: 95 },
+                                                        { time: "Mar '24", historical: 98 },
+                                                        { time: "Apr '24", historical: 85 },
+                                                        { time: "May '24", historical: 88 },
+                                                        { time: "Jun '24", historical: 70 },
+                                                        { time: "Jul '24", historical: 75 },
+                                                        { time: "Aug '24", historical: 60 },
+                                                        { time: "Sep '24", historical: 65, projected: 65 },
+                                                        { time: "Oct '24", projected: 55 },
+                                                        { time: "Nov '24", projected: 58 },
+                                                        { time: "Dec '24", projected: 45 },
+                                                    ]
+                                            }
+                                        >
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--q-border))" opacity={0.3} />
-                                            <XAxis hide />
+                                            <XAxis
+                                                dataKey="time"
+                                                axisLine={{ stroke: 'hsl(var(--q-border))' }}
+                                                tickLine={false}
+                                                tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }}
+                                            />
                                             <YAxis
                                                 domain={[0, 100]}
                                                 axisLine={false}
@@ -376,28 +399,34 @@ export default function Risk() {
                                                     fontWeight: 'bold',
                                                     textTransform: 'uppercase'
                                                 }}
+                                                formatter={(value: any, name: any) => [
+                                                    `${Number(value).toFixed(1)}% (DD: -${(100 - Number(value)).toFixed(1)}%)`,
+                                                    name === "historical" ? "Recovery vs Peak" : "Stressed Projection"
+                                                ]}
                                             />
                                             <Line
                                                 type="monotone"
                                                 dataKey="historical"
                                                 stroke="hsl(var(--primary))"
-                                                strokeWidth={3}
+                                                strokeWidth={2.5}
                                                 dot={false}
-                                                animationDuration={2000}
+                                                animationDuration={1500}
                                             />
                                             <Line
                                                 type="monotone"
                                                 dataKey="projected"
                                                 stroke="hsl(var(--q-risk-high))"
-                                                strokeWidth={3}
-                                                strokeDasharray="5 5"
+                                                strokeWidth={2.5}
+                                                strokeDasharray="4 4"
                                                 dot={false}
-                                                animationDuration={2500}
+                                                animationDuration={2000}
                                             />
                                         </LineChart>
                                     </ResponsiveContainer>
                                     <div className="absolute top-2 left-10 text-[9px] font-black font-mono text-muted-foreground bg-background/50 px-1">0% PEAK</div>
-                                    <div className="absolute bottom-2 left-10 text-[9px] font-black font-mono text-q-risk-high bg-q-risk-high/10 px-1 border border-q-risk-high/20">-{overallRiskScore.toFixed(0)}% MAX DRAWDOWN PROJECTION</div>
+                                    <div className="absolute bottom-6 left-10 text-[9px] font-black font-mono text-q-risk-high bg-q-risk-high/10 px-1 border border-q-risk-high/20">
+                                        HIST MAX DD: {riskData?.max_drawdown ? `${(riskData.max_drawdown * 100).toFixed(1)}%` : `-${(overallRiskScore * 0.4).toFixed(1)}%`} | PROJ SHOCK: -{overallRiskScore.toFixed(0)}%
+                                    </div>
                                 </div>
                             </CardContent>
                         </Card>

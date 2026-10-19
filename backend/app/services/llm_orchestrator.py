@@ -188,9 +188,11 @@ class LLMOrchestrator:
                 "^GSPC", start_date=start_date_str, end_date=end_date_str
             )
             yahoo_metrics = yahoo.compute_metrics(df, benchmark_df)
+            state["raw_data"]["price_df"] = df
         except Exception as e:
             logger.error(f"Error getting Yahoo Finance metrics for {ticker}: {e}")
             yahoo_metrics = {}
+            state["raw_data"]["price_df"] = None
 
         # 2. Fetch yfinance info in a thread pool to avoid blocking
         import yfinance as yf
@@ -355,6 +357,13 @@ class LLMOrchestrator:
             price_to_sales=price_to_sales,
         )
 
+        drawdown_val, drawdown_series = engine.generate_drawdown_series(
+            df=state.get("raw_data", {}).get("price_df"),
+            historical_volatility=volatility,
+            overall_risk_score=float(analysis.overall_risk_score),
+            max_drawdown=computed.get("max_drawdown"),
+        )
+
         state["risk_classification"] = {
             "risk_score": float(analysis.overall_risk_score),
             "risk_level": analysis.risk_level.value,
@@ -368,6 +377,8 @@ class LLMOrchestrator:
             },
             "risk_band": analysis.risk_band,
             "explanation": analysis.explanation,
+            "max_drawdown": float(drawdown_val),
+            "drawdown_series": drawdown_series,
         }
 
         return state

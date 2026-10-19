@@ -22,6 +22,15 @@ class RiskComponentsResponse(BaseModel):
     valuation_risk_score: float
 
 
+class DrawdownPoint(BaseModel):
+    """Drawdown data point schema."""
+
+    time: str
+    historical: float | None = None
+    projected: float | None = None
+    drawdown_pct: float | None = None
+
+
 class RiskAnalysisResponse(BaseModel):
     """Risk analysis response schema."""
 
@@ -31,6 +40,8 @@ class RiskAnalysisResponse(BaseModel):
     risk_band: str
     components: RiskComponentsResponse
     explanation: str
+    max_drawdown: float = 0.0
+    drawdown_series: list[DrawdownPoint] = []
 
 
 @router.get("/stocks/{ticker}/risk", response_model=RiskAnalysisResponse)
@@ -93,6 +104,12 @@ async def get_stock_risk_analysis(
             pe_ratio=25.0,
             price_to_book=3.5,
         )
+        drawdown_val, drawdown_series = engine.generate_drawdown_series(
+            df=None,
+            historical_volatility=0.25,
+            overall_risk_score=analysis.overall_risk_score,
+            max_drawdown=-0.25,
+        )
         risk_data = {
             "risk_score": analysis.overall_risk_score,
             "risk_level": analysis.risk_level.value,
@@ -106,6 +123,8 @@ async def get_stock_risk_analysis(
                 "valuation_risk_score": analysis.components.valuation_risk_score,
             },
             "explanation": analysis.explanation,
+            "max_drawdown": drawdown_val,
+            "drawdown_series": drawdown_series,
         }
 
     components = risk_data.get("components", {})
@@ -123,6 +142,8 @@ async def get_stock_risk_analysis(
             valuation_risk_score=components.get("valuation_risk_score", 50.0),
         ),
         explanation=risk_data.get("explanation", ""),
+        max_drawdown=risk_data.get("max_drawdown", 0.0),
+        drawdown_series=risk_data.get("drawdown_series", []),
     )
 
 
