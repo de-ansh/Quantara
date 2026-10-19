@@ -81,3 +81,47 @@ class TestRiskEngine:
         assert analysis.explanation
         assert analysis.components.volatility_score >= 0
         assert analysis.components.beta_score >= 0
+
+
+@pytest.mark.asyncio
+async def test_get_stock_correlations():
+    """Test get_stock_correlations endpoint returns sector peers and macro hedges."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.api.v1.risk import get_stock_correlations
+    from app.models.stock import Stock
+
+    mock_db = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalar_one_or_none.return_value = Stock(
+        ticker="AAPL",
+        name="Apple Inc.",
+        sector="Technology",
+        beta=1.2,
+    )
+    mock_db.execute.return_value = mock_res
+
+    current_user = {"id": "1", "email": "analyst@quantara.com"}
+
+    resp = await get_stock_correlations(ticker="AAPL", current_user=current_user, db=mock_db)
+
+    assert resp.ticker == "AAPL"
+    assert resp.sector == "Technology"
+    assert 0 < resp.benchmark_correlation <= 1.0
+    assert len(resp.peers) > 0
+
+    # Ensure AAPL is not in peers (no self-reference in peer list)
+    peer_tickers = [p.ticker for p in resp.peers]
+    assert "AAPL" not in peer_tickers
+
+    # Intra-sector tech stocks should have high correlation
+    msft_peer = next((p for p in resp.peers if p.ticker == "MSFT"), None)
+    assert msft_peer is not None
+    assert msft_peer.relationship == "Direct Sector Peer"
+    assert msft_peer.correlation >= 0.65
+
+    # Bond / TLT hedge should have negative correlation
+    tlt_peer = next((p for p in resp.peers if p.ticker == "TLT"), None)
+    assert tlt_peer is not None
+    assert tlt_peer.correlation < 0.0
+    assert "Hedge" in tlt_peer.relationship
+
