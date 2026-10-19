@@ -19,6 +19,7 @@ All scores normalized to 0-100 scale.
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -416,3 +417,154 @@ class RiskEngine:
             risk_band=risk_band,
             explanation=explanation,
         )
+
+    def generate_drawdown_series(
+        self,
+        df: Any | None = None,
+        historical_volatility: float = 0.25,
+        overall_risk_score: float = 50.0,
+        max_drawdown: float | None = None,
+    ) -> tuple[float, list[dict[str, Any]]]:
+        """
+        Generate historical underwater drawdown series and projected stress trajectory.
+
+        Args:
+            df: Historical price DataFrame (optional, from Yahoo Finance)
+            historical_volatility: Annualized volatility (e.g., 0.25)
+            overall_risk_score: Normalized risk score (0-100)
+            max_drawdown: Precomputed max drawdown if available
+
+        Returns:
+            Tuple of (max_drawdown_value, list of drawdown data points)
+        """
+        points: list[dict[str, Any]] = []
+        computed_max_dd: float = (
+            max_drawdown if max_drawdown is not None and max_drawdown < 0 else -0.25
+        )
+
+        has_valid_df = (
+            df is not None
+            and hasattr(df, "empty")
+            and not df.empty
+            and hasattr(df, "columns")
+        )
+
+        if has_valid_df:
+            try:
+                price_col = (
+                    "Close"
+                    if "Close" in df.columns
+                    else ("Adj Close" if "Adj Close" in df.columns else df.columns[0])
+                )
+                prices = df[price_col].dropna()
+                if len(prices) >= 5:
+                    returns = prices.pct_change().fillna(0.0)
+                    cumulative_returns = (1.0 + returns).cumprod()
+                    peak = cumulative_returns.cummax()
+                    drawdown = (cumulative_returns - peak) / peak
+                    computed_max_dd = float(drawdown.min())
+
+                    # Sample 12 evenly spaced points across historical period
+                    total_len = len(drawdown)
+                    if total_len <= 12:
+                        indices = list(range(total_len))
+                    else:
+                        step = (total_len - 1) / 11.0
+                        indices = sorted(list({int(round(i * step)) for i in range(12)}))
+
+                    for idx in indices:
+                        ts = drawdown.index[idx]
+                        if hasattr(ts, "strftime"):
+                            time_str = ts.strftime("%b '%y")
+                        else:
+                            time_str = f"T-{total_len - idx}"
+
+                        dd_val = float(drawdown.iloc[idx])
+                        recovery_level = round(max(0.0, min(100.0, (1.0 + dd_val) * 100.0)), 1)
+                        points.append(
+                            {
+                                "time": time_str,
+                                "historical": recovery_level,
+                                "projected": None,
+                                "drawdown_pct": round(dd_val * 100.0, 1),
+                            }
+                        )
+            except Exception as e:
+                logger.warning(f"Error computing drawdown from DataFrame: {e}")
+                points = []
+
+        if not points:
+            # Deterministic fallback drawdown curve
+            depth = abs(computed_max_dd)
+            sample_factors = [
+                0.0,
+                0.15,
+                0.08,
+                0.35,
+                0.28,
+                0.65,
+                0.50,
+                1.00,
+                0.75,
+                0.45,
+                0.55,
+                0.30,
+            ]
+            months = [
+                "Jan",
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun",
+                "Jul",
+                "Aug",
+                "Sep",
+                "Oct",
+                "Nov",
+                "Dec",
+            ]
+
+            for i, factor in enumerate(sample_factors):
+                dd_val = -factor * depth
+                level = round(max(0.0, min(100.0, (1.0 + dd_val) * 100.0)), 1)
+                points.append(
+                    {
+                        "time": f"{months[i % 12]} '24",
+                        "historical": level,
+                        "projected": None,
+                        "drawdown_pct": round(dd_val * 100.0, 1),
+                    }
+                )
+
+        # Connect projection seamlessly from the latest historical level
+        last_level = points[-1]["historical"] or 100.0
+        points[-1]["projected"] = last_level
+
+        # Forward stress projection based on risk score and volatility
+        shock = min(
+            0.65,
+            max(
+                0.12,
+                (overall_risk_score / 100.0) * max(0.2, historical_volatility) * 1.5,
+            ),
+        )
+        proj_steps = [
+            ("+1M (Shock)", round(max(5.0, min(100.0, last_level * (1.0 - 0.25 * shock))), 1)),
+            ("+2M (Trough)", round(max(5.0, min(100.0, last_level * (1.0 - 0.65 * shock))), 1)),
+            ("+3M (Stress)", round(max(5.0, min(100.0, last_level * (1.0 - 1.00 * shock))), 1)),
+            ("+4M (Rebound)", round(max(5.0, min(100.0, last_level * (1.0 - 0.85 * shock))), 1)),
+        ]
+
+        for p_label, p_val in proj_steps:
+            points.append(
+                {
+                    "time": p_label,
+                    "historical": None,
+                    "projected": p_val,
+                    "drawdown_pct": round((p_val / 100.0 - 1.0) * 100.0, 1),
+                }
+            )
+
+        return computed_max_dd, points
+

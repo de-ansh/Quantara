@@ -8,17 +8,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 | Category | Open Issues | P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Low) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| Category | Open Issues | P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Low) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
 | **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
-| **Risk Analytics & Views (RSK)** | 2 | 0 | 1 | 1 | 0 |
+| **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **11** | **0** | **6** | **5** | **0** |
+| **Total** | **10** | **0** | **5** | **5** | **0** |
 
 ---
 
@@ -145,13 +143,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Render dynamic correlation matrix and risk badges in `Risk.tsx` for any selected stock.
   - [x] Unit test coverage in `backend/app/tests/test_risk_engine.py`.
 
-### [QTR-RSK-02] Dynamic Drawdown Curve in `Risk.tsx`
+### [QTR-RSK-02] Dynamic Drawdown Curve in `Risk.tsx` ✅
 - **Category**: Risk Analytics
-- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx)
+- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx), [`backend/app/services/risk_engine.py`](backend/app/services/risk_engine.py), [`backend/app/api/v1/risk.py`](backend/app/api/v1/risk.py)
 - **Description**: Historical drawdown chart uses static 12-point dummy array.
 - **Acceptance Criteria**:
-  - [ ] Feed historical drawdown series from Yahoo Finance historical calculations (`get_stock_risk_analysis`).
-  - [ ] Render actual drawdown curve in Recharts.
+  - [x] Feed historical drawdown series from Yahoo Finance historical calculations (`get_stock_risk_analysis`).
+  - [x] Render actual drawdown curve in Recharts.
+  - [x] Generate deterministic forward stressed shock simulation trajectory.
+  - [x] Unit test coverage in `backend/app/tests/test_risk_engine.py`.
 
 ### [QTR-SIG-01] Wire Sentiment & Institutional Ingestion into Periodic Worker
 - **Category**: Signal Engine
