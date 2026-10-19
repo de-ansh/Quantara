@@ -40,7 +40,9 @@ class SECProvider:
         "eps": ["EarningsPerShareBasic", "EarningsPerShareDiluted"],
     }
 
-    # Hardcoded CIK mapping for initial set of companies
+    TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+
+    # Hardcoded CIK mapping for initial set of companies / offline fallback
     CIK_MAPPING = {
         "AAPL": "0000320193",
         "MSFT": "0000789019",
@@ -60,10 +62,71 @@ class SECProvider:
             "Accept-Encoding": "gzip, deflate",
             "Host": "data.sec.gov",
         }
+        self._cik_cache: dict[str, str] = dict(self.CIK_MAPPING)
+        self._cache_timestamp: float = 0.0
+        self._cache_ttl_seconds: float = 86400.0  # 24 hours
 
-    def get_cik(self, ticker: str) -> str | None:
+    async def load_company_tickers(self, force_refresh: bool = False) -> dict[str, str]:
         """
-        Get 10-digit CIK for a ticker.
+        Fetch official SEC ticker-to-CIK directory from company_tickers.json.
+
+        Caches results in memory with 24h TTL. Falls back to static CIK_MAPPING on error.
+        """
+        import time
+
+        now = time.time()
+        if (
+            not force_refresh
+            and (now - self._cache_timestamp) < self._cache_ttl_seconds
+            and len(self._cik_cache) > len(self.CIK_MAPPING)
+        ):
+            return self._cik_cache
+
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept-Encoding": "gzip, deflate",
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                logger.info(f"Loading dynamic SEC company tickers from {self.TICKERS_URL}")
+                response = await client.get(self.TICKERS_URL, headers=headers, timeout=15.0)
+                response.raise_for_status()
+                data = response.json()
+
+                if isinstance(data, dict):
+                    entries = data.values()
+                elif isinstance(data, list):
+                    entries = data
+                else:
+                    entries = []
+
+                new_cache: dict[str, str] = dict(self.CIK_MAPPING)
+                for entry in entries:
+                    if isinstance(entry, dict) and "ticker" in entry and "cik_str" in entry:
+                        t = str(entry["ticker"]).strip().upper()
+                        c = str(entry["cik_str"]).strip().zfill(10)
+                        new_cache[t] = c
+                        if "." in t:
+                            new_cache[t.replace(".", "-")] = c
+                        elif "-" in t:
+                            new_cache[t.replace("-", ".")] = c
+
+                if len(new_cache) > len(self.CIK_MAPPING):
+                    self._cik_cache = new_cache
+                    self._cache_timestamp = now
+                    logger.info(f"Loaded {len(self._cik_cache)} dynamic SEC CIK company mappings")
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch dynamic company_tickers.json from SEC ({e}), falling back to static CIK mapping"
+            )
+
+        return self._cik_cache
+
+    async def get_cik_async(self, ticker: str) -> str | None:
+        """
+        Asynchronously resolve 10-digit CIK for a ticker, loading SEC directory if needed.
 
         Args:
             ticker: Stock ticker symbol.
@@ -71,7 +134,26 @@ class SECProvider:
         Returns:
             10-digit CIK string or None.
         """
-        cik = self.CIK_MAPPING.get(ticker.upper())
+        t = ticker.upper()
+        if t in self._cik_cache:
+            return self._cik_cache[t]
+
+        # Cache miss: attempt dynamic directory ingestion
+        await self.load_company_tickers()
+        return self._cik_cache.get(t)
+
+    def get_cik(self, ticker: str) -> str | None:
+        """
+        Get 10-digit CIK for a ticker synchronously.
+
+        Args:
+            ticker: Stock ticker symbol.
+
+        Returns:
+            10-digit CIK string or None.
+        """
+        t = ticker.upper()
+        cik = self._cik_cache.get(t) or self.CIK_MAPPING.get(t)
         if cik:
             return cik.zfill(10)
         return None
@@ -86,7 +168,7 @@ class SECProvider:
         Returns:
             Raw JSON data or None.
         """
-        cik = self.get_cik(ticker)
+        cik = await self.get_cik_async(ticker)
         if not cik:
             logger.error(f"CIK not found for ticker {ticker}")
             return None
@@ -301,7 +383,7 @@ class SECProvider:
         Returns:
             List of parsed and classified insider transactions.
         """
-        cik = self.get_cik(ticker)
+        cik = await self.get_cik_async(ticker)
         if not cik:
             logger.error(f"CIK not found for ticker {ticker}")
             return []

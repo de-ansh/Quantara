@@ -12,13 +12,13 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
-| **Stock Research & Detail (STK)** | 1 | 0 | 1 | 0 | 0 |
+| **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 3 | 0 | 2 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **13** | **0** | **8** | **5** | **0** |
+| **Total** | **12** | **0** | **7** | **5** | **0** |
 
 ---
 
@@ -106,13 +106,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Add active tab state (`thesis`, `financials`, `risk`, `signals`, `macro`).
   - [x] Implement view panels for Financial Health (income statement/balance sheet metrics from SEC), Risk Breakdown (risk components breakdown & alignment), and Signal Intelligence (insider/earnings signals for ticker).
 
-### [QTR-STK-03] Dynamic SEC CIK Company Lookup
+### [QTR-STK-03] Dynamic SEC CIK Company Lookup ✅
 - **Category**: Stock Research / Data Providers
 - **Component**: [`backend/app/providers/sec.py`](backend/app/providers/sec.py)
 - **Description**: Hardcoded `CIK_MAPPING` supports only 8 tickers; any other stock fails SEC fact retrieval.
 - **Acceptance Criteria**:
-  - [ ] Fetch and cache `https://www.sec.gov/files/company_tickers.json` to resolve any US ticker to its CIK.
-  - [ ] Fall back to static map if SEC directory fetch fails.
+  - [x] Fetch and cache `https://www.sec.gov/files/company_tickers.json` to resolve any US ticker to its CIK.
+  - [x] Fall back to static map if SEC directory fetch fails.
+  - [x] Provide async `get_cik_async(ticker: str)` while keeping synchronous `get_cik(ticker: str)` fallback for backward compatibility.
+  - [x] 100% test coverage in `backend/app/tests/providers/test_sec.py`.
 
 ### [QTR-PORT-02] Covariance Matrix & Asset Correlation in Portfolio Simulation ✅
 - **Category**: Portfolio Management
