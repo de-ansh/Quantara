@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import CommandPalette from "@/components/CommandPalette"
 import {
     LayoutDashboard,
     BarChart3,
@@ -58,6 +59,18 @@ export default function MainLayout({ children }: MainLayoutProps) {
     const location = useLocation()
     const navigate = useNavigate()
     const [sidebarOpen, setSidebarOpen] = useState(true)
+    const [commandOpen, setCommandOpen] = useState(false)
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault()
+                setCommandOpen(prev => !prev)
+            }
+        }
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [])
 
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
 
@@ -147,14 +160,19 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 {/* Header */}
                 <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 shrink-0 z-10 transition-colors">
                     <div className="flex-1 flex items-center">
-                        <div className="relative w-full max-w-md group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Universal Research Search (Ctrl+K)"
-                                className="w-full bg-muted/50 border border-border rounded-md pl-10 pr-4 py-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-primary transition-all"
-                            />
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setCommandOpen(true)}
+                            className="relative w-full max-w-md group flex items-center justify-between bg-muted/50 hover:bg-muted/80 border border-border rounded-md px-3 py-1.5 text-[13px] text-muted-foreground transition-all cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <div className="flex items-center min-w-0 mr-2">
+                                <Search className="size-4 mr-2.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                                <span className="truncate">Universal Research Search...</span>
+                            </div>
+                            <kbd className="hidden sm:inline-flex items-center gap-0.5 pointer-events-none h-5 select-none rounded border border-border bg-background px-1.5 font-mono text-[10px] font-bold text-muted-foreground">
+                                <span className="text-xs">⌘</span>K
+                            </kbd>
+                        </button>
                     </div>
 
                     <div className="flex items-center space-x-4">
@@ -229,6 +247,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     </footer>
                 </main>
             </div>
+            <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
         </div>
     )
 }

@@ -14,9 +14,9 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
-| **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
+| **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **10** | **0** | **5** | **5** | **0** |
+| **Total** | **9** | **0** | **4** | **5** | **0** |
 
 ---
 
@@ -169,13 +169,16 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [ ] Implement XML parser for SEC Form 13F filings.
   - [ ] Detect significant quarter-over-quarter institutional accumulation.
 
-### [QTR-NAV-01] Universal Search & Command Palette (`Ctrl+K`)
+### [QTR-NAV-01] Universal Search & Command Palette (`Ctrl+K`) ✅
 - **Category**: Navigation & Shell
-- **Component**: [`frontend/src/layouts/MainLayout.tsx`](frontend/src/layouts/MainLayout.tsx)
+- **Component**: [`frontend/src/layouts/MainLayout.tsx`](frontend/src/layouts/MainLayout.tsx), [`frontend/src/components/CommandPalette.tsx`](frontend/src/components/CommandPalette.tsx), [`frontend/src/components/ui/dialog.tsx`](frontend/src/components/ui/dialog.tsx)
 - **Description**: Search input in top navigation has no event handlers or command palette modal.
 - **Acceptance Criteria**:
-  - [ ] Open search modal / command palette on click or `Ctrl+K` / `Cmd+K`.
-  - [ ] Search stocks by ticker or company name via `/stocks/search` and route to `/research/:ticker` or `/risk/:ticker`.
+  - [x] Open search modal / command palette on click or `Ctrl+K` / `Cmd+K`.
+  - [x] Search stocks by ticker or company name via `/stocks/search` and route to `/research/:ticker` or `/risk/:ticker`.
+  - [x] Support keyboard navigation (`ArrowUp`, `ArrowDown`, `Enter`, `Escape`).
+  - [x] Include quick platform navigation shortcuts and popular market assets.
+  - [x] Backend test coverage in `backend/app/tests/test_research_search.py`.
 
 ### [QTR-RAG-01] Earnings Call Transcript Ingestion & Vector Embeddings
 - **Category**: Qualitative Analysis
