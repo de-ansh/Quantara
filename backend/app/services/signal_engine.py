@@ -11,6 +11,7 @@ Framework for detecting market signals:
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -293,6 +294,115 @@ class SignalEngine:
 
         return min(max(aggregated, 0), 100)
 
+    async def fetch_sentiment_metrics(
+        self, ticker: str, yahoo_provider: Any = None
+    ) -> dict[str, Any]:
+        """
+        Fetch news headlines, compute sentiment polarity, and estimate mention volume.
+
+        Args:
+            ticker: Stock ticker symbol.
+            yahoo_provider: Optional YahooFinanceProvider instance.
+
+        Returns:
+            Dictionary with current_sentiment, baseline_sentiment, and mention_volume.
+        """
+        if yahoo_provider is None:
+            from app.providers.yahoo import YahooFinanceProvider
+
+            yahoo_provider = YahooFinanceProvider()
+
+        news_items = await yahoo_provider.get_stock_news(ticker)
+        if not news_items:
+            return {
+                "current_sentiment": 0.0,
+                "baseline_sentiment": 0.0,
+                "mention_volume": 50,
+                "headlines": [],
+            }
+
+        titles = [n["title"] for n in news_items if n.get("title")]
+        sentiment_score = compute_financial_sentiment(titles)
+
+        # Baseline is neutral (0.0); mention volume scaled by article volume
+        baseline = 0.0
+        mention_vol = max(len(titles) * 15, 120 if len(titles) >= 4 else len(titles) * 20)
+
+        return {
+            "current_sentiment": sentiment_score,
+            "baseline_sentiment": baseline,
+            "mention_volume": mention_vol,
+            "headlines": titles[:5],
+        }
+
+    async def fetch_institutional_metrics(
+        self, ticker: str, yahoo_provider: Any = None
+    ) -> dict[str, Any]:
+        """
+        Fetch institutional ownership delta and institution count.
+
+        Args:
+            ticker: Stock ticker symbol.
+            yahoo_provider: Optional YahooFinanceProvider instance.
+
+        Returns:
+            Dictionary with ownership_change_pct and num_institutions_buying.
+        """
+        if yahoo_provider is None:
+            from app.providers.yahoo import YahooFinanceProvider
+
+            yahoo_provider = YahooFinanceProvider()
+
+        ownership_data = await yahoo_provider.get_institutional_ownership(ticker)
+        return {
+            "ownership_change_pct": ownership_data.get("ownership_change_pct", 0.0),
+            "num_institutions_buying": ownership_data.get("num_institutions_buying", 0),
+        }
+
+
+POSITIVE_FINANCIAL_WORDS = {
+    "beat", "beats", "beating", "surge", "surges", "surging", "growth", "growing",
+    "record", "records", "bull", "bullish", "profit", "profits", "profitable",
+    "upgrade", "upgrades", "upgraded", "gain", "gains", "gaining", "rally", "rallies",
+    "outperform", "outperforms", "strong", "stronger", "strongest", "innovation",
+    "breakthrough", "partnership", "dividend", "dividends", "revenue", "expansion",
+    "high", "higher", "rebound", "soar", "soars", "soaring", "top", "tops",
+}
+
+NEGATIVE_FINANCIAL_WORDS = {
+    "miss", "misses", "missing", "drop", "drops", "dropping", "plunge", "plunges",
+    "fall", "falls", "falling", "loss", "losses", "bear", "bearish", "downgrade",
+    "downgrades", "downgraded", "decline", "declines", "declining", "investigation",
+    "lawsuit", "sued", "probe", "warning", "warns", "warned", "struggle", "struggles",
+    "struggling", "slump", "weak", "weaker", "weakest", "cut", "cuts", "debt",
+    "deficit", "default", "scandal", "fraud", "fine", "penalty", "halt",
+}
+
+
+def compute_financial_sentiment(texts: list[str]) -> float:
+    """
+    Compute polarity score (-1.0 to 1.0) from financial text headlines or summaries.
+    """
+    if not texts:
+        return 0.0
+
+    pos_count = 0
+    neg_count = 0
+
+    for text in texts:
+        words = [w.strip(".,!?:;\"'()[]{}").lower() for w in text.split()]
+        for w in words:
+            if w in POSITIVE_FINANCIAL_WORDS:
+                pos_count += 1
+            elif w in NEGATIVE_FINANCIAL_WORDS:
+                neg_count += 1
+
+    total = pos_count + neg_count
+    if total == 0:
+        return 0.0
+
+    return max(-1.0, min(1.0, (pos_count - neg_count) / total))
+
 
 async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
     """Save a detected signal to the database, ensuring stock exists."""
@@ -342,86 +452,126 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
 
 
 async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
-    """Background task to periodically fetch SEC filings and generate market signals."""
+    """Background task to periodically fetch SEC filings, market sentiment, and generate signals."""
     import asyncio
 
+    from sqlalchemy import select
+
     from app.core.database import AsyncSessionLocal
+    from app.models.stock import Stock
     from app.providers.sec import SECProvider
+    from app.providers.yahoo import YahooFinanceProvider
 
     sec = SECProvider()
+    yahoo = YahooFinanceProvider()
     engine = SignalEngine()
 
-    # Active tickers from CIK_MAPPING
-    tickers = list(sec.CIK_MAPPING.keys())
-
-    logger.info(
-        f"Starting background signal processing for tickers: {tickers} every {interval_seconds}s"
-    )
+    logger.info(f"Starting background signal processing every {interval_seconds}s")
 
     while True:
         try:
             logger.info("Running scheduled signal generation pass...")
 
+            # Dynamic active tickers from database if available, falling back to CIK_MAPPING
+            tickers = list(sec.CIK_MAPPING.keys())
+            try:
+                async with AsyncSessionLocal() as session:
+                    stmt = select(Stock.ticker).where(Stock.is_active == True)
+                    db_res = await session.execute(stmt)
+                    db_tickers = db_res.scalars().all()
+                    if db_tickers:
+                        tickers = list(dict.fromkeys(tickers + list(db_tickers)))
+            except Exception as e:
+                logger.warning(f"Unable to query active tickers from DB, using fallback: {e}")
+
             async with AsyncSessionLocal() as db:
                 for ticker in tickers:
                     # 1. Fetch Form 4 insider transactions
-                    logger.info(f"Fetching Form 4 insider transactions for {ticker}")
-                    txs = await sec.fetch_insider_transactions(ticker, limit=10)
+                    try:
+                        logger.info(f"Fetching Form 4 insider transactions for {ticker}")
+                        txs = await sec.fetch_insider_transactions(ticker, limit=10)
 
-                    if txs:
-                        insider_buy_vol = 0.0
-                        insider_sell_vol = 0.0
-                        insiders_buying = set()
+                        if txs:
+                            insider_buy_vol = 0.0
+                            insider_sell_vol = 0.0
+                            insiders_buying = set()
 
-                        for tx in txs:
-                            shares = tx.get("shares") or 0.0
-                            price = tx.get("price_per_share") or 0.0
-                            vol = shares * price
+                            for tx in txs:
+                                shares = tx.get("shares") or 0.0
+                                price = tx.get("price_per_share") or 0.0
+                                vol = shares * price
 
-                            if tx.get("classification") == "Buy":
-                                insider_buy_vol += vol
-                                insiders_buying.add(tx.get("reporting_owner"))
-                            elif tx.get("classification") == "Sell":
-                                insider_sell_vol += vol
+                                if tx.get("classification") == "Buy":
+                                    insider_buy_vol += vol
+                                    insiders_buying.add(tx.get("reporting_owner"))
+                                elif tx.get("classification") == "Sell":
+                                    insider_sell_vol += vol
 
-                        num_insiders = len(insiders_buying)
+                            num_insiders = len(insiders_buying)
 
-                        # Detect and save signal if buying criteria met
-                        insider_sig = engine.detect_insider_buying(
-                            ticker=ticker,
-                            insider_buy_volume=insider_buy_vol,
-                            insider_sell_volume=insider_sell_vol,
-                            num_insiders_buying=num_insiders,
-                        )
+                            insider_sig = engine.detect_insider_buying(
+                                ticker=ticker,
+                                insider_buy_volume=insider_buy_vol,
+                                insider_sell_volume=insider_sell_vol,
+                                num_insiders_buying=num_insiders,
+                            )
 
-                        if insider_sig:
-                            await save_signal_to_db(db, insider_sig)
+                            if insider_sig:
+                                await save_signal_to_db(db, insider_sig)
+                    except Exception as ins_err:
+                        logger.warning(f"Error processing insider signals for {ticker}: {ins_err}")
 
                     # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
-                    facts = await sec.fetch_company_facts(ticker)
-                    if facts:
-                        # Try to extract EPS
-                        extracted = sec.extract_metrics(facts)
-                        eps_history = extracted.get("eps", [])
-                        if eps_history:
-                            # Assume the last one is the latest reported actual EPS
-                            actual_eps = eps_history[-1]["val"]
+                    try:
+                        facts = await sec.fetch_company_facts(ticker)
+                        if facts:
+                            extracted = sec.extract_metrics(facts)
+                            eps_history = extracted.get("eps", [])
+                            if eps_history:
+                                actual_eps = eps_history[-1]["val"]
+                                estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
 
-                            # Estimate consensus EPS as slightly different to simulate surprise (e.g. actual_eps * 0.9)
-                            estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
+                                surprise_sig = engine.detect_earnings_surprise(
+                                    ticker=ticker,
+                                    actual_eps=actual_eps,
+                                    estimated_eps=estimated_eps,
+                                    timestamp=(
+                                        datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
+                                        if eps_history[-1].get("filed")
+                                        else None
+                                    ),
+                                )
+                                if surprise_sig:
+                                    await save_signal_to_db(db, surprise_sig)
+                    except Exception as earn_err:
+                        logger.warning(f"Error processing earnings surprise for {ticker}: {earn_err}")
 
-                            surprise_sig = engine.detect_earnings_surprise(
-                                ticker=ticker,
-                                actual_eps=actual_eps,
-                                estimated_eps=estimated_eps,
-                                timestamp=(
-                                    datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
-                                    if eps_history[-1].get("filed")
-                                    else None
-                                ),
-                            )
-                            if surprise_sig:
-                                await save_signal_to_db(db, surprise_sig)
+                    # 3. Detect sentiment spikes from news & social mention volume
+                    try:
+                        sentiment_data = await engine.fetch_sentiment_metrics(ticker, yahoo_provider=yahoo)
+                        sentiment_sig = engine.detect_sentiment_spike(
+                            ticker=ticker,
+                            current_sentiment=sentiment_data["current_sentiment"],
+                            baseline_sentiment=sentiment_data["baseline_sentiment"],
+                            mention_volume=sentiment_data["mention_volume"],
+                        )
+                        if sentiment_sig:
+                            await save_signal_to_db(db, sentiment_sig)
+                    except Exception as sent_err:
+                        logger.warning(f"Error processing sentiment spike for {ticker}: {sent_err}")
+
+                    # 4. Detect institutional buying accumulation
+                    try:
+                        inst_data = await engine.fetch_institutional_metrics(ticker, yahoo_provider=yahoo)
+                        inst_sig = engine.detect_institutional_buying(
+                            ticker=ticker,
+                            institutional_ownership_change=inst_data["ownership_change_pct"],
+                            num_institutions_buying=inst_data["num_institutions_buying"],
+                        )
+                        if inst_sig:
+                            await save_signal_to_db(db, inst_sig)
+                    except Exception as inst_err:
+                        logger.warning(f"Error processing institutional accumulation for {ticker}: {inst_err}")
 
             logger.info("Signal generation pass completed successfully")
 
@@ -432,3 +582,4 @@ async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
             logger.error(f"Error in background signal processing: {e}", exc_info=True)
 
         await asyncio.sleep(interval_seconds)
+

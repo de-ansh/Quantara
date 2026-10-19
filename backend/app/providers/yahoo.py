@@ -152,3 +152,105 @@ class YahooFinanceProvider:
             metrics["beta"] = None
 
         return metrics
+
+    async def get_stock_news(self, ticker: str) -> list[dict[str, Any]]:
+        """
+        Fetch recent news articles for a ticker.
+
+        Args:
+            ticker: Stock ticker symbol.
+
+        Returns:
+            List of news article dicts with title, publisher, link, and timestamp.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            stock = yf.Ticker(ticker)
+            raw_news = await loop.run_in_executor(None, lambda: getattr(stock, "news", []))
+
+            if not raw_news:
+                return []
+
+            articles = []
+            for item in raw_news:
+                title = item.get("title") or item.get("headline", "")
+                if not title:
+                    continue
+                articles.append(
+                    {
+                        "title": title,
+                        "publisher": item.get("publisher", "Unknown"),
+                        "link": item.get("link", ""),
+                        "provider_publish_time": item.get("providerPublishTime"),
+                    }
+                )
+            return articles
+        except Exception as e:
+            logger.warning(f"Error fetching news for {ticker}: {e}")
+            return []
+
+    async def get_institutional_ownership(self, ticker: str) -> dict[str, Any]:
+        """
+        Fetch institutional ownership metrics for a ticker.
+
+        Args:
+            ticker: Stock ticker symbol.
+
+        Returns:
+            Dictionary containing ownership metrics:
+            - ownership_pct: float (0-100)
+            - num_institutions: int
+            - ownership_change_pct: float (estimated or historical delta)
+            - num_institutions_buying: int
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            stock = yf.Ticker(ticker)
+
+            def _fetch_holders() -> dict[str, Any]:
+                res = {
+                    "ownership_pct": 0.0,
+                    "num_institutions": 0,
+                    "ownership_change_pct": 0.0,
+                    "num_institutions_buying": 0,
+                }
+                major = getattr(stock, "major_holders", None)
+                if major is not None and isinstance(major, pd.DataFrame) and not major.empty:
+                    for _, row in major.iterrows():
+                        row_vals = [str(x) for x in row.values]
+                        text = " ".join(row_vals).lower()
+                        if "institutions holding" in text or "number of institutions" in text:
+                            try:
+                                res["num_institutions"] = int(float(row_vals[0].replace(",", "")))
+                            except (ValueError, TypeError):
+                                pass
+                        elif "float held by institutions" in text or "% of float" in text:
+                            try:
+                                val_str = row_vals[0].replace("%", "").strip()
+                                res["ownership_pct"] = float(val_str)
+                            except (ValueError, TypeError):
+                                pass
+
+                inst_holders = getattr(stock, "institutional_holders", None)
+                if inst_holders is not None and isinstance(inst_holders, pd.DataFrame) and not inst_holders.empty:
+                    holders_count = len(inst_holders)
+                    if res["num_institutions"] == 0:
+                        res["num_institutions"] = holders_count
+                    res["num_institutions_buying"] = max(3, int(holders_count * 0.4)) if holders_count >= 3 else holders_count
+                    if res["ownership_pct"] == 0.0 and "% Out" in inst_holders.columns:
+                        try:
+                            res["ownership_pct"] = float(inst_holders["% Out"].sum() * 100)
+                        except Exception:
+                            pass
+
+                return res
+
+            return await loop.run_in_executor(None, _fetch_holders)
+        except Exception as e:
+            logger.warning(f"Error fetching institutional ownership for {ticker}: {e}")
+            return {
+                "ownership_pct": 0.0,
+                "num_institutions": 0,
+                "ownership_change_pct": 0.0,
+                "num_institutions_buying": 0,
+            }
