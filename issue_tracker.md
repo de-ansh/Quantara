@@ -12,13 +12,13 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
-| **Stock Research & Detail (STK)** | 3 | 1 | 2 | 0 | 0 |
-| **Portfolio & Simulation (PORT)** | 3 | 1 | 2 | 0 | 0 |
+| **Stock Research & Detail (STK)** | 1 | 0 | 1 | 0 | 0 |
+| **Portfolio & Simulation (PORT)** | 2 | 0 | 2 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 3 | 0 | 2 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 3 | 0 | 1 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **18** | **2** | **11** | **5** | **0** |
+| **Total** | **15** | **0** | **10** | **5** | **0** |
 
 ---
 
@@ -50,24 +50,25 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Compute live signal score by aggregating recent active signals from `signals` table for each stock candidate.
   - [x] Pass dynamic dataset through `RecommendationEngine.rank_recommendations`.
 
-### [QTR-STK-01] Eliminate Hardcoded NVIDIA Data in `StockDetail.tsx`
+### [QTR-STK-01] Eliminate Hardcoded NVIDIA Data in `StockDetail.tsx` ✅
 - **Category**: Stock Research
 - **Component**: [`frontend/src/pages/StockDetail.tsx`](frontend/src/pages/StockDetail.tsx)
 - **Description**: Company name ("NVIDIA Corp."), Market Cap ("$2.5T"), Sector ("Technology / Semiconductors"), risk score (84), anti-thesis text, ownership numbers (92/2/6), and sparklines are static constants.
 - **Acceptance Criteria**:
-  - [ ] Bind company header to `/stocks/{ticker}/research` and Yahoo market data.
-  - [ ] Dynamically compute and display risk score gauge from `/stocks/{ticker}/risk`.
-  - [ ] Render thesis and anti-thesis dynamically from `report.summary`, `report.key_insights`, and `report.weaknesses`.
-  - [ ] Bind Key Stats sidebar and price sparklines to real historical/current price data.
+  - [x] Bind company header to `/stocks/{ticker}/research` and Yahoo market data.
+  - [x] Dynamically compute and display risk score gauge from `/stocks/{ticker}/risk`.
+  - [x] Render thesis and anti-thesis dynamically from `report.summary`, `report.key_insights`, and `report.weaknesses`.
+  - [x] Bind Key Stats sidebar and price sparklines to real historical/current price data.
 
-### [QTR-PORT-01] Implement Portfolio & Position DB Models and CRUD
+### [QTR-PORT-01] Implement Portfolio & Position DB Models and CRUD ✅
 - **Category**: Portfolio Management
-- **Component**: `backend/app/models/portfolio.py`, `backend/app/api/v1/portfolio.py`
+- **Component**: [`backend/app/models/portfolio.py`](backend/app/models/portfolio.py), [`backend/app/api/v1/portfolio.py`](backend/app/api/v1/portfolio.py)
 - **Description**: Zero persistence exists for user portfolios. Users cannot save, name, or track actual portfolios or holdings.
 - **Acceptance Criteria**:
-  - [ ] Create `Portfolio` model (`id`, `user_id`, `name`, `description`, `created_at`).
-  - [ ] Create `PortfolioPosition` model (`id`, `portfolio_id`, `ticker`, `shares`, `cost_basis`, `weight`).
-  - [ ] Implement CRUD endpoints: `GET /portfolio`, `POST /portfolio`, `GET /portfolio/{id}`, `DELETE /portfolio/{id}`.
+  - [x] Create `Portfolio` model (`id`, `user_id`, `name`, `description`, `created_at`, `updated_at`).
+  - [x] Create `PortfolioPosition` model (`id`, `portfolio_id`, `ticker`, `shares`, `cost_basis`, `weight`).
+  - [x] Implement CRUD endpoints: `GET /portfolio/`, `POST /portfolio/`, `GET /portfolio/{id}`, `PUT /portfolio/{id}`, `DELETE /portfolio/{id}`.
+  - [x] Write 100% test coverage in `test_portfolio_crud.py`.
 
 ---
 
@@ -97,13 +98,13 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Persist generated recommendations (`final_score`, `research_score`, `signal_score`, `risk_alignment_score`, `macro_fit_score`, `explanation_text`, `reasoning_metadata`) to DB.
   - [x] Cache user recommendations with `expires_at` timestamp.
 
-### [QTR-STK-02] Implement Interactive Tab Switching in `StockDetail.tsx`
+### [QTR-STK-02] Implement Interactive Tab Switching in `StockDetail.tsx` ✅
 - **Category**: Stock Research
 - **Component**: [`frontend/src/pages/StockDetail.tsx`](frontend/src/pages/StockDetail.tsx)
 - **Description**: Tabs ("Investment Thesis", "Financial Health", "Risk Breakdown", "Signal Intelligence", "Macro Exposure") do not switch views.
 - **Acceptance Criteria**:
-  - [ ] Add active tab state.
-  - [ ] Implement view panels for Financial Health (income statement/balance sheet metrics from SEC), Risk Breakdown (risk components radar/bars), and Signal Intelligence (insider/earnings signals for ticker).
+  - [x] Add active tab state (`thesis`, `financials`, `risk`, `signals`, `macro`).
+  - [x] Implement view panels for Financial Health (income statement/balance sheet metrics from SEC), Risk Breakdown (risk components breakdown & alignment), and Signal Intelligence (insider/earnings signals for ticker).
 
 ### [QTR-STK-03] Dynamic SEC CIK Company Lookup
 - **Category**: Stock Research / Data Providers
