@@ -8,7 +8,7 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 | Category | Open Issues | P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Low) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Authentication & Routing (AUTH)** | 1 | 0 | 1 | 0 | 0 |
+| **Authentication & Routing (AUTH)** | 0 | 0 | 0 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
@@ -16,7 +16,7 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Signal Engine & Ingestion (SIG)**| 3 | 0 | 2 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **9** | **0** | **4** | **5** | **0** |
+| **Total** | **8** | **0** | **3** | **5** | **0** |
 
 ---
 
@@ -80,13 +80,16 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Add dropdown menu on avatar click showing user email, risk tier, Account link, and Logout button.
   - [x] On logout, clear token, reset auth state, and route to `/login`.
 
-### [QTR-AUTH-03] Server-Side User Credential & Preference Storage
+### [QTR-AUTH-03] Server-Side User Credential & Preference Storage ✅
 - **Category**: Auth & Routing
-- **Component**: [`frontend/src/pages/Settings.tsx`](frontend/src/pages/Settings.tsx), `backend/app/models/user.py`
+- **Component**: [`frontend/src/pages/Settings.tsx`](frontend/src/pages/Settings.tsx), [`backend/app/models/user.py`](backend/app/models/user.py), [`backend/app/core/security.py`](backend/app/core/security.py), [`backend/app/api/v1/users.py`](backend/app/api/v1/users.py)
 - **Description**: `openai_api_key` and `sec_user_agent` persist only in browser `localStorage`.
 - **Acceptance Criteria**:
-  - [ ] Add encrypted/masked columns to `User` model for external credentials.
-  - [ ] Add `PUT /users/credentials` endpoint to persist settings securely across sessions.
+  - [x] Add encrypted/masked columns to `User` model for external credentials.
+  - [x] Implement AES-CBC Fernet credential encryption and masking utilities.
+  - [x] Add `GET /users/credentials` and `PUT /users/credentials` endpoints to persist and preview settings securely across sessions.
+  - [x] Connect `Settings.tsx` to hydrate, save, and reset server-side credentials with audit logging.
+  - [x] 100% test coverage in `backend/app/tests/test_user_credentials.py`.
 
 ### [QTR-REC-03] Persist Recommendation Batches in `recommendations` Table ✅
 - **Category**: Recommendations

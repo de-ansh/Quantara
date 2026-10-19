@@ -21,6 +21,21 @@ class RiskProfileUpdate(BaseModel):
     sector_preferences: dict | None = None
 
 
+class UserCredentialsUpdate(BaseModel):
+    """External credentials update schema."""
+
+    openai_api_key: str | None = None
+    sec_user_agent: str | None = None
+
+
+class UserCredentialsResponse(BaseModel):
+    """External credentials response schema."""
+
+    has_openai_key: bool
+    openai_key_masked: str | None = None
+    sec_user_agent: str | None = None
+
+
 class UserResponse(BaseModel):
     """User response schema."""
 
@@ -30,6 +45,9 @@ class UserResponse(BaseModel):
     volatility_tolerance: float | None
     investment_horizon: int | None
     sector_preferences: dict | None
+    has_openai_key: bool = False
+    openai_key_masked: str | None = None
+    sec_user_agent: str | None = None
 
 
 @router.get("/me", response_model=UserResponse)
@@ -57,6 +75,14 @@ async def get_current_user_profile(
             detail="User not found",
         )
 
+    has_key = bool(user.openai_api_key)
+    masked_key = None
+    if has_key:
+        from app.core.security import decrypt_credential, mask_credential
+
+        decrypted = decrypt_credential(user.openai_api_key)
+        masked_key = mask_credential(decrypted)
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -64,6 +90,9 @@ async def get_current_user_profile(
         volatility_tolerance=user.volatility_tolerance,
         investment_horizon=user.investment_horizon,
         sector_preferences=user.sector_preferences,
+        has_openai_key=has_key,
+        openai_key_masked=masked_key,
+        sec_user_agent=user.sec_user_agent,
     )
 
 
@@ -116,6 +145,14 @@ async def update_risk_profile(
         },
     )
 
+    has_key = bool(user.openai_api_key)
+    masked_key = None
+    if has_key:
+        from app.core.security import decrypt_credential, mask_credential
+
+        decrypted = decrypt_credential(user.openai_api_key)
+        masked_key = mask_credential(decrypted)
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -123,4 +160,106 @@ async def update_risk_profile(
         volatility_tolerance=user.volatility_tolerance,
         investment_horizon=user.investment_horizon,
         sector_preferences=user.sector_preferences,
+        has_openai_key=has_key,
+        openai_key_masked=masked_key,
+        sec_user_agent=user.sec_user_agent,
     )
+
+
+@router.get("/credentials", response_model=UserCredentialsResponse)
+async def get_user_credentials(
+    current_user: CurrentUser,
+    db: DBSession,
+) -> UserCredentialsResponse:
+    """
+    Get current user external credentials status and masked preview.
+    """
+    stmt = select(User).where(User.id == int(current_user["id"]))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    has_key = bool(user.openai_api_key)
+    masked_key = None
+    if has_key:
+        from app.core.security import decrypt_credential, mask_credential
+
+        decrypted = decrypt_credential(user.openai_api_key)
+        masked_key = mask_credential(decrypted)
+
+    return UserCredentialsResponse(
+        has_openai_key=has_key,
+        openai_key_masked=masked_key,
+        sec_user_agent=user.sec_user_agent,
+    )
+
+
+@router.put("/credentials", response_model=UserCredentialsResponse)
+async def update_user_credentials(
+    credentials: UserCredentialsUpdate,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> UserCredentialsResponse:
+    """
+    Update user external credentials securely with encryption and audit logging.
+    """
+    stmt = select(User).where(User.id == int(current_user["id"]))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    from app.core.security import decrypt_credential, encrypt_credential, mask_credential
+
+    # Update OpenAI Key if explicitly provided
+    if credentials.openai_api_key is not None:
+        if credentials.openai_api_key.strip():
+            user.openai_api_key = encrypt_credential(credentials.openai_api_key.strip())
+        else:
+            user.openai_api_key = None
+
+    # Update SEC User-Agent if explicitly provided
+    if credentials.sec_user_agent is not None:
+        if credentials.sec_user_agent.strip():
+            user.sec_user_agent = credentials.sec_user_agent.strip()
+        else:
+            user.sec_user_agent = None
+
+    await db.commit()
+    await db.refresh(user)
+
+    # Record security audit log (strictly omits raw secret values)
+    await create_audit_log(
+        db,
+        user_id=user.id,
+        action="update_credentials",
+        entity="user",
+        entity_id=str(user.id),
+        status="success",
+        data={
+            "has_openai_key": bool(user.openai_api_key),
+            "sec_user_agent": user.sec_user_agent,
+        },
+    )
+
+    has_key = bool(user.openai_api_key)
+    masked_key = None
+    if has_key:
+        decrypted = decrypt_credential(user.openai_api_key)
+        masked_key = mask_credential(decrypted)
+
+    return UserCredentialsResponse(
+        has_openai_key=has_key,
+        openai_key_masked=masked_key,
+        sec_user_agent=user.sec_user_agent,
+    )
+
