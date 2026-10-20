@@ -15,8 +15,8 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Risk Analytics & Views (RSK)** | 0 | 0 | 0 | 0 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 0 | 0 | 0 | 0 | 0 |
 | **Navigation & Explorer UX (NAV)** | 0 | 0 | 0 | 0 | 0 |
-| **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
-| **Total** | **1** | **0** | **0** | **1** | **0** |
+| **Qualitative Analysis / RAG (RAG)**| 0 | 0 | 0 | 0 | 0 |
+| **Total** | **0** | **0** | **0** | **0** | **0** |
 
 ---
 
@@ -241,9 +241,13 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Wire export button in `Simulation.tsx` to download Monte Carlo trajectory percentiles and risk statistics.
   - [x] Wire download button in `Signals.tsx` to download live institutional 13F and insider Form 4 streams.
 
-### [QTR-RAG-02] PostgreSQL Vector Store Integration (`pgvector`)
+### [QTR-RAG-02] PostgreSQL Vector Store Integration (`pgvector`) ✅
 - **Category**: Qualitative Analysis
-- **Component**: `backend/app/models/`
+- **Component**: [`backend/app/models/document_chunk.py`](backend/app/models/document_chunk.py), [`backend/alembic/versions/20261020_0001_add_pgvector_and_document_chunks.py`](backend/alembic/versions/20261020_0001_add_pgvector_and_document_chunks.py), [`backend/app/providers/transcript.py`](backend/app/providers/transcript.py)
 - **Description**: No vector schema or extension configured in Alembic / PostgreSQL.
 - **Acceptance Criteria**:
-  - [ ] Add `pgvector` extension migration and `DocumentChunk` embedding table.
+  - [x] Compile and enable `pgvector` extension in PostgreSQL container.
+  - [x] Create `DocumentChunk` model with 1536-dimensional `Vector(1536)` column and HNSW cosine distance index.
+  - [x] Generate Alembic migration script for pgvector and document chunks table.
+  - [x] Implement async vector storage (`store_chunks`) and cosine similarity search (`search_similar_chunks`) with <=> operator.
+  - [x] 100% test coverage in `backend/app/tests/test_vector_store.py`.

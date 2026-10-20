@@ -1,6 +1,7 @@
 """Models package initialization."""
 
 from app.models.audit import AuditLog
+from app.models.document_chunk import DocumentChunk
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.recommendation import Recommendation
 from app.models.research import ResearchReport
@@ -17,4 +18,5 @@ __all__ = [
     "AuditLog",
     "Portfolio",
     "PortfolioPosition",
+    "DocumentChunk",
 ]
