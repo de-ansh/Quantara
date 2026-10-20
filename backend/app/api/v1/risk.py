@@ -31,6 +31,18 @@ class DrawdownPoint(BaseModel):
     drawdown_pct: float | None = None
 
 
+class ScenarioStressResult(BaseModel):
+    """Macro stress test scenario response schema."""
+
+    id: str
+    name: str
+    type: str
+    impact_pct: float
+    status: str
+    factor_breakdown: dict[str, float] = {}
+    narrative: str | None = None
+
+
 class RiskAnalysisResponse(BaseModel):
     """Risk analysis response schema."""
 
@@ -42,6 +54,8 @@ class RiskAnalysisResponse(BaseModel):
     explanation: str
     max_drawdown: float = 0.0
     drawdown_series: list[DrawdownPoint] = []
+    scenarios: list[ScenarioStressResult] = []
+    factor_sensitivities: dict[str, float] = {}
 
 
 @router.get("/stocks/{ticker}/risk", response_model=RiskAnalysisResponse)
@@ -128,6 +142,34 @@ async def get_stock_risk_analysis(
         }
 
     components = risk_data.get("components", {})
+
+    # Compute quantitative factor sensitivities and scenario stress tests
+    stock_beta = 1.1
+    stock_pe = 25.0
+    stock_de = 0.5
+    stock_sector = "Technology"
+
+    if "state" in locals() and state:
+        stock_beta = state.get("computed_metrics", {}).get("beta") or stock_beta
+        stock_pe = state.get("raw_data", {}).get("pe_ratio") or stock_pe
+        stock_de = state.get("computed_metrics", {}).get("debt_to_equity") or stock_de
+        stock_sector = state.get("raw_data", {}).get("sector") or stock_sector
+
+    factor_sens = risk_engine.calculate_factor_sensitivities(
+        ticker=ticker.upper(),
+        beta=stock_beta,
+        pe_ratio=stock_pe,
+        debt_to_equity=stock_de,
+        sector=stock_sector,
+    )
+    scenarios_data = risk_engine.run_scenario_stress_test(
+        ticker=ticker.upper(),
+        beta=stock_beta,
+        pe_ratio=stock_pe,
+        debt_to_equity=stock_de,
+        sector=stock_sector,
+    )
+
     return RiskAnalysisResponse(
         ticker=ticker.upper(),
         overall_risk_score=risk_data.get("risk_score", 50.0),
@@ -144,7 +186,47 @@ async def get_stock_risk_analysis(
         explanation=risk_data.get("explanation", ""),
         max_drawdown=risk_data.get("max_drawdown", 0.0),
         drawdown_series=risk_data.get("drawdown_series", []),
+        scenarios=[ScenarioStressResult(**s) for s in scenarios_data],
+        factor_sensitivities=factor_sens,
     )
+
+
+@router.get("/stocks/{ticker}/scenarios", response_model=list[ScenarioStressResult])
+async def get_stock_scenarios(
+    ticker: str,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> list[ScenarioStressResult]:
+    """
+    Get multi-factor macroeconomic stress test scenarios for a stock.
+
+    Args:
+        ticker: Stock ticker symbol
+        current_user: Authenticated user
+        db: Database session
+
+    Returns:
+        List of macro scenario stress test results with factor breakdown.
+    """
+    from sqlalchemy import select
+    from app.models.stock import Stock
+
+    stmt = select(Stock).where(Stock.ticker == ticker.upper())
+    res = await db.execute(stmt)
+    stock = res.scalar_one_or_none()
+
+    beta = stock.beta if stock and stock.beta is not None else 1.1
+    pe_ratio = stock.pe_ratio if stock and stock.pe_ratio is not None else 25.0
+    sector = stock.sector if stock and stock.sector else "Technology"
+
+    scenarios = risk_engine.run_scenario_stress_test(
+        ticker=ticker.upper(),
+        beta=beta,
+        pe_ratio=pe_ratio,
+        debt_to_equity=0.5,
+        sector=sector,
+    )
+    return [ScenarioStressResult(**s) for s in scenarios]
 
 
 class PeerCorrelation(BaseModel):

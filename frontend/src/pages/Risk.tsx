@@ -8,7 +8,12 @@ import {
     Download,
     Droplets,
     Globe,
-    Search
+    Search,
+    DollarSign,
+    ShieldAlert,
+    Sliders,
+    Info,
+    ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -24,6 +29,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@/components/ui/dialog"
 
 const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "TLT", "GLD"]
 
@@ -40,6 +52,8 @@ export default function Risk() {
     const navigate = useNavigate()
     const [localTicker, setLocalTicker] = useState("NVDA")
     const [tickerInput, setTickerInput] = useState("")
+    const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null)
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
 
     const activeTicker = (urlTicker || localTicker).toUpperCase()
 
@@ -130,12 +144,92 @@ export default function Risk() {
         { name: "LEVERAGE RISK COEFFICIENT", val: `${components.leverage_score.toFixed(1)}%`, width: `${components.leverage_score}%`, opacity: "bg-primary/10" },
     ]
 
-    const scenarios = [
-        { name: "Fed Pivot +50bps", type: "Interest Rate Spike", impact: `-${(components.valuation_risk_score * 0.15).toFixed(1)}%`, status: "danger", icon: BarChart3 },
-        { name: "Global Recession (Bear)", type: "Consumer Confidence Drop", impact: `-${(overallRiskScore * 0.35).toFixed(1)}%`, status: "danger", icon: Globe },
-        { name: "Oil Spike to $120", type: "Supply Chain Shock", impact: `-${(components.sector_risk_score * 0.1).toFixed(1)}%`, status: "danger", icon: Droplets },
-        { name: "AI Infrastructure Expansion", type: "Catalyst Event", impact: `+${(components.earnings_stability_score * 0.5).toFixed(1)}%`, status: "success", icon: Zap, active: true },
-    ]
+    const getScenarioIcon = (id: string) => {
+        switch (id) {
+            case "fed_pivot_50bps":
+                return BarChart3
+            case "global_recession":
+                return Globe
+            case "oil_spike_120":
+                return Droplets
+            case "ai_infra_expansion":
+                return Zap
+            case "credit_spread_widening":
+                return ShieldAlert
+            case "usd_surge_10":
+                return DollarSign
+            default:
+                return Sliders
+        }
+    }
+
+    const allScenarios = (riskData?.scenarios && riskData.scenarios.length > 0)
+        ? riskData.scenarios
+        : [
+            {
+                scenario_id: "fed_pivot_50bps",
+                name: "Fed Pivot +50bps",
+                macro_event: "Interest Rate Spike",
+                impact_pct: -Number((components.valuation_risk_score * 0.15).toFixed(1)),
+                confidence: 0.88,
+                horizon: "3M - 6M",
+                primary_driver: "Duration & Valuation Multiples",
+                factor_breakdown: { "Interest Rate Beta": -Number((components.valuation_risk_score * 0.15).toFixed(1)) }
+            },
+            {
+                scenario_id: "global_recession",
+                name: "Global Recession (Bear)",
+                macro_event: "Consumer Confidence Drop",
+                impact_pct: -Number((overallRiskScore * 0.35).toFixed(1)),
+                confidence: 0.82,
+                horizon: "12M",
+                primary_driver: "Systemic Market Beta",
+                factor_breakdown: { "Systemic Beta": -Number((overallRiskScore * 0.35).toFixed(1)) }
+            },
+            {
+                scenario_id: "oil_spike_120",
+                name: "Oil Spike to $120",
+                macro_event: "Supply Chain Shock",
+                impact_pct: -Number((components.sector_risk_score * 0.1).toFixed(1)),
+                confidence: 0.75,
+                horizon: "3M",
+                primary_driver: "Commodity & Input Inflation",
+                factor_breakdown: { "Energy Beta": -Number((components.sector_risk_score * 0.1).toFixed(1)) }
+            },
+            {
+                scenario_id: "ai_infra_expansion",
+                name: "AI Infrastructure Expansion",
+                macro_event: "Catalyst Event",
+                impact_pct: Number((components.earnings_stability_score * 0.5).toFixed(1)),
+                confidence: 0.91,
+                horizon: "6M - 18M",
+                primary_driver: "Tech Momentum & Capex",
+                factor_breakdown: { "Tech Momentum Beta": Number((components.earnings_stability_score * 0.5).toFixed(1)) }
+            },
+            {
+                scenario_id: "credit_spread_widening",
+                name: "Credit Spread Widening (+200bps)",
+                macro_event: "High Yield Spread Blowout",
+                impact_pct: -Number((components.leverage_score * 0.18).toFixed(1)),
+                confidence: 0.80,
+                horizon: "6M",
+                primary_driver: "Debt Refinancing & High-Yield Beta",
+                factor_breakdown: { "Credit Spread Beta": -Number((components.leverage_score * 0.18).toFixed(1)) }
+            },
+            {
+                scenario_id: "usd_surge_10",
+                name: "USD Dollar Surge (+10%)",
+                macro_event: "Foreign Exchange Shock",
+                impact_pct: -Number((components.sector_risk_score * 0.08).toFixed(1)),
+                confidence: 0.78,
+                horizon: "3M - 9M",
+                primary_driver: "Multinational FX Headwinds",
+                factor_breakdown: { "FX Translation Beta": -Number((components.sector_risk_score * 0.08).toFixed(1)) }
+            }
+        ]
+
+    const activeScenarioId = selectedScenarioId || allScenarios[0]?.scenario_id
+    const activeScenario = allScenarios.find((s: any) => s.scenario_id === activeScenarioId) || allScenarios[0]
 
     return (
         <div className="flex flex-col flex-1 p-6 bg-background space-y-6 overflow-y-auto custom-scrollbar">
@@ -305,30 +399,63 @@ export default function Risk() {
                                 <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Projected % impact under market shocks</p>
                             </CardHeader>
                             <CardContent className="p-4 space-y-2 flex-1 overflow-auto custom-scrollbar">
-                                {scenarios.map((s, i) => (
-                                    <div
-                                        key={i}
-                                        className={cn(
-                                            "p-3 rounded-md bg-background/50 border transition-all cursor-pointer group flex items-center justify-between",
-                                            s.active ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-q-border/50 hover:border-q-border hover:bg-background"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className={cn("p-2 rounded bg-background border border-q-border group-hover:scale-110 transition-transform", s.status === "danger" ? "text-q-risk-high" : "text-q-risk-low")}>
-                                                <s.icon className="size-4" />
+                                {allScenarios.slice(0, 4).map((s: any) => {
+                                    const Icon = getScenarioIcon(s.scenario_id)
+                                    const isPositive = s.impact_pct >= 0
+                                    const isSelected = s.scenario_id === activeScenario?.scenario_id
+                                    return (
+                                        <div
+                                            key={s.scenario_id}
+                                            onClick={() => setSelectedScenarioId(s.scenario_id)}
+                                            className={cn(
+                                                "p-3 rounded-md bg-background/50 border transition-all cursor-pointer group flex items-center justify-between",
+                                                isSelected
+                                                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                                    : "border-q-border/50 hover:border-q-border hover:bg-background"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                    "p-2 rounded bg-background border border-q-border group-hover:scale-110 transition-transform",
+                                                    isPositive ? "text-q-risk-low" : "text-q-risk-high"
+                                                )}>
+                                                    <Icon className="size-4" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-tight text-foreground">{s.name}</p>
+                                                    <p className="text-[8px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.macro_event}</p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase tracking-tight text-foreground">{s.name}</p>
-                                                <p className="text-[8px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.type}</p>
-                                            </div>
+                                            <span className={cn(
+                                                "font-mono font-black text-sm",
+                                                isPositive ? "text-q-risk-low" : "text-q-risk-high"
+                                            )}>
+                                                {isPositive ? `+${s.impact_pct.toFixed(1)}%` : `${s.impact_pct.toFixed(1)}%`}
+                                            </span>
                                         </div>
-                                        <span className={cn("font-mono font-black text-sm", s.status === "danger" ? "text-q-risk-high" : "text-q-risk-low")}>{s.impact}</span>
+                                    )
+                                })}
+
+                                {activeScenario && (
+                                    <div className="p-3 rounded-md bg-background/80 border border-q-border/60 text-[10px] space-y-1.5 mt-2">
+                                        <div className="flex justify-between font-mono font-bold">
+                                            <span className="text-muted-foreground uppercase text-[9px]">Primary Driver:</span>
+                                            <span className="text-foreground text-[9px] text-right truncate ml-2">{activeScenario.primary_driver}</span>
+                                        </div>
+                                        <div className="text-[9px] text-muted-foreground font-mono flex justify-between">
+                                            <span>Horizon: {activeScenario.horizon}</span>
+                                            <span>Confidence: {(activeScenario.confidence * 100).toFixed(0)}%</span>
+                                        </div>
                                     </div>
-                                ))}
+                                )}
                             </CardContent>
                             <div className="p-4">
-                                <Button variant="secondary" className="w-full text-[10px] font-black uppercase tracking-[0.2em] h-10 border border-q-border/50">
-                                    Load Advanced Scenarios
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => setIsAdvancedOpen(true)}
+                                    className="w-full text-[10px] font-black uppercase tracking-[0.2em] h-10 border border-q-border/50"
+                                >
+                                    Load Advanced Scenarios ({allScenarios.length})
                                 </Button>
                             </div>
                         </Card>
@@ -505,6 +632,121 @@ export default function Risk() {
                     </div>
                 </>
             )}
+
+            {/* Advanced Scenarios Dialog Modal */}
+            <Dialog open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
+                <DialogContent className="max-w-3xl bg-background border-border text-foreground">
+                    <DialogHeader>
+                        <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                            <ShieldAlert className="size-4 text-primary" />
+                            Multi-Factor Stress Scenarios & Sensitivities: {activeTicker}
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-muted-foreground">
+                            Deterministic multi-factor stress tests projecting asset sensitivity against historical and synthetic macroeconomic shocks.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {/* Factor Sensitivities Summary */}
+                    {riskData?.factor_sensitivities && (
+                        <div className="p-3 bg-muted/40 border border-border rounded-sm space-y-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Estimated Factor Betas (&beta;):</span>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center font-mono">
+                                <div className="p-2 bg-background border border-border rounded-sm">
+                                    <div className="text-[9px] text-muted-foreground">Market Beta</div>
+                                    <div className="text-xs font-bold text-foreground">
+                                        {riskData.factor_sensitivities.market_beta?.toFixed(2) ?? "1.00"}
+                                    </div>
+                                </div>
+                                <div className="p-2 bg-background border border-border rounded-sm">
+                                    <div className="text-[9px] text-muted-foreground">Rate Beta</div>
+                                    <div className="text-xs font-bold text-foreground">
+                                        {riskData.factor_sensitivities.interest_rate_beta?.toFixed(2) ?? "-1.20"}
+                                    </div>
+                                </div>
+                                <div className="p-2 bg-background border border-border rounded-sm">
+                                    <div className="text-[9px] text-muted-foreground">Oil Beta</div>
+                                    <div className="text-xs font-bold text-foreground">
+                                        {riskData.factor_sensitivities.oil_beta?.toFixed(2) ?? "-0.15"}
+                                    </div>
+                                </div>
+                                <div className="p-2 bg-background border border-border rounded-sm">
+                                    <div className="text-[9px] text-muted-foreground">Tech Mom Beta</div>
+                                    <div className="text-xs font-bold text-foreground">
+                                        {riskData.factor_sensitivities.tech_momentum_beta?.toFixed(2) ?? "1.10"}
+                                    </div>
+                                </div>
+                                <div className="p-2 bg-background border border-border rounded-sm">
+                                    <div className="text-[9px] text-muted-foreground">Credit Beta</div>
+                                    <div className="text-xs font-bold text-foreground">
+                                        {riskData.factor_sensitivities.credit_spread_beta?.toFixed(2) ?? "-0.65"}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Scenarios List */}
+                    <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                        {allScenarios.map((s: any) => {
+                            const Icon = getScenarioIcon(s.scenario_id)
+                            const isPositive = s.impact_pct >= 0
+                            return (
+                                <div
+                                    key={s.scenario_id}
+                                    className="p-3 bg-card border border-border rounded-sm space-y-2"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className={cn(
+                                                "p-1.5 rounded bg-muted/60 border border-border",
+                                                isPositive ? "text-green-500" : "text-rose-500"
+                                            )}>
+                                                <Icon className="size-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-bold uppercase">{s.name}</div>
+                                                <div className="text-[10px] text-muted-foreground font-mono">{s.macro_event}</div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={cn(
+                                                "font-mono font-bold text-sm",
+                                                isPositive ? "text-green-500" : "text-rose-500"
+                                            )}>
+                                                {isPositive ? `+${s.impact_pct.toFixed(1)}%` : `${s.impact_pct.toFixed(1)}%`}
+                                            </div>
+                                            <div className="text-[9px] text-muted-foreground font-mono">
+                                                Confidence: {(s.confidence * 100).toFixed(0)}%
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono pt-1 border-t border-border/40">
+                                        <span>Driver: <strong className="text-foreground">{s.primary_driver}</strong></span>
+                                        <span>Horizon: {s.horizon}</span>
+                                    </div>
+
+                                    {s.factor_breakdown && Object.keys(s.factor_breakdown).length > 0 && (
+                                        <div className="grid grid-cols-2 gap-1.5 pt-1 text-[9px] font-mono bg-muted/30 p-2 rounded">
+                                            {Object.entries(s.factor_breakdown).map(([factor, val]: [string, any]) => (
+                                                <div key={factor} className="flex justify-between">
+                                                    <span className="text-muted-foreground">{factor}:</span>
+                                                    <span className={cn(
+                                                        "font-semibold",
+                                                        val >= 0 ? "text-green-500" : "text-rose-500"
+                                                    )}>
+                                                        {val >= 0 ? `+${Number(val).toFixed(1)}%` : `${Number(val).toFixed(1)}%`}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

@@ -568,3 +568,192 @@ class RiskEngine:
 
         return computed_max_dd, points
 
+    def calculate_factor_sensitivities(
+        self,
+        ticker: str,
+        beta: float = 1.0,
+        pe_ratio: float | None = None,
+        debt_to_equity: float | None = None,
+        sector: str = "Technology",
+    ) -> dict[str, float]:
+        """
+        Calculate quantitative macro factor sensitivities (betas) for an asset.
+
+        Factors:
+        - market_beta: Sensitivity to broad equity market (S&P 500)
+        - interest_rate_beta: Sensitivity to interest rate moves (duration / multiple compression)
+        - oil_beta: Sensitivity to energy/commodity input costs
+        - tech_momentum_beta: Sensitivity to technology and AI innovation cycle
+        - credit_spread_beta: Sensitivity to debt refinancing and credit widening
+        """
+        b = beta if beta is not None else 1.0
+        pe = pe_ratio if pe_ratio and pe_ratio > 0 else 22.0
+        de = debt_to_equity if debt_to_equity is not None and debt_to_equity >= 0 else 0.5
+        sec = (sector or "Technology").lower()
+
+        # 1. Market Beta
+        market_beta = round(float(b), 2)
+
+        # 2. Interest Rate / Duration Sensitivity
+        pe_factor = min(3.0, max(0.5, pe / 18.0))
+        leverage_multiplier = 1.0 + min(2.0, de * 0.5)
+        rate_beta = round(-1.2 * pe_factor * leverage_multiplier, 2)
+
+        # 3. Commodity / Oil Beta
+        if "energy" in sec or "oil" in sec:
+            oil_beta = 1.45
+        elif "utilit" in sec:
+            oil_beta = -0.35
+        elif "transport" in sec or "airline" in sec or "consumer" in sec:
+            oil_beta = -0.85
+        elif "tech" in sec or "semiconductor" in sec:
+            oil_beta = -0.25
+        elif "financ" in sec:
+            oil_beta = 0.15
+        else:
+            oil_beta = -0.30
+
+        # 4. Tech / Growth Momentum Beta
+        if "tech" in sec or "semiconductor" in sec or "software" in sec:
+            tech_beta = round(1.35 * b, 2)
+        elif "communicat" in sec:
+            tech_beta = round(1.05 * b, 2)
+        elif "health" in sec:
+            tech_beta = 0.40
+        elif "utilit" in sec or "reit" in sec:
+            tech_beta = 0.15
+        else:
+            tech_beta = 0.50
+
+        # 5. Credit Spread Beta (widening credit spread penalty)
+        credit_beta = round(-0.8 * (1.0 + de * 1.5), 2)
+
+        return {
+            "market_beta": market_beta,
+            "interest_rate_beta": rate_beta,
+            "oil_beta": round(oil_beta, 2),
+            "tech_momentum_beta": tech_beta,
+            "credit_spread_beta": credit_beta,
+        }
+
+    def run_scenario_stress_test(
+        self,
+        ticker: str,
+        beta: float = 1.0,
+        pe_ratio: float | None = None,
+        debt_to_equity: float | None = None,
+        sector: str = "Technology",
+    ) -> list[dict[str, Any]]:
+        """
+        Run multi-factor macroeconomic stress test scenarios based on factor sensitivities.
+
+        Returns list of structured scenarios with projected % impact and factor attribution.
+        """
+        sens = self.calculate_factor_sensitivities(
+            ticker=ticker,
+            beta=beta,
+            pe_ratio=pe_ratio,
+            debt_to_equity=debt_to_equity,
+            sector=sector,
+        )
+
+        scenarios_definitions = [
+            {
+                "id": "fed_pivot_rate_spike",
+                "name": "Fed Pivot +50bps",
+                "type": "Interest Rate Spike",
+                "description": "Short rate hike (+50bps), yield curve shifts up, equity multiple compression.",
+                "shocks": {
+                    "market_beta": -2.5,
+                    "interest_rate_beta": 4.5,
+                    "credit_spread_beta": 1.0,
+                },
+                "category": "macro_monetary",
+            },
+            {
+                "id": "global_recession_bear",
+                "name": "Global Recession (Bear)",
+                "type": "Consumer Confidence Drop",
+                "description": "Broad market equity liquidation, corporate earnings contraction (-18% market).",
+                "shocks": {
+                    "market_beta": -18.0,
+                    "credit_spread_beta": 4.0,
+                    "oil_beta": -5.0,
+                },
+                "category": "macro_economic",
+            },
+            {
+                "id": "oil_supply_shock_120",
+                "name": "Oil Spike to $120",
+                "type": "Supply Chain Shock",
+                "description": "Crude oil surge +50% due to geopolitical disruption, input cost inflation.",
+                "shocks": {
+                    "oil_beta": 12.0,
+                    "market_beta": -4.0,
+                    "interest_rate_beta": 1.5,
+                },
+                "category": "commodity_geopolitical",
+            },
+            {
+                "id": "ai_infra_expansion",
+                "name": "AI Infrastructure Expansion",
+                "type": "Catalyst Event",
+                "description": "Massive capital expenditure cycle acceleration in high-performance computing.",
+                "shocks": {
+                    "tech_momentum_beta": 15.0,
+                    "market_beta": 4.5,
+                },
+                "category": "industry_catalyst",
+            },
+            {
+                "id": "credit_spread_widening",
+                "name": "Credit Spread Widening (+200bps)",
+                "type": "Refinancing Crunch",
+                "description": "High yield spreads widen +200bps, debt refinancing costs surge.",
+                "shocks": {
+                    "credit_spread_beta": 8.0,
+                    "market_beta": -5.5,
+                },
+                "category": "credit_liquidity",
+            },
+            {
+                "id": "usd_liquidity_squeeze",
+                "name": "USD Dollar Surge (+10% DXY)",
+                "type": "FX Headwind",
+                "description": "Surging US dollar penalizes multinational foreign revenues.",
+                "shocks": {
+                    "market_beta": -3.5,
+                    "tech_momentum_beta": -4.0,
+                },
+                "category": "currency_fx",
+            },
+        ]
+
+        results = []
+        for s in scenarios_definitions:
+            impact = 0.0
+            factor_contributions = {}
+            for factor_name, shock_magnitude in s["shocks"].items():
+                sensitivity = sens.get(factor_name, 0.0)
+                contribution = sensitivity * shock_magnitude
+                factor_contributions[factor_name] = round(contribution, 2)
+                impact += contribution
+
+            impact_pct = round(impact, 1)
+            status = "danger" if impact_pct < -5.0 else ("warning" if impact_pct < 0 else "success")
+
+            results.append(
+                {
+                    "id": s["id"],
+                    "name": s["name"],
+                    "type": s["type"],
+                    "impact_pct": impact_pct,
+                    "status": status,
+                    "factor_breakdown": factor_contributions,
+                    "narrative": s["description"],
+                }
+            )
+
+        return results
+
+
