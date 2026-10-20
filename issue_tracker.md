@@ -12,11 +12,11 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
-| **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
+| **Risk Analytics & Views (RSK)** | 0 | 0 | 0 | 0 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 1 | 0 | 0 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
-| **Total** | **5** | **0** | **0** | **5** | **0** |
+| **Total** | **4** | **0** | **0** | **4** | **0** |
 
 ---
 
@@ -201,12 +201,16 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 ## 🟢 Priority 2 — Medium Improvements & Polish
 
-### [QTR-RSK-03] Quantitative Scenario Stress Testing
+### [QTR-RSK-03] Quantitative Scenario Stress Testing ✅
 - **Category**: Risk Analytics
-- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx)
+- **Component**: [`frontend/src/pages/Risk.tsx`](frontend/src/pages/Risk.tsx), [`backend/app/services/risk_engine.py`](backend/app/services/risk_engine.py), [`backend/app/api/v1/risk.py`](backend/app/api/v1/risk.py)
 - **Description**: Macro stress scenarios (Fed pivot, Oil spike, Recession) use simple visual multipliers.
 - **Acceptance Criteria**:
-  - [ ] Connect scenario modeling to historical factor beta sensitivities.
+  - [x] Connect scenario modeling to historical factor beta sensitivities (`market_beta`, `interest_rate_beta`, `oil_beta`, `tech_momentum_beta`, `credit_spread_beta`).
+  - [x] Implement multi-factor macroeconomic shock scenarios (`fed_pivot_50bps`, `global_recession`, `oil_spike_120`, `ai_infra_expansion`, `credit_spread_widening`, `usd_surge_10`).
+  - [x] Expose `scenarios` and `factor_sensitivities` in `GET /stocks/{ticker}/risk` and dedicated `GET /stocks/{ticker}/scenarios`.
+  - [x] Interactive UI in `frontend/src/pages/Risk.tsx` with dynamic scenario selection, driver details, and modal inspection dialog.
+  - [x] 100% test coverage in `backend/app/tests/test_risk_engine.py`.
 
 ### [QTR-SIG-03] Live Intraday Sentiment Curve in `Signals.tsx`
 - **Category**: Signal Engine

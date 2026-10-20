@@ -203,5 +203,89 @@ async def test_get_stock_risk_analysis_endpoint():
     assert resp.max_drawdown <= 0.0
     assert len(resp.drawdown_series) > 0
     assert resp.components.volatility_score >= 0.0
+    assert len(resp.scenarios) == 6
+    assert "market_beta" in resp.factor_sensitivities
+
+
+def test_calculate_factor_sensitivities():
+    """Test quantitative factor sensitivities calculation."""
+    from app.services.risk_engine import RiskEngine
+
+    engine = RiskEngine()
+
+    # Technology stock
+    tech_sens = engine.calculate_factor_sensitivities(
+        ticker="NVDA", beta=1.65, pe_ratio=45.0, debt_to_equity=0.3, sector="Technology"
+    )
+    assert tech_sens["market_beta"] == 1.65
+    assert tech_sens["interest_rate_beta"] < -1.5  # High P/E growth stock duration penalty
+    assert tech_sens["tech_momentum_beta"] > 1.5
+    assert tech_sens["oil_beta"] < 0.0
+
+    # Energy stock
+    energy_sens = engine.calculate_factor_sensitivities(
+        ticker="XOM", beta=0.85, pe_ratio=11.0, debt_to_equity=0.4, sector="Energy"
+    )
+    assert energy_sens["market_beta"] == 0.85
+    assert energy_sens["oil_beta"] > 1.0  # Positive sensitivity to oil spikes
+
+
+def test_run_scenario_stress_test():
+    """Test multi-factor scenario stress testing."""
+    from app.services.risk_engine import RiskEngine
+
+    engine = RiskEngine()
+    scenarios = engine.run_scenario_stress_test(
+        ticker="AAPL", beta=1.2, pe_ratio=28.0, debt_to_equity=0.8, sector="Technology"
+    )
+
+    assert len(scenarios) == 6
+    scenario_ids = [s["id"] for s in scenarios]
+    assert "fed_pivot_rate_spike" in scenario_ids
+    assert "global_recession_bear" in scenario_ids
+    assert "oil_supply_shock_120" in scenario_ids
+    assert "ai_infra_expansion" in scenario_ids
+    assert "credit_spread_widening" in scenario_ids
+    assert "usd_liquidity_squeeze" in scenario_ids
+
+    # Global recession should project severe negative return shock
+    recession = next(s for s in scenarios if s["id"] == "global_recession_bear")
+    assert recession["impact_pct"] < -15.0
+    assert recession["status"] == "danger"
+    assert "market_beta" in recession["factor_breakdown"]
+
+    # AI expansion should project positive catalyst for tech
+    ai_catalyst = next(s for s in scenarios if s["id"] == "ai_infra_expansion")
+    assert ai_catalyst["impact_pct"] > 5.0
+    assert ai_catalyst["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_get_stock_scenarios_endpoint():
+    """Test dedicated GET /stocks/{ticker}/scenarios endpoint."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.api.v1.risk import get_stock_scenarios
+    from app.models.stock import Stock
+
+    mock_db = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalar_one_or_none.return_value = Stock(
+        ticker="MSFT",
+        name="Microsoft Corp",
+        sector="Technology",
+        beta=1.25,
+        pe_ratio=32.0,
+    )
+    mock_db.execute.return_value = mock_res
+    current_user = {"id": "1", "email": "analyst@quantara.com"}
+
+    scenarios = await get_stock_scenarios(ticker="MSFT", current_user=current_user, db=mock_db)
+
+    assert len(scenarios) == 6
+    for s in scenarios:
+        assert s.name
+        assert s.type
+        assert s.status in ["danger", "warning", "success"]
+        assert s.impact_pct is not None
 
 
