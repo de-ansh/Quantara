@@ -14,9 +14,14 @@ import {
     Minus,
     MoreHorizontal,
     Clock,
-    CheckCircle2
+    CheckCircle2,
+    SlidersHorizontal,
+    X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { exportToCsv } from "@/lib/export"
 
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
@@ -27,6 +32,7 @@ export default function ResearchExplorer() {
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
+    const [selectedTickers, setSelectedTickers] = useState<string[]>([])
 
     // Query backend Stock Search API
     const { data, isLoading } = useQuery({
@@ -59,6 +65,49 @@ export default function ResearchExplorer() {
         setPeLimit(50)
         setBetaLimit(2.0)
         setSelectedSignals([])
+        setSelectedTickers([])
+    }
+
+    const handleToggleSelect = (ticker: string) => {
+        setSelectedTickers(prev =>
+            prev.includes(ticker)
+                ? prev.filter(t => t !== ticker)
+                : [...prev, ticker]
+        )
+    }
+
+    const handleSelectAll = () => {
+        if (selectedTickers.length === results.length && results.length > 0) {
+            setSelectedTickers([])
+        } else {
+            setSelectedTickers(results.map((r: any) => r.ticker))
+        }
+    }
+
+    const handleExport = (onlySelected = false) => {
+        const source = onlySelected
+            ? results.filter((r: any) => selectedTickers.includes(r.ticker))
+            : results
+
+        if (source.length === 0) return
+
+        const exportRows = source.map((r: any) => ({
+            ticker: r.ticker,
+            name: r.name || "",
+            price: r.price,
+            market_cap: r.cap,
+            risk_score: r.risk,
+            signal: r.signal,
+            alpha: r.alpha,
+            sector: r.sector || "",
+            pe_ratio: r.pe ?? "",
+            beta: r.beta ?? "",
+        }))
+
+        exportToCsv(
+            onlySelected ? "quantara_selected_stocks.csv" : "quantara_stock_screener.csv",
+            exportRows
+        )
     }
 
     return (
@@ -170,12 +219,10 @@ export default function ResearchExplorer() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                            <button className="flex items-center gap-2 px-3 py-1.5 border border-border hover:bg-muted rounded text-xs font-bold transition-colors text-foreground/80">
-                                <Bookmark className="size-3.5" />
-                                Save Search
-                            </button>
-                            <div className="h-8 w-[1px] bg-border mx-1" />
-                            <button className="flex items-center gap-2 px-3 py-1.5 border border-border hover:bg-muted rounded text-xs font-bold transition-colors text-foreground/80">
+                            <button
+                                onClick={() => handleExport(false)}
+                                className="flex items-center gap-2 px-3 py-1.5 border border-border hover:bg-muted rounded text-xs font-bold transition-colors text-foreground/80"
+                            >
                                 <Download className="size-3.5" />
                                 Export
                             </button>
@@ -196,18 +243,158 @@ export default function ResearchExplorer() {
                         </div>
                     </div>
 
-                    {/* Results Table */}
+                    {/* Bulk Selection Bar */}
+                    {selectedTickers.length > 0 && (
+                        <div className="bg-primary/10 border-b border-primary/20 px-6 py-2.5 flex items-center justify-between text-xs font-mono shrink-0 animate-in fade-in">
+                            <div className="flex items-center gap-3">
+                                <span className="font-bold text-foreground">
+                                    {selectedTickers.length} of {results.length} Assets Selected
+                                </span>
+                                <button
+                                    onClick={() => setSelectedTickers([])}
+                                    className="text-muted-foreground hover:text-foreground underline text-[11px] flex items-center gap-1"
+                                >
+                                    <X className="size-3" /> Clear
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleExport(true)}
+                                    className="h-7 text-[10px] font-black uppercase tracking-wider bg-background"
+                                >
+                                    <Download className="size-3 mr-1" />
+                                    Export Selected ({selectedTickers.length})
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => navigate(`/simulation?tickers=${selectedTickers.join(",")}`)}
+                                    className="h-7 text-[10px] font-black uppercase tracking-wider"
+                                >
+                                    Compare in Simulation
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Results Content Area: List Table or Card Grid */}
                     <div className="flex-1 overflow-auto no-scrollbar bg-background">
                         {isLoading && results.length === 0 ? (
                             <div className="h-64 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
                                 FETCHING_DB_RECORDS...
+                            </div>
+                        ) : view === "grid" ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
+                                {results.map((row: any) => {
+                                    const isSelected = selectedTickers.includes(row.ticker)
+                                    return (
+                                        <div
+                                            key={row.ticker}
+                                            onClick={() => navigate(`/research/${row.ticker}`)}
+                                            className={cn(
+                                                "bg-card border rounded-md p-4 transition-all hover:border-primary/50 hover:shadow-md cursor-pointer flex flex-col justify-between space-y-3 relative group",
+                                                isSelected ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border"
+                                            )}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex items-center gap-2.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            e.stopPropagation()
+                                                            handleToggleSelect(row.ticker)
+                                                        }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
+                                                    />
+                                                    <div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="font-mono text-base font-black text-foreground">{row.ticker}</span>
+                                                            {row.status && (
+                                                                <span className={cn(
+                                                                    "text-[9px] font-bold font-mono px-1 py-0.2 rounded",
+                                                                    row.status === "up" ? "text-green-400 bg-green-500/10" : "text-rose-400 bg-rose-500/10"
+                                                                )}>
+                                                                    {row.status === "up" ? "▲" : "▼"}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[10px] text-muted-foreground truncate max-w-[140px] font-medium">
+                                                            {row.name || row.sector || "Equity Asset"}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={cn(
+                                                        "text-[9px] font-mono font-bold px-1.5 py-0.5",
+                                                        row.risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                                                            row.risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
+                                                                "bg-red-500/10 text-red-400 border-red-500/20"
+                                                    )}
+                                                >
+                                                    RISK {Math.round(row.risk)}
+                                                </Badge>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono py-2 border-y border-border/40">
+                                                <div>
+                                                    <div className="text-muted-foreground text-[9px]">Price</div>
+                                                    <div className="font-bold text-foreground text-xs">{row.price}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-muted-foreground text-[9px]">Market Cap</div>
+                                                    <div className="font-bold text-foreground text-xs">{row.cap}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground text-[9px]">Signal</div>
+                                                    <div className="font-bold text-primary flex items-center gap-1 truncate text-xs">
+                                                        {row.signal || "HOLD"}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-muted-foreground text-[9px]">Alpha</div>
+                                                    <div className={cn("font-bold text-xs", row.alpha?.startsWith("+") ? "text-green-400" : "text-rose-400")}>
+                                                        {row.alpha}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => navigate(`/research/${row.ticker}`)}
+                                                    className="flex-1 h-7 text-[9px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                >
+                                                    Research
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => navigate(`/risk/${row.ticker}`)}
+                                                    className="flex-1 h-7 text-[9px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                >
+                                                    Risk
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
                             </div>
                         ) : (
                             <table className="w-full border-collapse text-left">
                                 <thead className="sticky top-0 bg-card z-10 transition-colors">
                                     <tr className="border-b border-border">
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-12">
-                                            <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
+                                            <input
+                                                type="checkbox"
+                                                checked={results.length > 0 && selectedTickers.length === results.length}
+                                                onChange={handleSelectAll}
+                                                className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
+                                            />
                                         </th>
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
@@ -223,10 +410,18 @@ export default function ResearchExplorer() {
                                         <tr 
                                             key={i} 
                                             onClick={() => navigate(`/research/${row.ticker}`)}
-                                            className="hover:bg-muted/30 transition-colors group cursor-pointer"
+                                            className={cn(
+                                                "hover:bg-muted/30 transition-colors group cursor-pointer",
+                                                selectedTickers.includes(row.ticker) && "bg-primary/5"
+                                            )}
                                         >
                                             <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                                                <input type="checkbox" className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0" />
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedTickers.includes(row.ticker)}
+                                                    onChange={() => handleToggleSelect(row.ticker)}
+                                                    className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
+                                                />
                                             </td>
                                             <td className="px-6 py-4 font-black text-foreground">{row.ticker}</td>
                                             <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>

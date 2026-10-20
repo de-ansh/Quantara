@@ -8,6 +8,7 @@ import {
     Minus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { exportToCsv } from "@/lib/export"
 import {
     ResponsiveContainer,
     AreaChart,
@@ -157,6 +158,30 @@ export default function Signals() {
 
     const isAnyLoading = loadingLive || loadingInst || loadingInsider || loadingSentiment
 
+    const handleExportSignals = () => {
+        const rows = [
+            ...finalAccumulation.map((a) => ({
+                signal_stream: "13F Institutional Accumulation",
+                entity: a.fund,
+                shares: a.shares,
+                change_pct: a.change,
+                holding_value: a.value,
+                date: a.date,
+                action: a.type
+            })),
+            ...finalInsider.map((ins) => ({
+                signal_stream: "Form 4 Insider Trading",
+                entity: `${ins.person} (${ins.role})`,
+                shares: ins.shares,
+                change_pct: ins.type,
+                holding_value: ins.price,
+                date: ins.date,
+                action: ins.type
+            }))
+        ]
+        exportToCsv("quantara_market_signals.csv", rows)
+    }
+
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
             {/* Header Info */}
@@ -180,7 +205,13 @@ export default function Signals() {
                         <div className="size-1.5 rounded-full bg-q-risk-low animate-ping" /> 
                         {isAnyLoading ? "Synchronizing nodes..." : "Processing Live Feeds"}
                     </span>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleExportSignals}
+                        title="Export signals to CSV"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
                         <Download className="size-4" />
                     </Button>
                 </div>
