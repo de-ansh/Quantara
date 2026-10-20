@@ -215,3 +215,69 @@ async def test_run_periodic_signal_processing(
     assert "sentiment_spike" in types
     assert "institutional_buying" in types
 
+
+def test_build_intraday_sentiment_curve_empty():
+    engine = SignalEngine()
+    curve = engine.build_intraday_sentiment_curve(db_signals=[], ticker="NVDA", hours=8)
+
+    assert curve["ticker"] == "NVDA"
+    assert curve["period"] == "8H"
+    assert len(curve["points"]) == 8
+    assert "current_social_score" in curve
+    assert "current_news_score" in curve
+    assert curve["sentiment_trend"] in ["IMPROVING", "STABLE", "DETERIORATING"]
+
+    for pt in curve["points"]:
+        assert 0.0 <= pt["social"] <= 100.0
+        assert 0.0 <= pt["news"] <= 100.0
+        assert pt["volume"] > 0
+        assert pt["sentiment_label"] in ["BULLISH", "NEUTRAL", "BEARISH"]
+
+
+def test_build_intraday_sentiment_curve_with_signals():
+    engine = SignalEngine()
+    now = datetime.utcnow()
+    signals = [
+        DBSignal(
+            id=1,
+            ticker="NVDA",
+            signal_type="sentiment_spike",
+            strength=85.0,
+            confidence=90.0,
+            timestamp=now,
+            data={"current_sentiment": 0.8, "mention_volume": 450},
+        )
+    ]
+    curve = engine.build_intraday_sentiment_curve(db_signals=signals, ticker="NVDA", hours=6)
+
+    assert curve["ticker"] == "NVDA"
+    assert len(curve["points"]) == 6
+    # Last point corresponds to now, should reflect the high positive sentiment
+    last_pt = curve["points"][-1]
+    assert last_pt["social"] > 60.0
+    assert last_pt["news"] > 60.0
+    assert last_pt["sentiment_label"] == "BULLISH"
+
+
+@pytest.mark.asyncio
+async def test_sentiment_curve_endpoint(client, db_session):
+    # Register test user
+    reg_payload = {"email": "sentiment_user@quantara.com", "password": "securepassword123"}
+    reg_resp = await client.post("/api/v1/auth/register", json=reg_payload)
+    assert reg_resp.status_code == 201
+    token = reg_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Fetch sentiment curve
+    resp = await client.get("/api/v1/signals/sentiment-curve?ticker=NVDA&hours=8", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["ticker"] == "NVDA"
+    assert data["period"] == "8H"
+    assert len(data["points"]) == 8
+    assert "current_social_score" in data
+    assert "current_news_score" in data
+    assert "sentiment_trend" in data
+
+

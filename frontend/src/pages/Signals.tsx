@@ -1,7 +1,11 @@
+import { useState } from "react"
 import {
     MessageSquare,
     Download,
     Maximize2,
+    TrendingUp,
+    TrendingDown,
+    Minus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -41,8 +45,20 @@ interface InsiderData {
 
 interface SentimentPoint {
     time: string
+    timestamp?: string
     social: number
     news: number
+    volume?: number
+    sentiment_label?: string
+}
+
+interface SentimentCurveResponse {
+    ticker?: string | null
+    period: string
+    points: SentimentPoint[]
+    current_social_score: number
+    current_news_score: number
+    sentiment_trend: "IMPROVING" | "STABLE" | "DETERIORATING"
 }
 
 const fallbackAccumulationData: AccumulationData[] = [
@@ -80,6 +96,20 @@ const fallbackSignals = [
 
 export default function Signals() {
     const { data: liveSignals = [], isLoading: loadingLive } = useSignals({ refetchInterval: 10000 });
+    const [selectedSentimentTicker, setSelectedSentimentTicker] = useState<string>("ALL");
+
+    // Fetch dynamic time-bucketed Intraday Sentiment Curve
+    const { data: sentimentCurve, isLoading: loadingSentiment } = useQuery<SentimentCurveResponse>({
+        queryKey: ["signals", "sentiment-curve", selectedSentimentTicker],
+        queryFn: async () => {
+            const params: Record<string, any> = { hours: 8 }
+            if (selectedSentimentTicker !== "ALL") {
+                params.ticker = selectedSentimentTicker
+            }
+            const res = await apiClient.get("/signals/sentiment-curve", { params })
+            return res.data
+        }
+    });
 
     // Fetch dynamic 13F Institutional Accumulation signals from DB
     const { data: institutionalSignals = [], isLoading: loadingInst } = useQuery<AccumulationData[]>({
@@ -121,8 +151,11 @@ export default function Signals() {
 
     const finalAccumulation = institutionalSignals.length > 0 ? institutionalSignals : fallbackAccumulationData
     const finalInsider = insiderSignals.length > 0 ? insiderSignals : fallbackInsiderData
+    const finalSentiment = sentimentCurve?.points && sentimentCurve.points.length > 0
+        ? sentimentCurve.points
+        : sentimentData
 
-    const isAnyLoading = loadingLive || loadingInst || loadingInsider
+    const isAnyLoading = loadingLive || loadingInst || loadingInsider || loadingSentiment
 
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
@@ -259,27 +292,62 @@ export default function Signals() {
 
                 {/* Sentiment Analysis */}
                 <Card className="col-span-12 flex flex-col bg-q-surface border-q-border overflow-hidden min-h-[400px] shadow-none">
-                    <CardHeader className="px-4 py-2 border-b border-q-border bg-background/30 shrink-0 flex-row items-center justify-between space-y-0">
-                        <div className="flex items-center gap-6">
+                    <CardHeader className="px-4 py-2 border-b border-q-border bg-background/30 shrink-0 flex-row items-center justify-between space-y-0 flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                             <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
                                 <MessageSquare className="size-3.5 text-primary" />
                                 Quantitative Sentiment Analysis
                             </CardTitle>
-                            <div className="flex items-center gap-4 text-[9px] font-black font-mono tracking-widest text-muted-foreground">
-                                <div className="flex items-center gap-1.5"><div className="size-2 bg-primary" /> SOCIAL INDEX</div>
-                                <div className="flex items-center gap-1.5"><div className="size-2 bg-q-risk-low" /> NEWS AGGREGATE</div>
+                            <div className="flex items-center gap-3 text-[9px] font-black font-mono tracking-widest text-muted-foreground">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-2 bg-primary rounded-full" />
+                                    <span>SOCIAL: {sentimentCurve?.current_social_score?.toFixed(1) ?? "62.4"}%</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-2 bg-q-risk-low rounded-full" />
+                                    <span>NEWS: {sentimentCurve?.current_news_score?.toFixed(1) ?? "58.2"}%</span>
+                                </div>
+                                {sentimentCurve?.sentiment_trend && (
+                                    <Badge
+                                        variant="outline"
+                                        className={cn(
+                                            "text-[8px] font-mono font-bold uppercase border-none px-1.5 py-0",
+                                            sentimentCurve.sentiment_trend === "IMPROVING" ? "text-green-400 bg-green-500/10" :
+                                            sentimentCurve.sentiment_trend === "DETERIORATING" ? "text-rose-400 bg-rose-500/10" :
+                                            "text-muted-foreground bg-muted"
+                                        )}
+                                    >
+                                        {sentimentCurve.sentiment_trend === "IMPROVING" && <TrendingUp className="size-2.5 mr-1 inline" />}
+                                        {sentimentCurve.sentiment_trend === "DETERIORATING" && <TrendingDown className="size-2.5 mr-1 inline" />}
+                                        {sentimentCurve.sentiment_trend === "STABLE" && <Minus className="size-2.5 mr-1 inline" />}
+                                        {sentimentCurve.sentiment_trend}
+                                    </Badge>
+                                )}
                             </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                                <Maximize2 className="size-3.5" />
-                            </Button>
+                        <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1">
+                                {["ALL", "NVDA", "AAPL", "MSFT", "XLK"].map((t) => (
+                                    <button
+                                        key={t}
+                                        onClick={() => setSelectedSentimentTicker(t)}
+                                        className={cn(
+                                            "px-2 py-0.5 text-[9px] font-mono font-bold rounded-sm border transition-colors",
+                                            selectedSentimentTicker === t
+                                                ? "bg-primary border-primary text-white"
+                                                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                                        )}
+                                    >
+                                        {t}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </CardHeader>
                     <CardContent className="p-4 flex-1 flex flex-col bg-background/5">
                         <div className="flex-1 min-h-[280px]">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={sentimentData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <AreaChart data={finalSentiment} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="colorSocial" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
@@ -292,8 +360,14 @@ export default function Signals() {
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--q-border))" opacity={0.3} />
                                     <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
-                                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--q-surface))', borderColor: 'hsl(var(--q-border))', fontSize: '10px', fontWeight: 'bold' }} />
+                                    <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'hsl(var(--q-surface))', borderColor: 'hsl(var(--q-border))', fontSize: '10px', fontWeight: 'bold' }}
+                                        formatter={(value: any, name: any) => [
+                                            `${Number(value).toFixed(1)}%`,
+                                            name === "social" ? "Social Mentions Index" : "News Polarity Index"
+                                        ]}
+                                    />
                                     <Area type="monotone" dataKey="social" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#colorSocial)" />
                                     <Area type="monotone" dataKey="news" stroke="hsl(var(--q-risk-low))" strokeWidth={2} fillOpacity={1} fill="url(#colorNews)" />
                                 </AreaChart>

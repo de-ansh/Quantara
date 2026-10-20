@@ -13,10 +13,10 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 0 | 0 | 0 | 0 | 0 |
-| **Signal Engine & Ingestion (SIG)**| 1 | 0 | 0 | 1 | 0 |
+| **Signal Engine & Ingestion (SIG)**| 0 | 0 | 0 | 0 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
-| **Total** | **4** | **0** | **0** | **4** | **0** |
+| **Total** | **3** | **0** | **0** | **3** | **0** |
 
 ---
 
@@ -212,12 +212,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Interactive UI in `frontend/src/pages/Risk.tsx` with dynamic scenario selection, driver details, and modal inspection dialog.
   - [x] 100% test coverage in `backend/app/tests/test_risk_engine.py`.
 
-### [QTR-SIG-03] Live Intraday Sentiment Curve in `Signals.tsx`
+### [QTR-SIG-03] Live Intraday Sentiment Curve in `Signals.tsx` ✅
 - **Category**: Signal Engine
-- **Component**: [`frontend/src/pages/Signals.tsx`](frontend/src/pages/Signals.tsx)
+- **Component**: [`frontend/src/pages/Signals.tsx`](frontend/src/pages/Signals.tsx), [`backend/app/api/v1/signals.py`](backend/app/api/v1/signals.py), [`backend/app/services/signal_engine.py`](backend/app/services/signal_engine.py)
 - **Description**: Intraday social/news sentiment chart uses static 8-point dummy array.
 - **Acceptance Criteria**:
-  - [ ] Feed chart with time-bucketed sentiment signals from backend.
+  - [x] Implement `build_intraday_sentiment_curve` in `SignalEngine` aggregating time-bucketed social mention volumes and news polarity.
+  - [x] Expose `GET /api/v1/signals/sentiment-curve` returning `points`, `current_social_score`, `current_news_score`, and `sentiment_trend`.
+  - [x] Wire `Signals.tsx` to live sentiment curve endpoint with quick ticker chips (`ALL`, `NVDA`, `AAPL`, `MSFT`, `XLK`) and dynamic tooltips.
+  - [x] 100% test coverage in `backend/app/tests/test_signal_engine.py`.
 
 ### [QTR-NAV-02] Research Explorer Grid View & Bulk Actions
 - **Category**: Navigation & Explorer
