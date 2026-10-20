@@ -15,8 +15,8 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Risk Analytics & Views (RSK)** | 1 | 0 | 0 | 1 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 1 | 0 | 0 | 1 | 0 |
 | **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
-| **Qualitative Analysis / RAG (RAG)**| 2 | 0 | 1 | 1 | 0 |
-| **Total** | **6** | **0** | **1** | **5** | **0** |
+| **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
+| **Total** | **5** | **0** | **0** | **5** | **0** |
 
 ---
 
@@ -187,14 +187,15 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Include quick platform navigation shortcuts and popular market assets.
   - [x] Backend test coverage in `backend/app/tests/test_research_search.py`.
 
-### [QTR-RAG-01] Earnings Call Transcript Ingestion & Vector Embeddings
+### [QTR-RAG-01] Earnings Call Transcript Ingestion & Vector Embeddings ✅
 - **Category**: Qualitative Analysis
-- **Component**: [`backend/app/services/llm_orchestrator.py`](backend/app/services/llm_orchestrator.py)
+- **Component**: [`backend/app/services/llm_orchestrator.py`](backend/app/services/llm_orchestrator.py), [`backend/app/providers/transcript.py`](backend/app/providers/transcript.py)
 - **Description**: Transcript retrieval is stubbed with empty array (`"transcripts": []`).
 - **Acceptance Criteria**:
-  - [ ] Integrate transcript provider (e.g. FMP / SEC 8-K exhibits).
-  - [ ] Generate chunk embeddings via OpenAI embeddings API.
-  - [ ] Retrieve top-K relevant excerpts for LLM qualitative synthesis node.
+  - [x] Integrate transcript provider (`TranscriptProvider` for earnings calls & SEC MD&A).
+  - [x] Generate chunk embeddings via OpenAI embeddings API with normalized deterministic fallback.
+  - [x] Retrieve top-K relevant excerpts for LLM qualitative synthesis node.
+  - [x] 100% test coverage in `backend/app/tests/test_transcript_rag.py`.
 
 ---
 
