@@ -443,3 +443,130 @@ class TranscriptProvider:
 
         scored_chunks.sort(key=lambda x: x["similarity_score"], reverse=True)
         return scored_chunks[:k]
+
+    async def store_chunks(
+        self,
+        db: Any,
+        ticker: str,
+        chunks: list[TranscriptChunk],
+        embeddings: list[list[float]],
+        document_type: str = "earnings_call",
+        period: str | None = None,
+    ) -> list[Any]:
+        """
+        Persist transcript chunks and vector embeddings into PostgreSQL document_chunks table.
+
+        Args:
+            db: AsyncSession database handle.
+            ticker: Stock ticker symbol.
+            chunks: List of TranscriptChunk dicts.
+            embeddings: Corresponding 1536-dimensional embeddings.
+            document_type: Category of document.
+            period: Filing or earnings period.
+
+        Returns:
+            List of created DocumentChunk model instances.
+        """
+        from sqlalchemy import select
+        from app.models.document_chunk import DocumentChunk
+        from app.models.stock import Stock
+
+        # Ensure stock exists for foreign key constraint
+        stmt = select(Stock).where(Stock.ticker == ticker.upper())
+        res = await db.execute(stmt)
+        if not res.scalar_one_or_none():
+            db.add(
+                Stock(
+                    ticker=ticker.upper(),
+                    name=f"{ticker.upper()} Inc.",
+                    sector="Technology",
+                    risk_score=50.0,
+                    research_score=75.0,
+                    price="$150.00",
+                    market_cap="1.0T",
+                )
+            )
+            await db.flush()
+
+        records = []
+        for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+            record = DocumentChunk(
+                ticker=ticker.upper(),
+                document_type=document_type,
+                period=period or f"Q{chunk.get('quarter', 4)} {chunk.get('year', 2023)}",
+                chunk_index=chunk.get("chunk_index", i),
+                chunk_text=chunk["text"],
+                embedding=emb,
+                token_count=chunk.get("token_estimate"),
+                data={
+                    "speaker": chunk.get("speaker"),
+                    "section": chunk.get("section"),
+                    "chunk_id": chunk.get("chunk_id"),
+                },
+            )
+            db.add(record)
+            records.append(record)
+
+        await db.commit()
+        return records
+
+    async def search_similar_chunks(
+        self,
+        db: Any,
+        query: str | None = None,
+        query_embedding: list[float] | None = None,
+        ticker: str | None = None,
+        document_type: str | None = None,
+        top_k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """
+        Execute semantic vector similarity search via pgvector cosine distance.
+
+        Args:
+            db: AsyncSession database handle.
+            query: Query string.
+            query_embedding: Optional precomputed 1536-dim embedding vector.
+            ticker: Optional ticker symbol filter.
+            document_type: Optional document type filter.
+            top_k: Max chunks to return.
+
+        Returns:
+            List of matching chunk dicts with similarity scores.
+        """
+        from sqlalchemy import select
+        from app.models.document_chunk import DocumentChunk
+
+        if query_embedding is None:
+            if not query:
+                return []
+            embeddings = await self.generate_embeddings([query])
+            query_embedding = embeddings[0]
+
+        distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
+        stmt = select(DocumentChunk, distance_expr.label("distance"))
+
+        if ticker:
+            stmt = stmt.where(DocumentChunk.ticker == ticker.upper())
+        if document_type:
+            stmt = stmt.where(DocumentChunk.document_type == document_type)
+
+        stmt = stmt.order_by(distance_expr).limit(top_k)
+        result = await db.execute(stmt)
+        rows = result.all()
+
+        results = []
+        for chunk, dist in rows:
+            similarity = max(0.0, 1.0 - float(dist)) if dist is not None else 1.0
+            results.append({
+                "id": chunk.id,
+                "ticker": chunk.ticker,
+                "document_type": chunk.document_type,
+                "period": chunk.period,
+                "chunk_index": chunk.chunk_index,
+                "text": chunk.chunk_text,
+                "similarity_score": round(similarity, 4),
+                "token_count": chunk.token_count,
+                "data": chunk.data or {},
+            })
+
+        return results
