@@ -12,8 +12,10 @@ import {
     LineChart,
     Grid,
     ShieldCheck,
+    Download,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { exportToCsv } from "@/lib/export"
 import {
     ResponsiveContainer,
     AreaChart,
@@ -165,6 +167,23 @@ export default function Simulation() {
     ]
 
     const chartData = result?.trajectory || []
+
+    const handleExportSimulation = () => {
+        if (!chartData || chartData.length === 0) return
+
+        const rows = chartData.map((pt: any) => ({
+            year: Number((pt.month / 12).toFixed(1)),
+            month: pt.month,
+            median_value: Math.round(pt.median || 0),
+            upper_95_ci: Math.round(pt.upper_95 || 0),
+            lower_5_ci: Math.round(pt.lower_5 || 0),
+            expected_return_pct: result?.expected_return?.toFixed(2) ?? "8.5",
+            volatility_pct: result?.expected_volatility?.toFixed(2) ?? "12.4",
+            sharpe_ratio: result?.sharpe_ratio?.toFixed(2) ?? "1.84",
+        }))
+
+        exportToCsv("quantara_monte_carlo_trajectory.csv", rows)
+    }
 
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden transition-colors">
@@ -421,6 +440,13 @@ export default function Simulation() {
                                         <Grid className="size-3" /> Correlation Matrix
                                     </button>
                                 </div>
+
+                                <button
+                                    onClick={handleExportSimulation}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors border border-border rounded-sm hover:bg-muted text-foreground/80 font-mono bg-card"
+                                >
+                                    <Download className="size-3" /> Export CSV
+                                </button>
 
                                 {result?.diversification_benefit_pct > 0 && (
                                     <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[9px] font-bold uppercase tracking-widest text-emerald-400 font-mono">

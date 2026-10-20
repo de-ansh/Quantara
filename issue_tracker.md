@@ -14,9 +14,9 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 0 | 0 | 0 | 0 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 0 | 0 | 0 | 0 | 0 |
-| **Navigation & Explorer UX (NAV)** | 2 | 0 | 0 | 2 | 0 |
+| **Navigation & Explorer UX (NAV)** | 0 | 0 | 0 | 0 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
-| **Total** | **3** | **0** | **0** | **3** | **0** |
+| **Total** | **1** | **0** | **0** | **1** | **0** |
 
 ---
 
@@ -222,20 +222,24 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Wire `Signals.tsx` to live sentiment curve endpoint with quick ticker chips (`ALL`, `NVDA`, `AAPL`, `MSFT`, `XLK`) and dynamic tooltips.
   - [x] 100% test coverage in `backend/app/tests/test_signal_engine.py`.
 
-### [QTR-NAV-02] Research Explorer Grid View & Bulk Actions
+### [QTR-NAV-02] Research Explorer Grid View & Bulk Actions ✅
 - **Category**: Navigation & Explorer
 - **Component**: [`frontend/src/pages/ResearchExplorer.tsx`](frontend/src/pages/ResearchExplorer.tsx)
 - **Description**: Grid view toggle button changes state but renders the table; checkboxes do nothing.
 - **Acceptance Criteria**:
-  - [ ] Implement responsive card-based Grid layout when `view === "grid"`.
-  - [ ] Add batch actions (e.g. "Add to Watchlist", "Compare").
+  - [x] Implement responsive card-based Grid layout when `view === "grid"`.
+  - [x] Add multi-asset selection state, master select-all toggle, and bulk actions bar ("Export Selected", "Compare in Simulation", "Clear Selection").
+  - [x] Render actionable asset cards with risk badges, signals, prices, and direct research/risk navigation.
 
-### [QTR-NAV-03] Export Handlers (CSV / PDF) across Tables and Simulations
+### [QTR-NAV-03] Export Handlers (CSV / PDF) across Tables and Simulations ✅
 - **Category**: Navigation & Explorer
-- **Component**: `frontend/src/pages/ResearchExplorer.tsx`, `frontend/src/pages/Simulation.tsx`, `frontend/src/pages/Signals.tsx`
+- **Component**: [`frontend/src/lib/export.ts`](frontend/src/lib/export.ts), [`frontend/src/pages/ResearchExplorer.tsx`](frontend/src/pages/ResearchExplorer.tsx), [`frontend/src/pages/Simulation.tsx`](frontend/src/pages/Simulation.tsx), [`frontend/src/pages/Signals.tsx`](frontend/src/pages/Signals.tsx)
 - **Description**: Download / export buttons exist without click actions.
 - **Acceptance Criteria**:
-  - [ ] Add client-side CSV download handlers for displayed tabular data.
+  - [x] Create modular RFC 4180 compliant client-side CSV download utility in `frontend/src/lib/export.ts`.
+  - [x] Wire export button in `ResearchExplorer.tsx` to download discovery and filtered stock results.
+  - [x] Wire export button in `Simulation.tsx` to download Monte Carlo trajectory percentiles and risk statistics.
+  - [x] Wire download button in `Signals.tsx` to download live institutional 13F and insider Form 4 streams.
 
 ### [QTR-RAG-02] PostgreSQL Vector Store Integration (`pgvector`)
 - **Category**: Qualitative Analysis
