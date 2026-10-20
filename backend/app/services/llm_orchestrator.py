@@ -26,7 +26,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-class AnalysisState(TypedDict):
+class AnalysisState(TypedDict, total=False):
     """State for the analysis workflow."""
 
     ticker: str
@@ -40,6 +40,9 @@ class AnalysisState(TypedDict):
     db: AsyncSession | None
     openai_api_key: str | None
     sec_user_agent: str | None
+    transcripts: list[dict[str, Any]]
+    transcript_chunks: list[dict[str, Any]]
+    qualitative_excerpts: list[dict[str, Any]]
 
 
 class StructuredAnalysisSchema(BaseModel):
@@ -107,6 +110,7 @@ class LLMOrchestrator:
         workflow.add_node("retrieve_data", self._retrieve_data)
         workflow.add_node("compute_metrics", self._compute_metrics)
         workflow.add_node("risk_classification", self._risk_classification)
+        workflow.add_node("process_transcripts_rag", self._process_transcripts_rag)
         workflow.add_node("generate_analysis", self._generate_structured_analysis)
         workflow.add_node("validate_schema", self._validate_schema)
         workflow.add_node("store_result", self._store_result)
@@ -115,7 +119,8 @@ class LLMOrchestrator:
         workflow.set_entry_point("retrieve_data")
         workflow.add_edge("retrieve_data", "compute_metrics")
         workflow.add_edge("compute_metrics", "risk_classification")
-        workflow.add_edge("risk_classification", "generate_analysis")
+        workflow.add_edge("risk_classification", "process_transcripts_rag")
+        workflow.add_edge("process_transcripts_rag", "generate_analysis")
         workflow.add_edge("generate_analysis", "validate_schema")
 
         # Conditional edge for validation
@@ -383,6 +388,61 @@ class LLMOrchestrator:
 
         return state
 
+    async def _process_transcripts_rag(self, state: AnalysisState) -> AnalysisState:
+        """
+        Ingest earnings call transcripts, generate chunk embeddings, and retrieve top-K excerpts.
+        """
+        ticker = state["ticker"]
+        logger.info(f"Processing transcript RAG qualitative embeddings for {ticker}")
+
+        from app.providers.transcript import TranscriptProvider
+
+        provider = TranscriptProvider(openai_api_key=state.get("openai_api_key"))
+
+        try:
+            # 1. Ingest transcript
+            transcript_data = await provider.fetch_transcript(ticker)
+            state["transcripts"] = [transcript_data]
+            if "raw_data" in state:
+                state["raw_data"]["transcripts"] = [transcript_data]
+
+            # 2. Chunk transcript into semantic passages
+            chunks = provider.chunk_transcript(transcript_data, chunk_size=500, chunk_overlap=100)
+            state["transcript_chunks"] = chunks
+
+            # 3. Generate embeddings
+            texts = [c["text"] for c in chunks]
+            embeddings = await provider.generate_embeddings(
+                texts, openai_api_key=state.get("openai_api_key")
+            )
+
+            # 4. Formulate qualitative semantic query based on company and risk profile
+            risk_band = state.get("risk_classification", {}).get("risk_band", "balanced")
+            query = (
+                f"{ticker} revenue growth drivers, operating margin trajectory, capital expenditures, "
+                f"customer demand guidance, supply chain constraints, competitive risks, and {risk_band} outlook"
+            )
+
+            # 5. Retrieve top-K relevant qualitative excerpts
+            top_excerpts = provider.retrieve_top_k(
+                query=query,
+                chunks=chunks,
+                chunk_embeddings=embeddings,
+                k=3,
+            )
+            state["qualitative_excerpts"] = top_excerpts
+            logger.info(
+                f"Successfully retrieved {len(top_excerpts)} top-K transcript excerpts for {ticker}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in transcript RAG processing for {ticker}: {e}", exc_info=True)
+            state["transcripts"] = []
+            state["transcript_chunks"] = []
+            state["qualitative_excerpts"] = []
+
+        return state
+
     def _generate_structured_analysis(self, state: AnalysisState) -> AnalysisState:
         """Generate structured analysis using LLM."""
         logger.info(f"Generating analysis for {state['ticker']}")
@@ -396,6 +456,7 @@ CRITICAL RULES:
 3. Base all insights on the provided data only
 4. If data is missing, acknowledge it in your analysis
 5. Provide confidence scores based on data completeness
+6. Synthesize executive commentary and qualitative excerpts into key insights, strengths, and risks
 
 Output must be valid JSON matching this schema:
 {
@@ -409,6 +470,17 @@ Output must be valid JSON matching this schema:
     "confidence_score": float (0-100)
 }"""
 
+        # Format qualitative excerpts
+        qualitative_text = ""
+        excerpts = state.get("qualitative_excerpts", [])
+        if excerpts:
+            qualitative_text = "\n".join(
+                f"- [{e.get('section', 'General').upper()}] (Similarity: {e.get('similarity_score', 0):.2f}): {e.get('text', '')}"
+                for e in excerpts
+            )
+        else:
+            qualitative_text = "No direct qualitative transcripts available."
+
         # Build context from state
         context = f"""
 Ticker: {state['ticker']}
@@ -421,6 +493,9 @@ Computed Metrics:
 
 Risk Classification:
 {state.get('risk_classification', {})}
+
+Qualitative Earnings Call & MD&A Excerpts (Retrieved via Semantic Vector Search):
+{qualitative_text}
 
 Generate a structured analysis based on this data.
 """
@@ -598,6 +673,15 @@ Generate a structured analysis based on this data.
             # Upsert ResearchReport record
             report_output = state.get("final_output")
             if report_output:
+                if state.get("qualitative_excerpts") and "qualitative_excerpts" not in report_output:
+                    report_output["qualitative_excerpts"] = state["qualitative_excerpts"]
+
+                vector_id = (
+                    f"emb_{ticker}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                    if state.get("qualitative_excerpts")
+                    else None
+                )
+
                 stmt_report = select(ResearchReport).where(ResearchReport.ticker == ticker)
                 result_report = await db.execute(stmt_report)
                 report = result_report.scalar_one_or_none()
@@ -606,6 +690,8 @@ Generate a structured analysis based on this data.
                     report.structured_json = report_output
                     report.confidence_score = report_output.get("confidence_score", 0.0)
                     report.summary = report_output.get("summary")
+                    if vector_id:
+                        report.vector_embedding_id = vector_id
                     report.version += 1
                     report.updated_at = datetime.utcnow()
                 else:
@@ -614,6 +700,7 @@ Generate a structured analysis based on this data.
                         structured_json=report_output,
                         confidence_score=report_output.get("confidence_score", 0.0),
                         summary=report_output.get("summary"),
+                        vector_embedding_id=vector_id,
                         version=1,
                     )
                     db.add(report)
@@ -657,6 +744,9 @@ Generate a structured analysis based on this data.
             "db": db,
             "openai_api_key": openai_api_key,
             "sec_user_agent": sec_user_agent,
+            "transcripts": [],
+            "transcript_chunks": [],
+            "qualitative_excerpts": [],
         }
 
         try:
