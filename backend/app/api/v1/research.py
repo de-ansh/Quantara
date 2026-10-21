@@ -49,6 +49,7 @@ async def search_stocks(
     current_user: CurrentUser,
     db: DBSession,
     query: str | None = None,
+    market: str | None = None,
     pe_min: float | None = None,
     pe_max: float | None = None,
     beta_min: float | None = None,
@@ -58,14 +59,22 @@ async def search_stocks(
     signals: str | None = None,
 ) -> StockSearchListResponse:
     """
-    Search stocks with criteria filters.
+    Search stocks with criteria filters and optional market region.
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import and_, or_, select
 
     from app.models.signal import Signal
     from app.models.stock import Stock
 
     stmt = select(Stock)
+
+    # Market region filter (US vs India)
+    if market:
+        m = market.strip().lower()
+        if m in ("in", "india", "nse", "bse"):
+            stmt = stmt.where(or_(Stock.ticker.ilike("%.NS"), Stock.ticker.ilike("%.BO")))
+        elif m in ("us", "usa", "nyse", "nasdaq"):
+            stmt = stmt.where(and_(~Stock.ticker.ilike("%.NS"), ~Stock.ticker.ilike("%.BO")))
 
     # 1. Join with signals if signal filters applied
     if signals:

@@ -657,77 +657,153 @@ class RiskEngine:
             sector=sector,
         )
 
-        scenarios_definitions = [
-            {
-                "id": "fed_pivot_rate_spike",
-                "name": "Fed Pivot +50bps",
-                "type": "Interest Rate Spike",
-                "description": "Short rate hike (+50bps), yield curve shifts up, equity multiple compression.",
-                "shocks": {
-                    "market_beta": -2.5,
-                    "interest_rate_beta": 4.5,
-                    "credit_spread_beta": 1.0,
+        is_indian = ticker.upper().endswith(".NS") or ticker.upper().endswith(".BO") or ".NS" in ticker.upper()
+
+        if is_indian:
+            scenarios_definitions = [
+                {
+                    "id": "rbi_repo_rate_hike_50bps",
+                    "name": "RBI Repo Rate Hike +50bps",
+                    "type": "Monetary Policy Tightening",
+                    "description": "Reserve Bank of India raises repo rate +50bps to curb inflation, elevating domestic borrowing costs.",
+                    "shocks": {
+                        "interest_rate_beta": 4.5,
+                        "market_beta": -2.2,
+                        "credit_spread_beta": 1.2,
+                    },
+                    "category": "macro_monetary",
                 },
-                "category": "macro_monetary",
-            },
-            {
-                "id": "global_recession_bear",
-                "name": "Global Recession (Bear)",
-                "type": "Consumer Confidence Drop",
-                "description": "Broad market equity liquidation, corporate earnings contraction (-18% market).",
-                "shocks": {
-                    "market_beta": -18.0,
-                    "credit_spread_beta": 4.0,
-                    "oil_beta": -5.0,
+                {
+                    "id": "crude_spike_100_inr_depreciation",
+                    "name": "Brent Crude $100 + INR Depreciation",
+                    "type": "Current Account Shock",
+                    "description": "Crude oil import bill surge, current account deficit widening, and INR sliding past ₹86/USD.",
+                    "shocks": {
+                        "oil_beta": 12.0,
+                        "market_beta": -5.0,
+                        "interest_rate_beta": 1.8,
+                    },
+                    "category": "commodity_geopolitical",
                 },
-                "category": "macro_economic",
-            },
-            {
-                "id": "oil_supply_shock_120",
-                "name": "Oil Spike to $120",
-                "type": "Supply Chain Shock",
-                "description": "Crude oil surge +50% due to geopolitical disruption, input cost inflation.",
-                "shocks": {
-                    "oil_beta": 12.0,
-                    "market_beta": -4.0,
-                    "interest_rate_beta": 1.5,
+                {
+                    "id": "india_capex_cycle_acceleration",
+                    "name": "National Capex & PLI Acceleration",
+                    "type": "Infrastructure Catalyst",
+                    "description": "Government infrastructure outlay accelerates alongside PLI domestic manufacturing expansion.",
+                    "shocks": {
+                        "market_beta": 6.5,
+                        "credit_spread_beta": -2.0,
+                        "tech_momentum_beta": 4.0,
+                    },
+                    "category": "industry_catalyst",
                 },
-                "category": "commodity_geopolitical",
-            },
-            {
-                "id": "ai_infra_expansion",
-                "name": "AI Infrastructure Expansion",
-                "type": "Catalyst Event",
-                "description": "Massive capital expenditure cycle acceleration in high-performance computing.",
-                "shocks": {
-                    "tech_momentum_beta": 15.0,
-                    "market_beta": 4.5,
+                {
+                    "id": "monsoon_deficit_rural_slowdown",
+                    "name": "Monsoon Deficit & Rural Slowdown",
+                    "type": "Agrarian & FMCG Headwind",
+                    "description": "Uneven southwest monsoon rainfall pressures rural disposable income and consumer goods volume.",
+                    "shocks": {
+                        "market_beta": -4.0,
+                        "oil_beta": 3.0,
+                        "credit_spread_beta": 2.5,
+                    },
+                    "category": "macro_economic",
                 },
-                "category": "industry_catalyst",
-            },
-            {
-                "id": "credit_spread_widening",
-                "name": "Credit Spread Widening (+200bps)",
-                "type": "Refinancing Crunch",
-                "description": "High yield spreads widen +200bps, debt refinancing costs surge.",
-                "shocks": {
-                    "credit_spread_beta": 8.0,
-                    "market_beta": -5.5,
+                {
+                    "id": "global_tech_slowdown",
+                    "name": "Global Tech Offshore Budget Cut",
+                    "type": "Export Discretionary Drag",
+                    "description": "Western enterprise client IT budget consolidation and delayed digital transformation contracts.",
+                    "shocks": {
+                        "tech_momentum_beta": -12.0,
+                        "market_beta": -3.0,
+                    },
+                    "category": "industry_catalyst",
                 },
-                "category": "credit_liquidity",
-            },
-            {
-                "id": "usd_liquidity_squeeze",
-                "name": "USD Dollar Surge (+10% DXY)",
-                "type": "FX Headwind",
-                "description": "Surging US dollar penalizes multinational foreign revenues.",
-                "shocks": {
-                    "market_beta": -3.5,
-                    "tech_momentum_beta": -4.0,
+                {
+                    "id": "domestic_credit_spread_widening",
+                    "name": "NBFC & Corporate Spread Widening (+150bps)",
+                    "type": "Credit & Liquidity Squeeze",
+                    "description": "Non-bank finance liquidity tightens, corporate bond yields widen +150bps over repo rate.",
+                    "shocks": {
+                        "credit_spread_beta": 7.5,
+                        "market_beta": -4.8,
+                    },
+                    "category": "credit_liquidity",
                 },
-                "category": "currency_fx",
-            },
-        ]
+            ]
+        else:
+            scenarios_definitions = [
+                {
+                    "id": "fed_pivot_rate_spike",
+                    "name": "Fed Pivot +50bps",
+                    "type": "Interest Rate Spike",
+                    "description": "Short rate hike (+50bps), yield curve shifts up, equity multiple compression.",
+                    "shocks": {
+                        "market_beta": -2.5,
+                        "interest_rate_beta": 4.5,
+                        "credit_spread_beta": 1.0,
+                    },
+                    "category": "macro_monetary",
+                },
+                {
+                    "id": "global_recession_bear",
+                    "name": "Global Recession (Bear)",
+                    "type": "Consumer Confidence Drop",
+                    "description": "Broad market equity liquidation, corporate earnings contraction (-18% market).",
+                    "shocks": {
+                        "market_beta": -18.0,
+                        "credit_spread_beta": 4.0,
+                        "oil_beta": -5.0,
+                    },
+                    "category": "macro_economic",
+                },
+                {
+                    "id": "oil_supply_shock_120",
+                    "name": "Oil Spike to $120",
+                    "type": "Supply Chain Shock",
+                    "description": "Crude oil surge +50% due to geopolitical disruption, input cost inflation.",
+                    "shocks": {
+                        "oil_beta": 12.0,
+                        "market_beta": -4.0,
+                        "interest_rate_beta": 1.5,
+                    },
+                    "category": "commodity_geopolitical",
+                },
+                {
+                    "id": "ai_infra_expansion",
+                    "name": "AI Infrastructure Expansion",
+                    "type": "Catalyst Event",
+                    "description": "Massive capital expenditure cycle acceleration in high-performance computing.",
+                    "shocks": {
+                        "tech_momentum_beta": 15.0,
+                        "market_beta": 4.5,
+                    },
+                    "category": "industry_catalyst",
+                },
+                {
+                    "id": "credit_spread_widening",
+                    "name": "Credit Spread Widening (+200bps)",
+                    "type": "Refinancing Crunch",
+                    "description": "High yield spreads widen +200bps, debt refinancing costs surge.",
+                    "shocks": {
+                        "credit_spread_beta": 8.0,
+                        "market_beta": -5.5,
+                    },
+                    "category": "credit_liquidity",
+                },
+                {
+                    "id": "usd_liquidity_squeeze",
+                    "name": "USD Dollar Surge (+10% DXY)",
+                    "type": "FX Headwind",
+                    "description": "Surging US dollar penalizes multinational foreign revenues.",
+                    "shocks": {
+                        "market_beta": -3.5,
+                        "tech_momentum_beta": -4.0,
+                    },
+                    "category": "currency_fx",
+                },
+            ]
 
         results = []
         for s in scenarios_definitions:

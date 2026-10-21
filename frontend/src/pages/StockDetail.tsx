@@ -23,6 +23,7 @@ import apiClient from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { isIndianAsset, cleanTickerDisplay, getMarketLabel } from "@/lib/currency"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -80,7 +81,7 @@ export default function StockDetail() {
     // Derive Dynamic Metrics
     const companyName = searchData?.name || `${activeTicker} Corporation`
     const sector = searchData?.sector || "Technology"
-    const price = searchData?.price || "$189.42"
+    const price = searchData?.price || (isIndianAsset(activeTicker) ? "₹1,250.00" : "$189.42")
     const marketCap = searchData?.cap || "N/A"
     const peRatio = searchData?.pe ? `${searchData.pe.toFixed(1)}x` : "28.4x"
     const betaVal = searchData?.beta
@@ -132,7 +133,18 @@ export default function StockDetail() {
             <section className="mb-6 flex flex-wrap items-end justify-between gap-6 border-b border-border pb-6">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-baseline gap-4">
-                        <h2 className="text-6xl font-black tracking-tighter text-foreground">{activeTicker}</h2>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h2>
+                            {isIndianAsset(activeTicker) ? (
+                                <Badge className="bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono text-xs uppercase px-2 py-0.5">
+                                    🇮🇳 NSE
+                                </Badge>
+                            ) : (
+                                <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/30 font-mono text-xs uppercase px-2 py-0.5">
+                                    🇺🇸 US
+                                </Badge>
+                            )}
+                        </div>
                         <div className={cn(
                             "flex items-center gap-2 px-3 py-1 text-sm font-bold border uppercase tracking-widest shadow-sm",
                             statusTrend === "up"
@@ -283,7 +295,9 @@ export default function StockDetail() {
                                     <DollarSign className="size-4 text-primary" />
                                     Fundamental Financial Metrics
                                 </h3>
-                                <Badge variant="outline" className="text-[10px] font-mono">{activeTicker} EDGAR Facts</Badge>
+                                <Badge variant="outline" className="text-[10px] font-mono">
+                                    {isIndianAsset(activeTicker) ? `${cleanTickerDisplay(activeTicker)} SEBI/NSE Filing Data` : `${activeTicker} EDGAR Facts`}
+                                </Badge>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
@@ -403,7 +417,7 @@ export default function StockDetail() {
                                     <span className="text-[10px] font-bold uppercase text-muted-foreground">Sector Sensitivity</span>
                                     <p className="text-sm font-bold text-foreground">{sector} Industry Index</p>
                                     <p className="text-xs text-muted-foreground leading-relaxed">
-                                        Beta correlation of {betaVal}x relative to broad market benchmark (S&P 500).
+                                        Beta correlation of {betaVal}x relative to broad market benchmark ({isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500"}).
                                     </p>
                                 </div>
                                 <div className="p-4 bg-muted/30 border border-border space-y-2">

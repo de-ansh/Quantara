@@ -48,7 +48,7 @@ class PortfolioPosition(Base):
         Integer, ForeignKey("portfolios.id"), nullable=False, index=True
     )
     ticker: Mapped[str] = mapped_column(
-        String(10), ForeignKey("stocks.ticker"), nullable=False, index=True
+        String(20), ForeignKey("stocks.ticker"), nullable=False, index=True
     )
     shares: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     cost_basis: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

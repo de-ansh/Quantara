@@ -17,7 +17,7 @@ class DocumentChunk(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     ticker: Mapped[str] = mapped_column(
-        String(10), ForeignKey("stocks.ticker"), nullable=False, index=True
+        String(20), ForeignKey("stocks.ticker"), nullable=False, index=True
     )
 
     # Document classification

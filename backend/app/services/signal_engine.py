@@ -636,7 +636,7 @@ async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
             tickers = list(sec.CIK_MAPPING.keys())
             try:
                 async with AsyncSessionLocal() as session:
-                    stmt = select(Stock.ticker).where(Stock.is_active == True)
+                    stmt = select(Stock.ticker)
                     db_res = await session.execute(stmt)
                     db_tickers = db_res.scalars().all()
                     if db_tickers:

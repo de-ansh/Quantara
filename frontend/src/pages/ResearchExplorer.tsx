@@ -17,17 +17,20 @@ import {
     CheckCircle2,
     SlidersHorizontal,
     X,
+    Globe
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { exportToCsv } from "@/lib/export"
+import { isIndianAsset, getMarketLabel, formatAssetPrice } from "@/lib/currency"
 
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
     const navigate = useNavigate()
 
     // Filter states
+    const [selectedMarket, setSelectedMarket] = useState<"all" | "us" | "india">("all")
     const [query, setQuery] = useState("")
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
@@ -36,10 +39,11 @@ export default function ResearchExplorer() {
 
     // Query backend Stock Search API
     const { data, isLoading } = useQuery({
-        queryKey: ["stocksSearch", query, peLimit, betaLimit, selectedSignals],
+        queryKey: ["stocksSearch", query, selectedMarket, peLimit, betaLimit, selectedSignals],
         queryFn: async () => {
             const params: any = {}
             if (query) params.query = query
+            if (selectedMarket !== "all") params.market = selectedMarket
             if (peLimit < 50) params.pe_max = peLimit
             if (betaLimit < 2.0) params.beta_max = betaLimit
             if (selectedSignals.length > 0) params.signals = selectedSignals.join(",")
@@ -61,6 +65,7 @@ export default function ResearchExplorer() {
     }
 
     const handleResetAll = () => {
+        setSelectedMarket("all")
         setQuery("")
         setPeLimit(50)
         setBetaLimit(2.0)
@@ -102,6 +107,7 @@ export default function ResearchExplorer() {
             sector: r.sector || "",
             pe_ratio: r.pe ?? "",
             beta: r.beta ?? "",
+            market: isIndianAsset(r.ticker) ? "NSE" : "US"
         }))
 
         exportToCsv(
@@ -124,6 +130,43 @@ export default function ResearchExplorer() {
                             Reset All
                         </button>
                     </div>
+
+                    {/* Market / Exchange Filter */}
+                    <details className="border-b border-border group" open>
+                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
+                            <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                                <Globe className="size-3.5 text-primary" /> Exchange / Market
+                            </span>
+                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="px-4 pb-4 space-y-1.5">
+                            {[
+                                { key: "all", label: "Global (All Markets)", icon: "🌐" },
+                                { key: "india", label: "Indian Equities (NSE)", icon: "🇮🇳" },
+                                { key: "us", label: "US Equities (NYSE/NASDAQ)", icon: "🇺🇸" }
+                            ].map((m) => (
+                                <button
+                                    key={m.key}
+                                    type="button"
+                                    onClick={() => setSelectedMarket(m.key as any)}
+                                    className={cn(
+                                        "w-full flex items-center justify-between px-3 py-2 rounded text-xs transition-colors text-left",
+                                        selectedMarket === m.key
+                                            ? "bg-primary text-white font-bold"
+                                            : "hover:bg-muted text-muted-foreground"
+                                    )}
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <span>{m.icon}</span>
+                                        <span>{m.label}</span>
+                                    </span>
+                                    {selectedMarket === m.key && (
+                                        <span className="size-1.5 rounded-full bg-white animate-pulse" />
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </details>
 
                     <details className="border-b border-border group" open>
                         <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
@@ -312,6 +355,12 @@ export default function ResearchExplorer() {
                                                     <div>
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="font-mono text-base font-black text-foreground">{row.ticker}</span>
+                                                            <span className={cn(
+                                                                "text-[8px] font-bold px-1 py-0.2 rounded border uppercase font-mono",
+                                                                isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                                            )}>
+                                                                {getMarketLabel(row.ticker)}
+                                                            </span>
                                                             {row.status && (
                                                                 <span className={cn(
                                                                     "text-[9px] font-bold font-mono px-1 py-0.2 rounded",
@@ -423,7 +472,17 @@ export default function ResearchExplorer() {
                                                     className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
                                                 />
                                             </td>
-                                            <td className="px-6 py-4 font-black text-foreground">{row.ticker}</td>
+                                            <td className="px-6 py-4 font-black text-foreground">
+                                                <div className="flex items-center gap-2">
+                                                    <span>{row.ticker}</span>
+                                                    <span className={cn(
+                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono",
+                                                        isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                                    )}>
+                                                        {getMarketLabel(row.ticker)}
+                                                    </span>
+                                                </div>
+                                            </td>
                                             <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
                                             <td className="px-6 py-4">

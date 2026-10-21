@@ -13,7 +13,7 @@ class Stock(Base):
 
     __tablename__ = "stocks"
 
-    ticker: Mapped[str] = mapped_column(String(10), primary_key=True, index=True)
+    ticker: Mapped[str] = mapped_column(String(20), primary_key=True, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sector: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 

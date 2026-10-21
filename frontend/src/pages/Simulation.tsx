@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { exportToCsv } from "@/lib/export"
+import { isIndianAsset } from "@/lib/currency"
 import {
     ResponsiveContainer,
     AreaChart,
@@ -40,7 +41,14 @@ const defaultHoldings: Holding[] = [
     { id: "5", ticker: "BIL", weight: 8 },
 ]
 
-const QUICK_CHIPS = ["MSFT", "GOOGL", "AMZN", "TSLA", "META", "SPY"]
+const INDIAN_PRESET: Holding[] = [
+    { id: "in-1", ticker: "RELIANCE.NS", weight: 35 },
+    { id: "in-2", ticker: "TCS.NS", weight: 25 },
+    { id: "in-3", ticker: "HDFCBANK.NS", weight: 25 },
+    { id: "in-4", ticker: "INFY.NS", weight: 15 },
+]
+
+const QUICK_CHIPS = ["NVDA", "AAPL", "MSFT", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"]
 
 export default function Simulation() {
     const [holdings, setHoldings] = useState<Holding[]>(defaultHoldings)
@@ -60,6 +68,9 @@ export default function Simulation() {
         },
         refetchInterval: 5000,
     })
+
+    const isIndianPortfolio = holdings.some(h => isIndianAsset(h.ticker))
+    const currSym = isIndianPortfolio ? "₹" : "$"
 
     const totalWeight = holdings.reduce((sum, h) => sum + h.weight, 0)
 
@@ -256,6 +267,29 @@ export default function Simulation() {
                     </div>
 
                     <div className="p-4 space-y-6">
+                        {/* Quick Presets */}
+                        <div className="space-y-1.5">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
+                                Quick Portfolio Presets
+                            </span>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setHoldings(defaultHoldings)}
+                                    className="flex-1 py-1 px-2 text-[10px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
+                                >
+                                    <span>🇺🇸</span> US Core
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setHoldings(INDIAN_PRESET)}
+                                    className="flex-1 py-1 px-2 text-[10px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
+                                >
+                                    <span>🇮🇳</span> NIFTY Core
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Dynamic Stock List */}
                         <section className="space-y-3">
                             <div className="space-y-3">
@@ -371,11 +405,11 @@ export default function Simulation() {
                                     onChange={(e) => setInitialInvestment(Number(e.target.value))}
                                     className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
                                 >
-                                    <option value={100000}>$100,000</option>
-                                    <option value={500000}>$500,000</option>
-                                    <option value={1000000}>$1,000,000</option>
-                                    <option value={2500000}>$2,500,000</option>
-                                    <option value={5000000}>$5,000,000</option>
+                                    <option value={100000}>{currSym}100,000</option>
+                                    <option value={500000}>{currSym}500,000</option>
+                                    <option value={1000000}>{currSym}1,000,000</option>
+                                    <option value={2500000}>{currSym}2,500,000</option>
+                                    <option value={5000000}>{currSym}5,000,000</option>
                                 </select>
                             </div>
                             <div className="flex items-center justify-between">
@@ -480,7 +514,7 @@ export default function Simulation() {
                                                 stroke="hsl(var(--muted-foreground))"
                                                 fontSize={9}
                                                 fontWeight="bold"
-                                                tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`}
+                                                tickFormatter={(v) => `${currSym}${(v / 1e6).toFixed(1)}M`}
                                             />
                                             <Tooltip 
                                                 contentStyle={{
@@ -489,7 +523,7 @@ export default function Simulation() {
                                                     fontSize: '10px',
                                                     fontFamily: 'monospace'
                                                 }}
-                                                formatter={(val: any) => [`$${parseFloat(val).toLocaleString()}`, ""]}
+                                                formatter={(val: any) => [`${currSym}${parseFloat(val).toLocaleString()}`, ""]}
                                                 labelFormatter={(label) => `Month: ${label}`}
                                             />
                                             <Area type="monotone" dataKey="upper_95" stroke="none" fill="rgba(30, 93, 241, 0.05)" />

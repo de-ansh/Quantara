@@ -245,6 +245,7 @@ class StockCorrelationResponse(BaseModel):
 
     ticker: str
     sector: str
+    benchmark_ticker: str = "S&P 500"
     benchmark_correlation: float
     peers: list[PeerCorrelation]
 
@@ -281,21 +282,37 @@ async def get_stock_correlations(
     active_sector = stock.sector if stock and stock.sector else "Technology"
     active_beta = stock.beta if stock and stock.beta else 1.1
 
-    # Diverse multi-asset candidate pool
-    CANDIDATE_PEERS = [
-        {"ticker": "AAPL", "name": "Apple Inc.", "sector": "Technology", "beta": 1.2},
-        {"ticker": "MSFT", "name": "Microsoft Corp.", "sector": "Technology", "beta": 1.1},
-        {"ticker": "NVDA", "name": "NVIDIA Corp.", "sector": "Technology", "beta": 1.7},
-        {"ticker": "GOOGL", "name": "Alphabet Inc.", "sector": "Communication Services", "beta": 1.1},
-        {"ticker": "AMZN", "name": "Amazon.com Inc.", "sector": "Consumer Discretionary", "beta": 1.15},
-        {"ticker": "TSLA", "name": "Tesla Inc.", "sector": "Consumer Discretionary", "beta": 1.5},
-        {"ticker": "JNJ", "name": "Johnson & Johnson", "sector": "Healthcare", "beta": 0.6},
-        {"ticker": "JPM", "name": "JPMorgan Chase & Co.", "sector": "Financials", "beta": 1.1},
-        {"ticker": "XOM", "name": "Exxon Mobil Corp.", "sector": "Energy", "beta": 0.9},
-        {"ticker": "TLT", "name": "20+ Year Treasury Bond ETF", "sector": "Fixed Income", "beta": 0.15},
-        {"ticker": "GLD", "name": "SPDR Gold Shares", "sector": "Commodities", "beta": 0.05},
-        {"ticker": "BIL", "name": "SPDR 1-3M T-Bill (Cash)", "sector": "Cash", "beta": 0.0},
-    ]
+    is_indian = ticker_upper.endswith(".NS") or ticker_upper.endswith(".BO") or ".NS" in ticker_upper
+    if is_indian:
+        CANDIDATE_PEERS = [
+            {"ticker": "RELIANCE.NS", "name": "Reliance Industries Ltd", "sector": "Energy", "beta": 1.05},
+            {"ticker": "TCS.NS", "name": "Tata Consultancy Services", "sector": "Technology", "beta": 0.85},
+            {"ticker": "HDFCBANK.NS", "name": "HDFC Bank Ltd", "sector": "Financials", "beta": 1.10},
+            {"ticker": "INFY.NS", "name": "Infosys Ltd", "sector": "Technology", "beta": 0.95},
+            {"ticker": "ICICIBANK.NS", "name": "ICICI Bank Ltd", "sector": "Financials", "beta": 1.15},
+            {"ticker": "TATAMOTORS.NS", "name": "Tata Motors Ltd", "sector": "Consumer Discretionary", "beta": 1.45},
+            {"ticker": "ITC.NS", "name": "ITC Ltd", "sector": "Consumer Staples", "beta": 0.65},
+            {"ticker": "BHARTIARTL.NS", "name": "Bharti Airtel Ltd", "sector": "Communication Services", "beta": 0.90},
+            {"ticker": "LT.NS", "name": "Larsen & Toubro Ltd", "sector": "Industrials", "beta": 1.10},
+            {"ticker": "SUNPHARMA.NS", "name": "Sun Pharmaceutical", "sector": "Healthcare", "beta": 0.70},
+            {"ticker": "GOLDBEES.NS", "name": "Nippon India ETF Gold BeES", "sector": "Commodities", "beta": 0.05},
+            {"ticker": "LIQUIDBEES.NS", "name": "Nippon India ETF Liquid BeES", "sector": "Cash", "beta": 0.0},
+        ]
+    else:
+        CANDIDATE_PEERS = [
+            {"ticker": "AAPL", "name": "Apple Inc.", "sector": "Technology", "beta": 1.2},
+            {"ticker": "MSFT", "name": "Microsoft Corp.", "sector": "Technology", "beta": 1.1},
+            {"ticker": "NVDA", "name": "NVIDIA Corp.", "sector": "Technology", "beta": 1.7},
+            {"ticker": "GOOGL", "name": "Alphabet Inc.", "sector": "Communication Services", "beta": 1.1},
+            {"ticker": "AMZN", "name": "Amazon.com Inc.", "sector": "Consumer Discretionary", "beta": 1.15},
+            {"ticker": "TSLA", "name": "Tesla Inc.", "sector": "Consumer Discretionary", "beta": 1.5},
+            {"ticker": "JNJ", "name": "Johnson & Johnson", "sector": "Healthcare", "beta": 0.6},
+            {"ticker": "JPM", "name": "JPMorgan Chase & Co.", "sector": "Financials", "beta": 1.1},
+            {"ticker": "XOM", "name": "Exxon Mobil Corp.", "sector": "Energy", "beta": 0.9},
+            {"ticker": "TLT", "name": "20+ Year Treasury Bond ETF", "sector": "Fixed Income", "beta": 0.15},
+            {"ticker": "GLD", "name": "SPDR Gold Shares", "sector": "Commodities", "beta": 0.05},
+            {"ticker": "BIL", "name": "SPDR 1-3M T-Bill (Cash)", "sector": "Cash", "beta": 0.0},
+        ]
 
     peers: list[PeerCorrelation] = []
     for cand in CANDIDATE_PEERS:
@@ -333,6 +350,7 @@ async def get_stock_correlations(
     return StockCorrelationResponse(
         ticker=ticker_upper,
         sector=active_sector,
+        benchmark_ticker="NIFTY 50" if is_indian else "S&P 500",
         benchmark_correlation=benchmark_corr,
         peers=peers[:10],
     )
