@@ -36,8 +36,9 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog"
+import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
 
-const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "TLT", "GLD"]
+const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "GOOGL", "AMZN", "META", "TLT", "GLD"]
 
 
 interface DrawdownPoint {
@@ -249,7 +250,7 @@ export default function Risk() {
                                         : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
                                 )}
                             >
-                                {t}
+                                {t.endsWith(".NS") ? `🇮🇳 ${t.replace(".NS", "")}` : t}
                             </button>
                         ))}
                     </div>
@@ -568,7 +569,7 @@ export default function Risk() {
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2 font-mono text-[9px] font-black uppercase">
-                                    <span className="text-muted-foreground">S&P 500:</span>
+                                    <span className="text-muted-foreground">{corrData?.benchmark_ticker || (isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500")}:</span>
                                     <Badge variant="outline" className="text-primary font-mono font-bold bg-primary/10 border-primary/30">
                                         ρ = {corrData?.benchmark_correlation ? corrData.benchmark_correlation.toFixed(2) : "0.72"}
                                     </Badge>

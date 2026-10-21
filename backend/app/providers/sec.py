@@ -135,6 +135,8 @@ class SECProvider:
             10-digit CIK string or None.
         """
         t = ticker.upper()
+        if t.endswith(".NS") or t.endswith(".BO") or ".NS" in t or ".BO" in t:
+            return None
         if t in self._cik_cache:
             return self._cik_cache[t]
 
@@ -153,6 +155,8 @@ class SECProvider:
             10-digit CIK string or None.
         """
         t = ticker.upper()
+        if t.endswith(".NS") or t.endswith(".BO") or ".NS" in t or ".BO" in t:
+            return None
         cik = self._cik_cache.get(t) or self.CIK_MAPPING.get(t)
         if cik:
             return cik.zfill(10)
@@ -168,9 +172,12 @@ class SECProvider:
         Returns:
             Raw JSON data or None.
         """
+        if ticker.upper().endswith(".NS") or ticker.upper().endswith(".BO"):
+            return None
+
         cik = await self.get_cik_async(ticker)
         if not cik:
-            logger.error(f"CIK not found for ticker {ticker}")
+            logger.info(f"CIK not applicable or found for ticker {ticker}")
             return None
 
         url = f"{self.BASE_URL}/CIK{cik}.json"
@@ -383,9 +390,12 @@ class SECProvider:
         Returns:
             List of parsed and classified insider transactions.
         """
+        if ticker.upper().endswith(".NS") or ticker.upper().endswith(".BO"):
+            return []
+
         cik = await self.get_cik_async(ticker)
         if not cik:
-            logger.error(f"CIK not found for ticker {ticker}")
+            logger.info(f"CIK not applicable or found for ticker {ticker}")
             return []
 
         url = f"https://data.sec.gov/submissions/CIK{cik}.json"

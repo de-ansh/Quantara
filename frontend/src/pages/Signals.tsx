@@ -358,7 +358,7 @@ export default function Signals() {
                         </div>
                         <div className="flex items-center gap-1.5">
                             <div className="flex items-center gap-1">
-                                {["ALL", "NVDA", "AAPL", "MSFT", "XLK"].map((t) => (
+                                {["ALL", "NVDA", "AAPL", "MSFT", "XLK", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"].map((t) => (
                                     <button
                                         key={t}
                                         onClick={() => setSelectedSentimentTicker(t)}
@@ -369,7 +369,7 @@ export default function Signals() {
                                                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                                         )}
                                     >
-                                        {t}
+                                        {t.endsWith(".NS") ? `🇮🇳 ${t.replace(".NS", "")}` : t}
                                     </button>
                                 ))}
                             </div>

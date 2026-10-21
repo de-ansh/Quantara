@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
+import apiClient from "@/lib/api"
 import CommandPalette from "@/components/CommandPalette"
 import {
     LayoutDashboard,
@@ -73,6 +75,17 @@ export default function MainLayout({ children }: MainLayoutProps) {
     }, [])
 
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
+
+    // Live market status feed
+    const { data: marketData } = useQuery({
+        queryKey: ["marketStatusHeader"],
+        queryFn: async () => {
+            const res = await apiClient.get("/market/status")
+            return res.data
+        },
+        enabled: !isPublicRoute,
+        refetchInterval: 60000
+    })
 
     if (isPublicRoute) {
         return (
@@ -176,6 +189,30 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     </div>
 
                     <div className="flex items-center space-x-4">
+                        {marketData?.india_market && (
+                            <div className="hidden xl:flex items-center gap-3 text-xs font-mono bg-muted/40 border border-border px-3 py-1.5 rounded-full shadow-inner">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-sm">🇮🇳</span>
+                                    <span className="font-bold text-foreground">NIFTY</span>
+                                    <span className="text-muted-foreground">{marketData.india_market.index_value.toLocaleString()}</span>
+                                    <span className={cn(
+                                        "size-1.5 rounded-full",
+                                        marketData.india_market.status === "OPEN" ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"
+                                    )} title={`NSE ${marketData.india_market.status}`} />
+                                </div>
+                                <span className="h-3 w-px bg-border" />
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-sm">🇺🇸</span>
+                                    <span className="font-bold text-foreground">S&P 500</span>
+                                    <span className="text-muted-foreground">{marketData.us_market?.index_value.toLocaleString() || "5,218"}</span>
+                                    <span className={cn(
+                                        "size-1.5 rounded-full",
+                                        marketData.us_market?.status === "OPEN" ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"
+                                    )} title={`NYSE ${marketData.us_market?.status || "CLOSED"}`} />
+                                </div>
+                            </div>
+                        )}
+
                         <Button
                             variant="ghost"
                             size="icon"
