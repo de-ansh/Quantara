@@ -153,6 +153,63 @@ class YahooFinanceProvider:
 
         return metrics
 
+    # Statement rows per metric, in preference order; mirrors SECProvider.TAG_MAPPINGS
+    STATEMENT_ROWS: dict[str, tuple[str, list[str]]] = {
+        "revenue": ("income_stmt", ["Total Revenue", "Operating Revenue"]),
+        "net_income": ("income_stmt", ["Net Income", "Net Income Common Stockholders"]),
+        "eps": ("income_stmt", ["Basic EPS", "Diluted EPS"]),
+        "total_assets": ("balance_sheet", ["Total Assets"]),
+        "total_debt": ("balance_sheet", ["Total Debt", "Long Term Debt"]),
+        "shares_outstanding": ("balance_sheet", ["Ordinary Shares Number", "Share Issued"]),
+        "cash_flow": ("cashflow", ["Operating Cash Flow"]),
+    }
+
+    async def get_fundamentals(self, ticker: str) -> dict[str, list[dict[str, Any]]]:
+        """
+        Fetch statement fundamentals for any Yahoo-listed ticker, including NSE (.NS) and BSE (.BO).
+
+        Returns metrics in the same shape as SECProvider.extract_metrics. Annual rows are
+        labelled form "10-K" and quarterly net income "10-Q" so SEC-based consumers work unchanged.
+
+        Args:
+            ticker: Stock ticker symbol.
+
+        Returns:
+            Dictionary of metric name to ascending list of {"end", "val", "form"} records.
+        """
+
+        def _rows(df: pd.DataFrame | None, names: list[str], form: str) -> list[dict[str, Any]]:
+            if df is None or df.empty:
+                return []
+            for name in names:
+                if name in df.index:
+                    series = df.loc[name].dropna().sort_index()
+                    return [
+                        {"end": str(idx.date()), "val": float(val), "form": form}
+                        for idx, val in series.items()
+                    ]
+            return []
+
+        def _fetch() -> dict[str, list[dict[str, Any]]]:
+            stock = yf.Ticker(ticker)
+            metrics = {
+                name: _rows(getattr(stock, attr), rows, "10-K")
+                for name, (attr, rows) in self.STATEMENT_ROWS.items()
+            }
+            quarterly = _rows(
+                stock.quarterly_income_stmt, self.STATEMENT_ROWS["net_income"][1], "10-Q"
+            )
+            metrics["net_income"] = sorted(
+                metrics["net_income"] + quarterly, key=lambda r: r["end"]
+            )
+            return metrics
+
+        try:
+            return await asyncio.to_thread(_fetch)
+        except Exception as e:
+            logger.error(f"Error fetching Yahoo fundamentals for {ticker}: {e}")
+            return {}
+
     async def get_stock_news(self, ticker: str) -> list[dict[str, Any]]:
         """
         Fetch recent news articles for a ticker.
@@ -232,11 +289,17 @@ class YahooFinanceProvider:
                                 pass
 
                 inst_holders = getattr(stock, "institutional_holders", None)
-                if inst_holders is not None and isinstance(inst_holders, pd.DataFrame) and not inst_holders.empty:
+                if (
+                    inst_holders is not None
+                    and isinstance(inst_holders, pd.DataFrame)
+                    and not inst_holders.empty
+                ):
                     holders_count = len(inst_holders)
                     if res["num_institutions"] == 0:
                         res["num_institutions"] = holders_count
-                    res["num_institutions_buying"] = max(3, int(holders_count * 0.4)) if holders_count >= 3 else holders_count
+                    res["num_institutions_buying"] = (
+                        max(3, int(holders_count * 0.4)) if holders_count >= 3 else holders_count
+                    )
                     if res["ownership_pct"] == 0.0 and "% Out" in inst_holders.columns:
                         try:
                             res["ownership_pct"] = float(inst_holders["% Out"].sum() * 100)

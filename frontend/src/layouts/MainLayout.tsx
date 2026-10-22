@@ -200,11 +200,24 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                         marketData.india_market.status === "OPEN" ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"
                                     )} title={`NSE ${marketData.india_market.status}`} />
                                 </div>
+                                {marketData.india_market.secondary_index_value != null && (
+                                    <>
+                                        <span className="h-3 w-px bg-border" />
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="font-bold text-foreground">{marketData.india_market.secondary_index_name}</span>
+                                            <span className="text-muted-foreground">{marketData.india_market.secondary_index_value.toLocaleString()}</span>
+                                            <span className={cn(
+                                                "size-1.5 rounded-full",
+                                                marketData.india_market.status === "OPEN" ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"
+                                            )} title={`BSE ${marketData.india_market.status}`} />
+                                        </div>
+                                    </>
+                                )}
                                 <span className="h-3 w-px bg-border" />
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-sm">🇺🇸</span>
                                     <span className="font-bold text-foreground">S&P 500</span>
-                                    <span className="text-muted-foreground">{marketData.us_market?.index_value.toLocaleString() || "5,218"}</span>
+                                    <span className="text-muted-foreground">{marketData.us_market?.index_value.toLocaleString() ?? "--"}</span>
                                     <span className={cn(
                                         "size-1.5 rounded-full",
                                         marketData.us_market?.status === "OPEN" ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"

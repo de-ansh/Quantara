@@ -158,12 +158,32 @@ class LLMOrchestrator:
             }
             logger.info(f"Successfully retrieved SEC data for {state['ticker']}")
         else:
-            # Expected for non-US listings (e.g. NSE/BSE); downstream nodes use Yahoo data only
-            logger.warning(f"No SEC data retrieved for {state['ticker']}, continuing without filings")
+            # Non-US listings (NSE .NS / BSE .BO) have no SEC filings; use Yahoo statements instead
+            from app.providers.yahoo import YahooFinanceProvider
+
+            yahoo = YahooFinanceProvider()
+            metrics = await yahoo.get_fundamentals(state["ticker"])
+            has_data = any(metrics.values())
+            if not has_data:
+                logger.warning(f"No fundamentals found for {state['ticker']} on SEC or Yahoo")
+            ticker_upper = state["ticker"].upper()
+            exchange = (
+                "NSE"
+                if ticker_upper.endswith(".NS")
+                else "BSE"
+                if ticker_upper.endswith(".BO")
+                else None
+            )
             state["raw_data"] = {
                 "ticker": state["ticker"],
-                "financials": {},
-                "source": "unavailable",
+                "financials": {
+                    k: next((r["val"] for r in reversed(v) if r["form"] == "10-K"), None)
+                    for k, v in metrics.items()
+                },
+                "historical_metrics": metrics,
+                "source": (f"Yahoo Finance ({exchange})" if exchange else "Yahoo Finance")
+                if has_data
+                else "unavailable",
                 "transcripts": [],
                 "news": [],
             }
@@ -485,16 +505,16 @@ Output must be valid JSON matching this schema:
 
         # Build context from state
         context = f"""
-Ticker: {state['ticker']}
+Ticker: {state["ticker"]}
 
 Raw Data:
-{state.get('raw_data', {})}
+{state.get("raw_data", {})}
 
 Computed Metrics:
-{state.get('computed_metrics', {})}
+{state.get("computed_metrics", {})}
 
 Risk Classification:
-{state.get('risk_classification', {})}
+{state.get("risk_classification", {})}
 
 Qualitative Earnings Call & MD&A Excerpts (Retrieved via Semantic Vector Search):
 {qualitative_text}
@@ -675,7 +695,10 @@ Generate a structured analysis based on this data.
             # Upsert ResearchReport record
             report_output = state.get("final_output")
             if report_output:
-                if state.get("qualitative_excerpts") and "qualitative_excerpts" not in report_output:
+                if (
+                    state.get("qualitative_excerpts")
+                    and "qualitative_excerpts" not in report_output
+                ):
                     report_output["qualitative_excerpts"] = state["qualitative_excerpts"]
 
                 vector_id = (

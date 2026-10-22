@@ -45,6 +45,10 @@ class MarketRegionInfo(BaseModel):
     index_change: str
     vix: float
     status: str  # "OPEN" | "CLOSED"
+    # Second exchange benchmark sharing the session, e.g. BSE SENSEX beside NSE NIFTY 50
+    secondary_index_name: str | None = None
+    secondary_index_value: float | None = None
+    secondary_index_change: str | None = None
     trading_hours: str
 
 
@@ -67,6 +71,7 @@ async def get_market_status() -> MarketStatusResponse:
     india_vix_val, _ = quotes["^INDIAVIX"]
     spx_val, spx_change = quotes["^GSPC"]
     nifty_val, nifty_change = quotes["^NSEI"]
+    sensex_val, sensex_change = quotes["^BSESN"]
 
     vix_snapshot = VIXSnapshot(
         value=vix_val,
@@ -90,6 +95,9 @@ async def get_market_status() -> MarketStatusResponse:
         vix=india_vix_val,
         status="OPEN" if is_nse_open else "CLOSED",
         trading_hours="09:15 - 15:30 IST",
+        secondary_index_name="SENSEX",
+        secondary_index_value=sensex_val,
+        secondary_index_change=f"{_pct(sensex_val, sensex_change):+.2f}%",
     )
 
     ny_now = now_utc.astimezone(ZoneInfo("America/New_York"))
@@ -121,6 +129,7 @@ _FALLBACK_QUOTES: dict[str, tuple[float, float]] = {
     "^INDIAVIX": (16.04, 0.0),
     "^GSPC": (5218.40, 0.0),
     "^NSEI": (22739.85, 0.0),
+    "^BSESN": (74671.28, 0.0),
 }
 _QUOTE_TTL_SECONDS = 60.0
 _quote_cache: dict[str, Any] = {"at": 0.0, "quotes": None}
@@ -167,7 +176,7 @@ def _build_alerts(quotes: dict[str, tuple[float, float]]) -> list[MarketAlert]:
     now_str = datetime.now().strftime("%H:%M:%S")
     alerts: list[MarketAlert] = []
 
-    for symbol, label in (("^GSPC", "S&P 500"), ("^NSEI", "NIFTY 50")):
+    for symbol, label in (("^GSPC", "S&P 500"), ("^NSEI", "NIFTY 50"), ("^BSESN", "SENSEX")):
         value, change = quotes[symbol]
         pct = _pct(value, change)
         if pct >= 0.25:
