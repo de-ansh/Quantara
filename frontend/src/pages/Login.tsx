@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
+import type { User } from "@/types"
 
 export default function Login() {
     const navigate = useNavigate()
@@ -33,10 +34,11 @@ export default function Login() {
                 password
             })
 
-            const user = {
-                id: "1", // Mock ID for now matches backend
-                email: email,
-            }
+            // Token isn't stored yet, so pass it explicitly to fetch the real profile
+            const { data: profile } = await api.get<User & { id: number }>("/users/me", {
+                headers: { Authorization: `Bearer ${data.access_token}` },
+            })
+            const user: User = { ...profile, id: String(profile.id) }
 
             login(data.access_token, user)
             navigate("/")

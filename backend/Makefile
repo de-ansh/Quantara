@@ -7,6 +7,7 @@ dev:
 	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
+	-docker exec quantara-postgres createdb -U quantara quantara_test 2>/dev/null
 	uv run pytest
 
 test-cov:

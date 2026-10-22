@@ -95,3 +95,25 @@ async def test_custom_headers_parsing(client: AsyncClient):
     resp = await client.get("/api/v1/stocks/AAPL/risk", headers=headers)
     # Regardless of actual external API result (which might fallback), the endpoint itself should not raise a 500 error due to headers.
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_market_status_falls_back_when_yahoo_unreachable(monkeypatch):
+    """A Yahoo outage yields last-known levels, and alerts reflect the quotes."""
+    from app.api.v1 import market
+
+    def _boom(symbol):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr(market.yf, "Ticker", _boom)
+    monkeypatch.setattr(market, "_quote_cache", {"at": 0.0, "quotes": None})
+
+    status = await market.get_market_status()
+    assert status.vix.value == market._FALLBACK_QUOTES["^VIX"][0]
+    assert status.india_market.index_value == market._FALLBACK_QUOTES["^NSEI"][0]
+
+    alerts = market._build_alerts(
+        {**market._FALLBACK_QUOTES, "^GSPC": (5000.0, -100.0), "^VIX": (25.0, 3.0)}
+    )
+    assert alerts[0].type == "BEARISH"
+    assert alerts[2].type == "VOLATILITY"

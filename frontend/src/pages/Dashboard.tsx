@@ -1,5 +1,4 @@
 import {
-    TrendingUp,
     Info,
     ArrowUpRight,
     ArrowUp,
@@ -29,66 +28,6 @@ interface StatItem {
     isVol?: boolean
 }
 
-interface OpportunityItem {
-    ticker: string
-    name: string
-    risk: string
-    research: number
-    signal: "up" | "up-right" | "right" | "down"
-    return: string
-    alignment: string
-}
-
-interface SignalItem {
-    time: string
-    type: "BULLISH" | "NEUTRAL" | "BEARISH" | "VOLATILITY"
-    text: string
-}
-
-const stats: StatItem[] = [
-    {
-        label: "Portfolio Risk Score",
-        value: "72",
-        trend: "+2.4%",
-        trendStatus: "up",
-        isGauge: true
-    },
-    {
-        label: "Recommended Risk Band",
-        value: "MODERATE - STEADY",
-        subtext: "Confidence: 94%",
-        isBadge: true
-    },
-    {
-        label: "Macro Risk Indicator",
-        value: "1.2%",
-        isSparkline: true
-    },
-    {
-        label: "Volatility Snapshot",
-        value: "VIX: 14.22",
-        trend: "-0.4%",
-        isVol: true
-    }
-]
-
-const opportunities: OpportunityItem[] = [
-    { ticker: "AAPL", name: "Apple Inc.", risk: "12.4", research: 85, signal: "up", return: "+4.22%", alignment: "92.0%" },
-    { ticker: "MSFT", name: "Microsoft Corp.", risk: "18.1", research: 90, signal: "up-right", return: "+3.80%", alignment: "88.5%" },
-    { ticker: "NVDA", name: "NVIDIA Corp.", risk: "31.5", research: 95, signal: "up", return: "+8.41%", alignment: "96.2%" },
-    { ticker: "AMZN", name: "Amazon.com Inc.", risk: "22.8", research: 78, signal: "right", return: "+0.50%", alignment: "75.1%" },
-    { ticker: "TSLA", name: "Tesla Inc.", risk: "45.0", research: 65, signal: "down", return: "-1.20%", alignment: "42.3%" },
-    { ticker: "GOOGL", name: "Alphabet Inc.", risk: "15.2", research: 82, signal: "up-right", return: "+2.15%", alignment: "89.4%" },
-]
-
-const signals: SignalItem[] = [
-    { time: "14:02:45", type: "BULLISH", text: "FED RATE UPDATE: STATEMENTS SUGGEST HAWKISH PAUSE. TECH SECTOR INFLOWS DETECTED." },
-    { time: "13:58:12", type: "NEUTRAL", text: "AAPL EARNINGS CALL PREP: ANALYST CONSENSUS SHIFTING TO OVERWEIGHT FOR Q3." },
-    { time: "13:45:01", type: "BEARISH", text: "CRUDE OIL FUTURES (WTI) BREAKING BELOW $75 SUPPORT. ENERGY EXPOSURE WARNING." },
-    { time: "13:30:44", type: "VOLATILITY", text: "VIX SPIKE DETECTED (+1.2%). INDEX PROTECTIVE PUT VOLUME INCREASING." },
-    { time: "13:12:10", type: "BULLISH", text: "NVDA UPGRADE FROM GOLDMAN SACHS. PT RAISED TO $1,200. H100 DEMAND STABLE." },
-]
-
 export default function Dashboard() {
     const { data: opportunities = [], isLoading: isLoadingOpportunities } = useRecommendations();
     const { data: liveSignals = [], isLoading: isLoadingSignals } = useSignals({ refetchInterval: 5000 });
@@ -102,37 +41,52 @@ export default function Dashboard() {
         refetchInterval: 5000,
     })
 
-    const vixVal = marketData?.vix?.value ? `VIX: ${marketData.vix.value}` : "VIX: 14.22"
-    const vixTrend = marketData?.vix?.change_percent !== undefined
-        ? `${marketData.vix.change_percent >= 0 ? "+" : ""}${marketData.vix.change_percent}%`
-        : "-0.4%"
+    const { data: profile } = useQuery({
+        queryKey: ["userProfile"],
+        queryFn: async () => {
+            const { data } = await apiClient.get("/users/me")
+            return data
+        },
+    })
+
+    const avgRisk = opportunities.length
+        ? Math.round(opportunities.reduce((sum, o) => sum + Number(o.risk), 0) / opportunities.length)
+        : 0
+    const spxChange: string | undefined = marketData?.us_market?.index_change
+    const vix: number | undefined = marketData?.vix?.value
+    const vixPct: number | undefined = marketData?.vix?.change_percent
 
     const currentStats: StatItem[] = [
         {
-            label: "Portfolio Risk Score",
-            value: "72",
-            trend: "+2.4%",
-            trendStatus: "up",
+            label: "Avg Opportunity Risk",
+            value: opportunities.length ? String(avgRisk) : "--",
+            subtext: `${opportunities.length} ranked assets`,
             isGauge: true
         },
         {
             label: "Recommended Risk Band",
-            value: "MODERATE - STEADY",
-            subtext: "Confidence: 94%",
+            value: (profile?.risk_level ?? "Moderate").toUpperCase(),
+            subtext: profile?.volatility_tolerance != null
+                ? `Vol tolerance: ${profile.volatility_tolerance}`
+                : "Complete risk onboarding",
             isBadge: true
         },
         {
-            label: "Macro Risk Indicator",
-            value: "1.2%",
+            label: "S&P 500 Session Move",
+            value: spxChange ?? "--",
+            trendStatus: spxChange?.startsWith("-") ? "down" : "up",
             isSparkline: true
         },
         {
             label: "Volatility Snapshot",
-            value: vixVal,
-            trend: vixTrend,
+            value: vix !== undefined ? `VIX: ${vix}` : "VIX: --",
+            trend: vixPct !== undefined ? `${vixPct >= 0 ? "+" : ""}${vixPct}%` : undefined,
+            trendStatus: vixPct !== undefined && vixPct < 0 ? "down" : "up",
             isVol: true
         }
     ]
+    // VIX 10..40 mapped onto the 6-segment meter
+    const vixSegments = vix !== undefined ? Math.min(6, Math.max(1, Math.ceil(((vix - 10) / 30) * 6))) : 0
 
     const latestAlert = marketData?.alerts?.[0]
 
@@ -164,13 +118,12 @@ export default function Dashboard() {
                                     <div className="relative flex items-center justify-center size-16">
                                         <svg className="size-full -rotate-90" viewBox="0 0 36 36">
                                             <circle cx="18" cy="18" r="16" fill="none" className="stroke-muted" strokeWidth="3" />
-                                            <circle cx="18" cy="18" r="16" fill="none" className="stroke-primary" strokeWidth="3" strokeDasharray="72, 100" />
+                                            <circle cx="18" cy="18" r="16" fill="none" className="stroke-primary" strokeWidth="3" strokeDasharray={`${avgRisk}, 100`} />
                                         </svg>
                                         <span className="absolute text-lg font-bold tracking-tighter text-foreground">{stat.value}</span>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-q-risk-low text-xs font-bold">{stat.trend}</div>
-                                        <div className="text-muted-foreground text-[9px] font-medium uppercase tracking-tight">vs prev session</div>
+                                        <div className="text-muted-foreground text-[9px] font-medium uppercase tracking-tight">{stat.subtext}</div>
                                     </div>
                                 </div>
                             )}
@@ -189,13 +142,11 @@ export default function Dashboard() {
                                 <>
                                     <div className="flex items-end gap-2 mb-2">
                                         <span className="text-2xl font-bold leading-none tracking-tight text-foreground">{stat.value}</span>
-                                        <ArrowUpRight className="text-q-risk-low size-4" />
+                                        {stat.trendStatus === "down"
+                                            ? <ArrowDown className="text-q-risk-high size-4" />
+                                            : <ArrowUpRight className="text-q-risk-low size-4" />}
                                     </div>
-                                    <div className="w-full h-8 opacity-50">
-                                        <svg className="w-full h-full" viewBox="0 0 100 20">
-                                            <polyline fill="none" points="0,15 10,12 20,18 30,10 40,14 50,5 60,8 70,2 80,10 90,5 100,8" className="stroke-primary" strokeWidth="1.5" />
-                                        </svg>
-                                    </div>
+                                    <div className="text-muted-foreground text-[9px] font-medium uppercase tracking-tight">vs prev close</div>
                                 </>
                             )}
 
@@ -203,11 +154,11 @@ export default function Dashboard() {
                                 <>
                                     <div className="flex justify-between items-baseline">
                                         <div className="text-lg font-mono tracking-tighter font-black text-foreground">{stat.value}</div>
-                                        <div className="text-q-risk-high text-xs font-bold">{stat.trend}</div>
+                                        <div className={cn("text-xs font-bold", stat.trendStatus === "down" ? "text-q-risk-low" : "text-q-risk-high")}>{stat.trend}</div>
                                     </div>
                                     <div className="mt-3 flex gap-1 h-1">
-                                        {[1, 1, 1, 1, 0, 0].map((v, idx) => (
-                                            <div key={idx} className={cn("flex-1", v ? "bg-q-risk-low" : "bg-q-border")} />
+                                        {Array.from({ length: 6 }, (_, idx) => (
+                                            <div key={idx} className={cn("flex-1", idx < vixSegments ? (idx < 2 ? "bg-q-risk-low" : idx < 4 ? "bg-amber-500" : "bg-q-risk-high") : "bg-q-border")} />
                                         ))}
                                     </div>
                                     <div className="flex justify-between mt-1 text-[9px] text-muted-foreground uppercase font-black tracking-widest">
@@ -298,7 +249,7 @@ export default function Dashboard() {
                                 <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Listening_to_Market...</div>
                             </div>
                         )}
-                        {(liveSignals.length > 0 ? liveSignals : signals).map((item, i) => (
+                        {(liveSignals.length > 0 ? liveSignals : (marketData?.alerts ?? []) as typeof liveSignals).map((item, i) => (
                             <div key={i} className="p-3 border-b border-q-border/30 hover:bg-primary/5 transition-colors cursor-help">
                                 <div className="flex justify-between mb-1">
                                     <span className="text-muted-foreground font-bold">{item.time}</span>
