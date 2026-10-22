@@ -113,7 +113,7 @@ def test_indian_macro_stress_scenarios():
 
 
 @pytest.mark.asyncio
-async def test_indian_peer_correlation_and_benchmark():
+async def test_indian_peer_correlation_and_benchmark(monkeypatch):
     """Test correlation endpoint uses NIFTY 50 and Indian peers for .NS tickers."""
     mock_db = AsyncMock()
     mock_res = MagicMock()
@@ -124,14 +124,26 @@ async def test_indian_peer_correlation_and_benchmark():
         beta=0.85,
         pe_ratio=28.0,
     )
-    mock_db.execute.return_value = mock_res
+    peers_res = MagicMock()
+    peers_res.scalars.return_value.all.return_value = [
+        Stock(ticker="INFY.NS", name="Infosys Ltd", sector="Technology", beta=0.95),
+        Stock(ticker="HDFCBANK.NS", name="HDFC Bank Ltd", sector="Financials", beta=1.10),
+    ]
+    mock_db.execute.side_effect = [mock_res, peers_res]
     current_user = {"id": "1", "email": "analyst@quantara.com"}
 
+    from app.api.v1 import risk
+
+    def offline(*args, **kwargs):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr(risk.yf, "download", offline)
     corr = await get_stock_correlations(ticker="TCS.NS", current_user=current_user, db=mock_db)
     assert corr.benchmark_ticker == "NIFTY 50"
     assert len(corr.peers) > 0
     peer_tickers = [p.ticker for p in corr.peers]
-    assert any(t.endswith(".NS") for t in peer_tickers)
+    assert peer_tickers[0] == "INFY.NS"  # same-sector peer first
+    assert "GOLDBEES.NS" in peer_tickers
 
 
 @pytest.mark.asyncio
@@ -155,3 +167,42 @@ async def test_sec_provider_indian_exchange_bypass():
 
     insiders = await provider.fetch_insider_transactions("RELIANCE.NS")
     assert insiders == []
+
+
+@pytest.mark.asyncio
+async def test_yahoo_fundamentals_feed_nse_bse_research(monkeypatch):
+    """NSE/BSE tickers get statement fundamentals from Yahoo in SEC metric shape."""
+    import pandas as pd
+
+    from app.providers import yahoo as yahoo_mod
+    from app.services.llm_orchestrator import LLMOrchestrator
+
+    annual = pd.to_datetime(["2024-03-31", "2025-03-31"])
+    fake = MagicMock()
+    fake.income_stmt = pd.DataFrame(
+        {annual[0]: [900.0, 90.0], annual[1]: [1000.0, 120.0]},
+        index=["Total Revenue", "Net Income"],
+    )
+    fake.balance_sheet = pd.DataFrame(
+        {annual[1]: [5000.0, 1000.0]}, index=["Total Assets", "Total Debt"]
+    )
+    fake.cashflow = pd.DataFrame()
+    fake.quarterly_income_stmt = pd.DataFrame(
+        {pd.Timestamp("2025-06-30"): [35.0]}, index=["Net Income"]
+    )
+    monkeypatch.setattr(yahoo_mod.yf, "Ticker", lambda symbol: fake)
+
+    metrics = await yahoo_mod.YahooFinanceProvider().get_fundamentals("TCS.BO")
+    assert [r["val"] for r in metrics["revenue"]] == [900.0, 1000.0]
+    assert [r["form"] for r in metrics["net_income"]] == ["10-K", "10-K", "10-Q"]
+    assert metrics["cash_flow"] == []
+
+    orchestrator = LLMOrchestrator.__new__(LLMOrchestrator)
+    sec = MagicMock()
+    sec.fetch_company_facts = AsyncMock(return_value=None)
+    orchestrator._get_sec_provider = lambda ua: sec
+    state = await orchestrator._retrieve_data({"ticker": "TCS.BO"})
+    assert state["raw_data"]["source"] == "Yahoo Finance (BSE)"
+    # Latest financials use the annual figure, not the newer quarter
+    assert state["raw_data"]["financials"]["net_income"] == 120.0
+    assert state["raw_data"]["financials"]["total_debt"] == 1000.0

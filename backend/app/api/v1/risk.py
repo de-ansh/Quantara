@@ -1,12 +1,19 @@
 """Risk analysis API endpoints."""
 
+import asyncio
+import time
+from typing import Any
 
+import pandas as pd
+import yfinance as yf
 from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser, DBSession
+from app.core.logging import get_logger
 from app.services.risk_engine import RiskEngine
 
+logger = get_logger(__name__)
 router = APIRouter()
 risk_engine = RiskEngine()
 
@@ -267,7 +274,7 @@ async def get_stock_correlations(
     Returns:
         Structured correlation dataset with sector peers and macro hedges
     """
-    from sqlalchemy import select
+    from sqlalchemy import and_, or_, select
 
     from app.models.stock import Stock
     from app.services.portfolio_analytics import PortfolioAnalyticsEngine
@@ -282,49 +289,60 @@ async def get_stock_correlations(
     active_sector = stock.sector if stock and stock.sector else "Technology"
     active_beta = stock.beta if stock and stock.beta else 1.1
 
-    is_indian = ticker_upper.endswith(".NS") or ticker_upper.endswith(".BO") or ".NS" in ticker_upper
-    if is_indian:
-        CANDIDATE_PEERS = [
-            {"ticker": "RELIANCE.NS", "name": "Reliance Industries Ltd", "sector": "Energy", "beta": 1.05},
-            {"ticker": "TCS.NS", "name": "Tata Consultancy Services", "sector": "Technology", "beta": 0.85},
-            {"ticker": "HDFCBANK.NS", "name": "HDFC Bank Ltd", "sector": "Financials", "beta": 1.10},
-            {"ticker": "INFY.NS", "name": "Infosys Ltd", "sector": "Technology", "beta": 0.95},
-            {"ticker": "ICICIBANK.NS", "name": "ICICI Bank Ltd", "sector": "Financials", "beta": 1.15},
-            {"ticker": "TATAMOTORS.NS", "name": "Tata Motors Ltd", "sector": "Consumer Discretionary", "beta": 1.45},
-            {"ticker": "ITC.NS", "name": "ITC Ltd", "sector": "Consumer Staples", "beta": 0.65},
-            {"ticker": "BHARTIARTL.NS", "name": "Bharti Airtel Ltd", "sector": "Communication Services", "beta": 0.90},
-            {"ticker": "LT.NS", "name": "Larsen & Toubro Ltd", "sector": "Industrials", "beta": 1.10},
-            {"ticker": "SUNPHARMA.NS", "name": "Sun Pharmaceutical", "sector": "Healthcare", "beta": 0.70},
-            {"ticker": "GOLDBEES.NS", "name": "Nippon India ETF Gold BeES", "sector": "Commodities", "beta": 0.05},
-            {"ticker": "LIQUIDBEES.NS", "name": "Nippon India ETF Liquid BeES", "sector": "Cash", "beta": 0.0},
-        ]
-    else:
-        CANDIDATE_PEERS = [
-            {"ticker": "AAPL", "name": "Apple Inc.", "sector": "Technology", "beta": 1.2},
-            {"ticker": "MSFT", "name": "Microsoft Corp.", "sector": "Technology", "beta": 1.1},
-            {"ticker": "NVDA", "name": "NVIDIA Corp.", "sector": "Technology", "beta": 1.7},
-            {"ticker": "GOOGL", "name": "Alphabet Inc.", "sector": "Communication Services", "beta": 1.1},
-            {"ticker": "AMZN", "name": "Amazon.com Inc.", "sector": "Consumer Discretionary", "beta": 1.15},
-            {"ticker": "TSLA", "name": "Tesla Inc.", "sector": "Consumer Discretionary", "beta": 1.5},
-            {"ticker": "JNJ", "name": "Johnson & Johnson", "sector": "Healthcare", "beta": 0.6},
-            {"ticker": "JPM", "name": "JPMorgan Chase & Co.", "sector": "Financials", "beta": 1.1},
-            {"ticker": "XOM", "name": "Exxon Mobil Corp.", "sector": "Energy", "beta": 0.9},
-            {"ticker": "TLT", "name": "20+ Year Treasury Bond ETF", "sector": "Fixed Income", "beta": 0.15},
-            {"ticker": "GLD", "name": "SPDR Gold Shares", "sector": "Commodities", "beta": 0.05},
-            {"ticker": "BIL", "name": "SPDR 1-3M T-Bill (Cash)", "sector": "Cash", "beta": 0.0},
-        ]
+    is_indian = ticker_upper.endswith((".NS", ".BO"))
+    benchmark = "^NSEI" if is_indian else "^GSPC"
+
+    # Equity peers come from the stocks table, same market, same-sector first
+    market_filter = (
+        or_(Stock.ticker.ilike("%.NS"), Stock.ticker.ilike("%.BO"))
+        if is_indian
+        else and_(~Stock.ticker.ilike("%.NS"), ~Stock.ticker.ilike("%.BO"))
+    )
+    peer_rows = (
+        (await db.execute(select(Stock).where(market_filter, Stock.ticker != ticker_upper)))
+        .scalars()
+        .all()
+    )
+    candidates = [
+        {
+            "ticker": p.ticker,
+            "name": p.name or p.ticker,
+            "sector": p.sector or "Unknown",
+            "beta": p.beta or 1.0,
+        }
+        for p in sorted(peer_rows, key=lambda p: p.sector != active_sector)
+    ][:9] + [
+        h for h in HEDGE_INSTRUMENTS["india" if is_indian else "us"] if h["ticker"] != ticker_upper
+    ]
+
+    returns = await _get_daily_returns(
+        tuple([ticker_upper, benchmark] + [c["ticker"] for c in candidates])
+    )
+
+    def _real_corr(a: str, b: str) -> float | None:
+        if returns is None or a not in returns or b not in returns:
+            return None
+        pair = returns[[a, b]].dropna()
+        if len(pair) < MIN_OVERLAP_DAYS:
+            return None
+        value = pair[a].corr(pair[b])
+        return None if pd.isna(value) else float(value)
+
+    def _real_beta(t: str) -> float | None:
+        if returns is None or t not in returns or benchmark not in returns:
+            return None
+        pair = returns[[t, benchmark]].dropna()
+        if len(pair) < MIN_OVERLAP_DAYS or pair[benchmark].var() == 0:
+            return None
+        return float(pair[t].cov(pair[benchmark]) / pair[benchmark].var())
 
     peers: list[PeerCorrelation] = []
-    for cand in CANDIDATE_PEERS:
-        if cand["ticker"] == ticker_upper:
-            continue
-
-        corr = PortfolioAnalyticsEngine.estimate_pairwise_correlation(
-            ticker_upper,
-            cand["ticker"],
-            sector_a=active_sector,
-            sector_b=cand["sector"],
-        )
+    for cand in candidates:
+        corr = _real_corr(ticker_upper, cand["ticker"])
+        if corr is None:
+            corr = PortfolioAnalyticsEngine.estimate_pairwise_correlation(
+                ticker_upper, cand["ticker"], sector_a=active_sector, sector_b=cand["sector"]
+            )
 
         if cand["sector"] == active_sector:
             rel = "Direct Sector Peer"
@@ -333,25 +351,82 @@ async def get_stock_correlations(
         else:
             rel = "Cross-Sector Equity"
 
+        beta = _real_beta(cand["ticker"])
         peers.append(
             PeerCorrelation(
                 ticker=cand["ticker"],
                 name=cand["name"],
                 sector=cand["sector"],
                 correlation=round(corr, 2),
-                beta=cand["beta"],
+                beta=round(beta, 2) if beta is not None else cand["beta"],
                 relationship=rel,
             )
         )
 
-    # Benchmark correlation with S&P 500 estimated from beta
-    benchmark_corr = min(0.95, max(0.10, round(0.55 + (active_beta - 1.0) * 0.25, 2)))
+    benchmark_corr = _real_corr(ticker_upper, benchmark)
+    if benchmark_corr is None:
+        # No usable price history: estimate from beta
+        benchmark_corr = min(0.95, max(0.10, 0.55 + (active_beta - 1.0) * 0.25))
 
     return StockCorrelationResponse(
         ticker=ticker_upper,
         sector=active_sector,
         benchmark_ticker="NIFTY 50" if is_indian else "S&P 500",
-        benchmark_correlation=benchmark_corr,
-        peers=peers[:10],
+        benchmark_correlation=round(benchmark_corr, 2),
+        peers=peers,
     )
 
+
+# Non-equity diversifiers shown beside equity peers; a product choice, not market data
+HEDGE_INSTRUMENTS: dict[str, list[dict[str, Any]]] = {
+    "india": [
+        {
+            "ticker": "GOLDBEES.NS",
+            "name": "Nippon India ETF Gold BeES",
+            "sector": "Commodities",
+            "beta": 0.05,
+        },
+        {
+            "ticker": "LIQUIDBEES.NS",
+            "name": "Nippon India ETF Liquid BeES",
+            "sector": "Cash",
+            "beta": 0.0,
+        },
+    ],
+    "us": [
+        {
+            "ticker": "TLT",
+            "name": "20+ Year Treasury Bond ETF",
+            "sector": "Fixed Income",
+            "beta": 0.15,
+        },
+        {"ticker": "GLD", "name": "SPDR Gold Shares", "sector": "Commodities", "beta": 0.05},
+        {"ticker": "BIL", "name": "SPDR 1-3M T-Bill (Cash)", "sector": "Cash", "beta": 0.0},
+    ],
+}
+MIN_OVERLAP_DAYS = 60
+_RETURNS_TTL_SECONDS = 24 * 3600.0
+_returns_cache: dict[tuple[str, ...], tuple[float, pd.DataFrame | None]] = {}
+
+
+async def _get_daily_returns(tickers: tuple[str, ...]) -> pd.DataFrame | None:
+    """One year of daily returns per ticker (columns), cached for a day; None if Yahoo fails."""
+    cached = _returns_cache.get(tickers)
+    if cached and time.monotonic() - cached[0] < _RETURNS_TTL_SECONDS:
+        return cached[1]
+
+    def _download() -> pd.DataFrame | None:
+        closes = yf.download(
+            list(tickers), period="1y", interval="1d", auto_adjust=True, progress=False
+        )["Close"]
+        if isinstance(closes, pd.Series):
+            closes = closes.to_frame(tickers[0])
+        return closes.pct_change(fill_method=None).dropna(how="all")
+
+    try:
+        returns = await asyncio.to_thread(_download)
+    except Exception as e:
+        logger.warning(f"Price history download failed for correlations: {e}")
+        return None  # don't cache failures, retry next request
+    _returns_cache[tickers] = (time.monotonic(), returns)
+    return returns

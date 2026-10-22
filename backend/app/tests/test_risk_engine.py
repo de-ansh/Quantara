@@ -83,47 +83,108 @@ class TestRiskEngine:
         assert analysis.components.beta_score >= 0
 
 
-@pytest.mark.asyncio
-async def test_get_stock_correlations():
-    """Test get_stock_correlations endpoint returns sector peers and macro hedges."""
+def _correlation_db(stock, peers):
+    """Mock DB: first execute returns the active stock, second the peer universe."""
     from unittest.mock import AsyncMock, MagicMock
-    from app.api.v1.risk import get_stock_correlations
+
+    db = AsyncMock()
+    active, universe = MagicMock(), MagicMock()
+    active.scalar_one_or_none.return_value = stock
+    universe.scalars.return_value.all.return_value = peers
+    db.execute.side_effect = [active, universe]
+    return db
+
+
+@pytest.mark.asyncio
+async def test_get_stock_correlations(monkeypatch):
+    """Correlations and betas are computed from real daily returns of DB peers and hedges."""
+    import numpy as np
+    import pandas as pd
+
+    from app.api.v1 import risk
     from app.models.stock import Stock
 
-    mock_db = AsyncMock()
-    mock_res = MagicMock()
-    mock_res.scalar_one_or_none.return_value = Stock(
-        ticker="AAPL",
-        name="Apple Inc.",
-        sector="Technology",
-        beta=1.2,
+    rng = np.random.default_rng(0)
+    market = rng.normal(0, 0.01, 250)
+    idx = pd.date_range("2025-01-01", periods=250, freq="B")
+    prices = {
+        "AAPL": market + rng.normal(0, 0.004, 250),
+        "^GSPC": market,
+        "MSFT": market + rng.normal(0, 0.004, 250),
+        "JNJ": rng.normal(0, 0.01, 250),
+        "TLT": -market + rng.normal(0, 0.004, 250),
+        "GLD": rng.normal(0, 0.01, 250),
+        "BIL": rng.normal(0, 0.0001, 250),
+    }
+    closes = pd.DataFrame({k: 100 * np.cumprod(1 + v) for k, v in prices.items()}, index=idx)
+    downloads = []
+
+    def fake_download(tickers, **kwargs):
+        downloads.append(tickers)
+        return pd.concat({"Close": closes[tickers]}, axis=1)
+
+    monkeypatch.setattr(risk.yf, "download", fake_download)
+    monkeypatch.setattr(risk, "_returns_cache", {})
+
+    db = _correlation_db(
+        Stock(ticker="AAPL", name="Apple Inc.", sector="Technology", beta=1.2),
+        [
+            Stock(ticker="JNJ", name="Johnson & Johnson", sector="Healthcare", beta=0.6),
+            Stock(ticker="MSFT", name="Microsoft Corp.", sector="Technology", beta=1.1),
+        ],
     )
-    mock_db.execute.return_value = mock_res
-
-    current_user = {"id": "1", "email": "analyst@quantara.com"}
-
-    resp = await get_stock_correlations(ticker="AAPL", current_user=current_user, db=mock_db)
+    resp = await risk.get_stock_correlations(ticker="AAPL", current_user={}, db=db)
 
     assert resp.ticker == "AAPL"
-    assert resp.sector == "Technology"
+    assert resp.benchmark_correlation > 0.8
+    peers = {p.ticker: p for p in resp.peers}
+    assert "AAPL" not in peers
+    # Same-sector peers are listed first
+    assert resp.peers[0].ticker == "MSFT"
+    assert peers["MSFT"].relationship == "Direct Sector Peer"
+    assert peers["MSFT"].correlation > 0.8
+    assert abs(peers["MSFT"].beta - 1.0) < 0.15
+    assert abs(peers["JNJ"].correlation) < 0.3
+    assert peers["TLT"].correlation < -0.8
+    assert "Hedge" in peers["TLT"].relationship
+
+    # Second request within the TTL is served from cache
+    await risk.get_stock_correlations(
+        ticker="AAPL",
+        current_user={},
+        db=_correlation_db(
+            Stock(ticker="AAPL", sector="Technology", beta=1.2),
+            [Stock(ticker="JNJ", sector="Healthcare"), Stock(ticker="MSFT", sector="Technology")],
+        ),
+    )
+    assert len(downloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_stock_correlations_falls_back_when_yahoo_fails(monkeypatch):
+    """Without price history, correlations fall back to the sector-based estimate."""
+    from app.api.v1 import risk
+    from app.models.stock import Stock
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr(risk.yf, "download", boom)
+    monkeypatch.setattr(risk, "_returns_cache", {})
+
+    db = _correlation_db(
+        Stock(ticker="AAPL", sector="Technology", beta=1.2),
+        [Stock(ticker="MSFT", name="Microsoft Corp.", sector="Technology", beta=1.1)],
+    )
+    resp = await risk.get_stock_correlations(ticker="AAPL", current_user={}, db=db)
+
+    peers = {p.ticker: p for p in resp.peers}
+    assert peers["MSFT"].correlation >= 0.65
+    assert peers["MSFT"].beta == 1.1
+    assert peers["TLT"].correlation < 0.0
     assert 0 < resp.benchmark_correlation <= 1.0
-    assert len(resp.peers) > 0
-
-    # Ensure AAPL is not in peers (no self-reference in peer list)
-    peer_tickers = [p.ticker for p in resp.peers]
-    assert "AAPL" not in peer_tickers
-
-    # Intra-sector tech stocks should have high correlation
-    msft_peer = next((p for p in resp.peers if p.ticker == "MSFT"), None)
-    assert msft_peer is not None
-    assert msft_peer.relationship == "Direct Sector Peer"
-    assert msft_peer.correlation >= 0.65
-
-    # Bond / TLT hedge should have negative correlation
-    tlt_peer = next((p for p in resp.peers if p.ticker == "TLT"), None)
-    assert tlt_peer is not None
-    assert tlt_peer.correlation < 0.0
-    assert "Hedge" in tlt_peer.relationship
+    # Failures are not cached
+    assert risk._returns_cache == {}
 
 
 def test_generate_drawdown_series_with_dataframe():
@@ -133,8 +194,28 @@ def test_generate_drawdown_series_with_dataframe():
 
     engine = RiskEngine()
     # 20 days of simulated prices with a peak and drop
-    prices = [100.0, 105.0, 110.0, 115.0, 120.0, 114.0, 102.0, 96.0, 90.0, 95.0,
-              100.0, 105.0, 102.0, 98.0, 104.0, 108.0, 112.0, 115.0, 118.0, 120.0]
+    prices = [
+        100.0,
+        105.0,
+        110.0,
+        115.0,
+        120.0,
+        114.0,
+        102.0,
+        96.0,
+        90.0,
+        95.0,
+        100.0,
+        105.0,
+        102.0,
+        98.0,
+        104.0,
+        108.0,
+        112.0,
+        115.0,
+        118.0,
+        120.0,
+    ]
     dates = pd.date_range("2024-01-01", periods=20, freq="D")
     df = pd.DataFrame({"Close": prices}, index=dates)
 
@@ -287,5 +368,3 @@ async def test_get_stock_scenarios_endpoint():
         assert s.type
         assert s.status in ["danger", "warning", "success"]
         assert s.impact_pct is not None
-
-
