@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
@@ -24,6 +25,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     )
 
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
 
     session = async_session()

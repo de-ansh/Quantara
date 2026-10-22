@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15  # pgvector required by document_chunks.embedding
     container_name: quantara-postgres
     environment:
       POSTGRES_USER: quantara

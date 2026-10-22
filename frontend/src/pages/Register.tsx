@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
+import type { User as AuthUser } from "@/types"
 
 export default function Register() {
     const navigate = useNavigate()
@@ -41,10 +42,11 @@ export default function Register() {
                 password: formData.password
             })
 
-            const user = {
-                id: "1", // Mock ID
-                email: formData.email,
-            }
+            // Token isn't stored yet, so pass it explicitly to fetch the real profile
+            const { data: profile } = await api.get<AuthUser & { id: number }>("/users/me", {
+                headers: { Authorization: `Bearer ${data.access_token}` },
+            })
+            const user: AuthUser = { ...profile, id: String(profile.id) }
 
             login(data.access_token, user)
             navigate("/")

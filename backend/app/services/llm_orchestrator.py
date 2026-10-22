@@ -158,10 +158,12 @@ class LLMOrchestrator:
             }
             logger.info(f"Successfully retrieved SEC data for {state['ticker']}")
         else:
-            logger.warning(f"No SEC data retrieved for {state['ticker']}, using mock data")
+            # Expected for non-US listings (e.g. NSE/BSE); downstream nodes use Yahoo data only
+            logger.warning(f"No SEC data retrieved for {state['ticker']}, continuing without filings")
             state["raw_data"] = {
                 "ticker": state["ticker"],
                 "financials": {},
+                "source": "unavailable",
                 "transcripts": [],
                 "news": [],
             }
