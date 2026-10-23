@@ -9,11 +9,12 @@ Covers:
 """
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
-from app.api.v1.research import search_stocks
 from app.api.v1.market import get_market_status
-from app.api.v1.risk import get_stock_scenarios, get_stock_correlations
+from app.api.v1.research import search_stocks
+from app.api.v1.risk import get_stock_correlations
 from app.models.stock import Stock
 from app.providers.sec import SECProvider
 from app.services.risk_engine import RiskEngine
@@ -28,8 +29,8 @@ async def test_stock_search_market_filter():
     reliance = Stock(
         ticker="RELIANCE.NS",
         name="Reliance Industries Ltd",
-        price="₹1,215.40",
-        market_cap="18.5T",
+        price=1215.4,
+        market_cap=1.85e13,
         risk_score=34.0,
         research_score=92.0,
         alpha_projection="+14.8%",
@@ -38,8 +39,8 @@ async def test_stock_search_market_filter():
     nvda = Stock(
         ticker="NVDA",
         name="NVIDIA Corporation",
-        price="$120.50",
-        market_cap="$3.0T",
+        price=120.5,
+        market_cap=3e12,
         risk_score=72.0,
         research_score=85.0,
         alpha_projection="+14.2%",
@@ -48,6 +49,7 @@ async def test_stock_search_market_filter():
 
     # When market=india, mock return only reliance
     mock_result.scalars.return_value.all.return_value = [reliance]
+    mock_result.scalar_one.return_value = 1
     mock_db.execute.return_value = mock_result
     current_user = {"id": "1", "email": "analyst@quantara.com"}
 
@@ -58,6 +60,7 @@ async def test_stock_search_market_filter():
 
     # When market=us, mock return only nvda
     mock_result.scalars.return_value.all.return_value = [nvda]
+    mock_result.scalar_one.return_value = 1
     resp_us = await search_stocks(current_user=current_user, db=mock_db, market="us")
     assert resp_us.total_count == 1
     assert resp_us.stocks[0].ticker == "NVDA"

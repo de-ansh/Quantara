@@ -15,8 +15,8 @@ async def test_stocks_search_endpoint(client: AsyncClient, db_session):
             sector="Technology",
             risk_score=14.0,
             research_score=85.0,
-            price="$189.42",
-            market_cap="2.94T",
+            price=189.42,
+            market_cap=2.94e12,
             pe_ratio=25.0,
             beta=1.1,
             status="up",
@@ -30,8 +30,8 @@ async def test_stocks_search_endpoint(client: AsyncClient, db_session):
             sector="Consumer Discretionary",
             risk_score=72.0,
             research_score=60.0,
-            price="$175.22",
-            market_cap="558.2B",
+            price=175.22,
+            market_cap=5.582e11,
             pe_ratio=60.0,
             beta=1.5,
             status="down",
@@ -93,7 +93,15 @@ async def test_dynamic_risk_analysis_endpoint(client: AsyncClient, db_session):
 
 
 @pytest.mark.asyncio
-async def test_portfolio_simulation_trajectory_endpoint(client: AsyncClient, db_session):
+async def test_portfolio_simulation_trajectory_endpoint(
+    client: AsyncClient, db_session, monkeypatch
+):
+    from app.api.v1 import risk
+
+    async def _offline(tickers):
+        return None
+
+    monkeypatch.setattr(risk, "_get_daily_returns", _offline)
     # Register/Login
     reg_payload = {"email": "sim_user@quantara.com", "password": "securepassword123"}
     await client.post("/api/v1/auth/register", json=reg_payload)

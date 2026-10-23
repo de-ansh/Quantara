@@ -15,11 +15,14 @@ import {
     Sparkles,
     ShieldAlert,
     X,
-    Loader2
+    Loader2,
+    Briefcase,
+    Columns3
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { useWatchlist } from "@/hooks/useWatchlist"
 
 interface StockItem {
     ticker: string
@@ -43,6 +46,8 @@ const SYSTEM_PAGES = [
     { name: "Signal Intelligence", href: "/signals", icon: Activity, category: "Intelligence" },
     { name: "Risk & Correlation Engine", href: "/risk", icon: AlertTriangle, category: "Risk" },
     { name: "Simulation & MPT Studio", href: "/simulation", icon: TrendingUp, category: "Portfolio" },
+    { name: "My Portfolios", href: "/portfolios", icon: Briefcase, category: "Portfolio" },
+    { name: "Compare Stocks", href: "/compare", icon: Columns3, category: "Research" },
     { name: "Account Profile", href: "/account", icon: User, category: "Account" },
     { name: "System Settings & Keys", href: "/settings", icon: Settings, category: "Account" },
 ]
@@ -64,17 +69,27 @@ const CORE_ASSETS = [
 
 export default function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const navigate = useNavigate()
+    const { data: watchlist = [] } = useWatchlist()
     const [query, setQuery] = useState("")
     const [selectedIndex, setSelectedIndex] = useState(0)
     const inputRef = useRef<HTMLInputElement>(null)
 
-    // Reset selection and query when opening
-    useEffect(() => {
+    // Reset selection and query when opening (adjusted during render, not in an effect)
+    const [wasOpen, setWasOpen] = useState(open)
+    if (open !== wasOpen) {
+        setWasOpen(open)
         if (open) {
             setQuery("")
             setSelectedIndex(0)
-            setTimeout(() => inputRef.current?.focus(), 50)
         }
+    }
+    const changeQuery = (value: string) => {
+        setQuery(value)
+        setSelectedIndex(0)
+    }
+
+    useEffect(() => {
+        if (open) setTimeout(() => inputRef.current?.focus(), 50)
     }, [open])
 
     // Query backend for stocks
@@ -154,8 +169,19 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
             })
         })
     } else {
-        // Default when query is empty: Core Assets
-        CORE_ASSETS.forEach(a => {
+        // Default when query is empty: the user's watchlist, else curated core assets
+        watchlist.forEach(w => {
+            selectableItems.push({
+                id: `watch-${w.ticker}`,
+                type: "core",
+                title: `${w.ticker} — ${w.name}`,
+                subtitle: `${w.price} · Risk ${w.risk.toFixed(0)}`,
+                badge: "WATCHLIST",
+                href: `/research/${w.ticker}`,
+                icon: BarChart3
+            })
+        })
+        if (watchlist.length === 0) CORE_ASSETS.forEach(a => {
             selectableItems.push({
                 id: `core-${a.ticker}`,
                 type: "core",
@@ -181,10 +207,9 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
         })
     }
 
-    // Keep selectedIndex in bounds
-    useEffect(() => {
-        setSelectedIndex(0)
-    }, [query, stockResults.length])
+
+    // Results can shrink as the search resolves; fall back to the first item
+    const activeIndex = selectedIndex < selectableItems.length ? selectedIndex : 0
 
     const handleNavigate = (href: string) => {
         onOpenChange(false)
@@ -200,8 +225,8 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
             setSelectedIndex(prev => (selectableItems.length > 0 ? (prev - 1 + selectableItems.length) % selectableItems.length : 0))
         } else if (e.key === "Enter") {
             e.preventDefault()
-            if (selectableItems[selectedIndex]) {
-                handleNavigate(selectableItems[selectedIndex].href)
+            if (selectableItems[activeIndex]) {
+                handleNavigate(selectableItems[activeIndex].href)
             }
         }
     }
@@ -226,13 +251,13 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                         type="text"
                         placeholder="Search tickers (e.g. NVDA, TLT), company names, or views..."
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        onChange={(e) => changeQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="flex-1 bg-transparent border-none outline-none text-sm font-sans placeholder:text-muted-foreground text-foreground h-full"
                     />
                     {query && (
                         <button
-                            onClick={() => setQuery("")}
+                            onClick={() => changeQuery("")}
                             className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground mr-2"
                         >
                             <X className="size-3.5" />
@@ -251,7 +276,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                         </div>
                     ) : (
                         selectableItems.map((item, idx) => {
-                            const isSelected = idx === selectedIndex
+                            const isSelected = idx === activeIndex
                             const IconComponent = item.icon
                             return (
                                 <div

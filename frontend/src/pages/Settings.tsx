@@ -16,10 +16,9 @@ export default function Settings() {
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
 
     useEffect(() => {
-        const storedKey = localStorage.getItem("openai_api_key") || ""
-        const storedUA = localStorage.getItem("sec_user_agent") || ""
-        if (storedKey) setOpenaiKey(storedKey)
-        if (storedUA) setSecUserAgent(storedUA)
+        // Credentials live encrypted on the server; scrub copies older builds left in the browser.
+        localStorage.removeItem("openai_api_key")
+        localStorage.removeItem("sec_user_agent")
 
         // Hydrate from server-side credentials storage
         apiClient.get<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials")
@@ -31,12 +30,11 @@ export default function Settings() {
                     }
                     if (res.data.sec_user_agent) {
                         setSecUserAgent(res.data.sec_user_agent)
-                        localStorage.setItem("sec_user_agent", res.data.sec_user_agent)
                     }
                 }
             })
             .catch(() => {
-                // Fall back to local storage if offline or unauthenticated
+                // Leave fields empty if the server is unreachable
             })
     }, [])
 
@@ -46,11 +44,9 @@ export default function Settings() {
             const payload: { openai_api_key?: string; sec_user_agent?: string } = {}
             if (openaiKey.trim()) {
                 payload.openai_api_key = openaiKey.trim()
-                localStorage.setItem("openai_api_key", openaiKey.trim())
             }
             if (secUserAgent.trim()) {
                 payload.sec_user_agent = secUserAgent.trim()
-                localStorage.setItem("sec_user_agent", secUserAgent.trim())
             }
 
             const res = await apiClient.put<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials", payload)
@@ -58,6 +54,7 @@ export default function Settings() {
                 setHasServerKey(res.data.has_openai_key)
                 setServerConfiguredKey(res.data.openai_key_masked)
             }
+            setOpenaiKey("")
             setSaveStatus("saved")
             setTimeout(() => setSaveStatus("idle"), 2500)
         } catch {
@@ -76,8 +73,6 @@ export default function Settings() {
         setSecUserAgent("")
         setHasServerKey(false)
         setServerConfiguredKey(null)
-        localStorage.removeItem("openai_api_key")
-        localStorage.removeItem("sec_user_agent")
         setSaveStatus("saved")
         setTimeout(() => setSaveStatus("idle"), 2000)
     }

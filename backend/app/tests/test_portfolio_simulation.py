@@ -2,11 +2,33 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
+import pandas as pd
 import pytest
+from fastapi import HTTPException
 
+from app.api.v1 import risk
 from app.api.v1.portfolio import PortfolioStock, SimulationRequest, simulate_portfolio
 from app.models.stock import Stock
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
+
+
+@pytest.fixture
+def no_price_history(monkeypatch):
+    """Simulate a Yahoo outage so the endpoint uses its asset-class fallbacks."""
+
+    async def _none(tickers):
+        return None
+
+    monkeypatch.setattr(risk, "_get_daily_returns", _none)
+
+
+def _db_returning(*stocks):
+    mock_db = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = list(stocks)
+    mock_db.execute.return_value = result
+    return mock_db
 
 
 @pytest.fixture
@@ -107,12 +129,9 @@ def test_weight_normalization():
 
 
 @pytest.mark.asyncio
-async def test_simulate_portfolio_with_default_metrics(mock_current_user):
+async def test_simulate_portfolio_with_default_metrics(mock_current_user, no_price_history):
     """Test simulate endpoint computes MPT covariance and valid trajectories."""
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = None
-    mock_db.execute.return_value = mock_result
+    mock_db = _db_returning()
 
     payload = SimulationRequest(
         stocks=[
@@ -140,7 +159,9 @@ async def test_simulate_portfolio_with_default_metrics(mock_current_user):
     assert res.correlation_matrix["AAPL"]["AAPL"] == 1.0
     assert res.correlation_matrix["AAPL"]["BIL"] == 0.0
 
-    # Validate Monte Carlo trajectory
+    assert res.estimated_tickers == ["AAPL", "TLT", "GLD", "BIL"]
+
+    # Validate projected trajectory
     assert len(res.trajectory) == 121  # month 0 to 120
     assert res.trajectory[0].median == 1000000.0
     assert res.trajectory[0].upper_95 == 1000000.0
@@ -152,34 +173,12 @@ async def test_simulate_portfolio_with_default_metrics(mock_current_user):
 
 
 @pytest.mark.asyncio
-async def test_simulate_portfolio_with_db_stocks(mock_current_user):
-    """Test simulate endpoint utilizes database stock parameters when available."""
-    mock_db = AsyncMock()
-
-    db_stock_aapl = Stock(
-        ticker="AAPL",
-        name="Apple Inc.",
-        sector="Technology",
-        risk_score=44.0,  # vol = 44 / 200 = 0.22
-        research_score=80.0,
-        beta=1.1,
+async def test_simulate_portfolio_with_db_stocks(mock_current_user, no_price_history):
+    """Without price history, DB sector and beta still drive the estimates."""
+    mock_db = _db_returning(
+        Stock(ticker="AAPL", name="Apple Inc.", sector="Technology", beta=1.1),
+        Stock(ticker="MSFT", name="Microsoft Corp.", sector="Technology", beta=1.05),
     )
-    db_stock_msft = Stock(
-        ticker="MSFT",
-        name="Microsoft Corp.",
-        sector="Technology",
-        risk_score=40.0,  # vol = 40 / 200 = 0.20
-        research_score=85.0,
-        beta=1.05,
-    )
-
-    mock_res_aapl = MagicMock()
-    mock_res_aapl.scalar_one_or_none.return_value = db_stock_aapl
-
-    mock_res_msft = MagicMock()
-    mock_res_msft.scalar_one_or_none.return_value = db_stock_msft
-
-    mock_db.execute.side_effect = [mock_res_aapl, mock_res_msft]
 
     payload = SimulationRequest(
         stocks=[
@@ -195,7 +194,60 @@ async def test_simulate_portfolio_with_db_stocks(mock_current_user):
     assert res.expected_return > 0
     assert res.expected_volatility > 0
     assert res.correlation_matrix["AAPL"]["MSFT"] == 0.72  # intra-sector technology
+    assert res.expected_return == pytest.approx((0.025 + 1.075 * 0.055) * 100, abs=0.01)
     assert len(res.trajectory) == 61
+
+
+@pytest.mark.asyncio
+async def test_simulate_portfolio_uses_real_price_history(mock_current_user, monkeypatch):
+    """Volatility, beta, correlation and drawdown are computed from daily returns."""
+    rng = np.random.default_rng(7)
+    market = rng.normal(0.0004, 0.01, 250)
+    returns = pd.DataFrame(
+        {
+            "^GSPC": market,
+            "AAA": 2.0 * market + rng.normal(0, 0.005, 250),  # beta ~2
+            "BBB": rng.normal(0.0003, 0.012, 250),  # uncorrelated with the market
+        }
+    )
+
+    async def _returns(tickers):
+        return returns
+
+    monkeypatch.setattr(risk, "_get_daily_returns", _returns)
+
+    payload = SimulationRequest(
+        stocks=[PortfolioStock(ticker="AAA", weight=0.5), PortfolioStock(ticker="BBB", weight=0.5)],
+        initial_investment=1000.0,
+        time_horizon_months=12,
+    )
+    res = await simulate_portfolio(
+        request=payload, current_user=mock_current_user, db=_db_returning()
+    )
+
+    assert res.estimated_tickers == []
+    assert res.asset_volatilities["AAA"] == pytest.approx(
+        returns["AAA"].std() * np.sqrt(252), abs=1e-3
+    )
+    assert res.correlation_matrix["AAA"]["BBB"] == pytest.approx(
+        returns["AAA"].corr(returns["BBB"]), abs=1e-3
+    )
+    growth = (1 + returns[["AAA", "BBB"]].mean(axis=1)).cumprod()
+    assert res.max_drawdown == pytest.approx((growth / growth.cummax() - 1).min() * 100, abs=0.01)
+    # CAPM: AAA's beta of ~2 must pull the blended return well above the risk-free rate
+    assert res.expected_return > (0.025 + 1.0 * 0.055) * 100
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejects_weights_not_summing_to_one(mock_current_user, no_price_history):
+    payload = SimulationRequest(
+        stocks=[PortfolioStock(ticker="AAPL", weight=0.5), PortfolioStock(ticker="MSFT", weight=0.3)],
+        initial_investment=1000.0,
+        time_horizon_months=12,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await simulate_portfolio(request=payload, current_user=mock_current_user, db=_db_returning())
+    assert exc.value.status_code == 422
 
 
 @pytest.mark.asyncio

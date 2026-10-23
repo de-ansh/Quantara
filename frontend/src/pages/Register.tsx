@@ -9,7 +9,7 @@ import {
     Globe,
     Monitor
 } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import type { User as AuthUser } from "@/types"
 
@@ -50,8 +50,8 @@ export default function Register() {
 
             login(data.access_token, user)
             navigate("/")
-        } catch (err: any) {
-            setError(err.message || "Failed to register. Please try again.")
+        } catch (err) {
+            setError(apiErrorDetail(err) ?? ((err instanceof Error && err.message) || "Failed to register. Please try again."))
         } finally {
             setIsLoading(false)
         }
@@ -145,6 +145,7 @@ export default function Register() {
                                     type="password"
                                     value={formData.password}
                                     onChange={handleChange}
+                                    minLength={8}
                                     required
                                 />
                             </div>

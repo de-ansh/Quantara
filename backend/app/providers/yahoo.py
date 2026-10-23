@@ -160,6 +160,7 @@ class YahooFinanceProvider:
         "eps": ("income_stmt", ["Basic EPS", "Diluted EPS"]),
         "total_assets": ("balance_sheet", ["Total Assets"]),
         "total_debt": ("balance_sheet", ["Total Debt", "Long Term Debt"]),
+        "total_equity": ("balance_sheet", ["Stockholders Equity", "Common Stock Equity"]),
         "shares_outstanding": ("balance_sheet", ["Ordinary Shares Number", "Share Issued"]),
         "cash_flow": ("cashflow", ["Operating Cash Flow"]),
     }

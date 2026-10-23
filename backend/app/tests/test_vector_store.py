@@ -1,7 +1,6 @@
 """Tests for pgvector DocumentChunk model and transcript vector store operations."""
 
 import pytest
-import numpy as np
 from sqlalchemy import select
 
 from app.models.document_chunk import DocumentChunk
@@ -18,8 +17,8 @@ async def test_create_and_query_document_chunk(db_session):
         sector="Technology",
         risk_score=75.0,
         research_score=85.0,
-        price="$120.00",
-        market_cap="2.8T",
+        price=120.0,
+        market_cap=2.8e12,
     )
     db_session.add(stock)
     await db_session.flush()
@@ -67,8 +66,8 @@ async def test_pgvector_cosine_similarity_search(db_session):
         sector="Technology",
         risk_score=25.0,
         research_score=80.0,
-        price="$190.00",
-        market_cap="2.9T",
+        price=190.0,
+        market_cap=2.9e12,
     )
     db_session.add(stock)
     await db_session.flush()
@@ -160,3 +159,48 @@ async def test_store_and_search_chunks_end_to_end(db_session):
     assert len(search_res) == 1
     assert search_res[0]["ticker"] == "MSFT"
     assert search_res[0]["similarity_score"] > 0.0
+
+
+@pytest.mark.asyncio
+async def test_search_ignores_chunks_from_other_embedding_models(db_session):
+    """Vectors from different embedding models must never be ranked against each other."""
+    provider = TranscriptProvider(openai_api_key="sk-fake-offline")
+    assert provider.embedding_model() == provider.LOCAL_EMBEDDING_MODEL
+
+    chunks = provider.chunk_transcript("Azure cloud revenue grew 30 percent on AI demand.")
+    embeddings = await provider.generate_embeddings([c["text"] for c in chunks])
+    saved = await provider.store_chunks(db_session, "MSFT", chunks, embeddings, period="Q1 2024")
+    assert saved[0].data["embedding_model"] == provider.LOCAL_EMBEDDING_MODEL
+
+    # Same text, but tagged as coming from the OpenAI vector space
+    await provider.store_chunks(
+        db_session,
+        "MSFT",
+        chunks,
+        embeddings,
+        period="Q1 2024",
+        embedding_model=provider.OPENAI_EMBEDDING_MODEL,
+    )
+
+    results = await provider.search_similar_chunks(
+        db_session, query="azure cloud growth", ticker="MSFT", top_k=10
+    )
+    assert len(results) == len(chunks)
+    assert all(r["data"]["embedding_model"] == provider.LOCAL_EMBEDDING_MODEL for r in results)
+
+
+@pytest.mark.asyncio
+async def test_openai_embedding_failure_raises_instead_of_mixing_spaces(monkeypatch):
+    import openai
+
+    class _Failing:
+        def __init__(self, api_key):
+            self.embeddings = self
+
+        async def create(self, **kwargs):
+            raise RuntimeError("openai down")
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _Failing)
+    provider = TranscriptProvider(openai_api_key="sk-proj-real-looking-key-123456")
+    with pytest.raises(RuntimeError):
+        await provider.generate_embeddings(["text"])

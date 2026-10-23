@@ -10,11 +10,14 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import models for autogenerate
+from app.core.config import settings
 from app.core.database import Base
 from app.models import *  # noqa
 
 # Alembic Config object
 config = context.config
+# Same database as the app (alembic.ini's URL is only a placeholder)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
@@ -40,7 +43,7 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Run migrations with connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
 
     with context.begin_transaction():
         context.run_migrations()

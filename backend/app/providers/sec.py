@@ -31,7 +31,14 @@ class SECProvider:
         ],
         "net_income": ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"],
         "total_assets": ["Assets"],
-        "total_debt": ["DebtAndCapitalLeaseObligations", "LongTermDebtAndCapitalLeaseObligations"],
+        # Values from all tags are merged and sorted by period end; for equal end dates the
+        # last-listed tag wins, so the most common total (LongTermDebt) goes last.
+        "total_debt": [
+            "DebtAndCapitalLeaseObligations",
+            "LongTermDebtAndCapitalLeaseObligations",
+            "LongTermDebt",
+        ],
+        "total_equity": ["StockholdersEquity"],
         "cash_flow": ["NetCashProvidedByUsedInOperatingActivities"],
         "shares_outstanding": [
             "EntityCommonStockSharesOutstanding",
@@ -94,8 +101,9 @@ class SECProvider:
                 response.raise_for_status()
                 data = response.json()
 
+                entries: list[Any]
                 if isinstance(data, dict):
-                    entries = data.values()
+                    entries = list(data.values())
                 elif isinstance(data, list):
                     entries = data
                 else:

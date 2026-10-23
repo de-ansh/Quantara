@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import verify_token
+from app.core.logging import get_logger
+from app.core.security import decrypt_credential, verify_token
+
+logger = get_logger(__name__)
 
 # Security scheme
 security = HTTPBearer()
@@ -56,7 +59,7 @@ async def get_current_user(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
-    if user is None:
+    if user is None or not user.is_active or payload.get("ver", 0) != user.token_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -71,7 +74,27 @@ async def get_current_user(
         "investment_horizon": user.investment_horizon,
         "sector_preferences": user.sector_preferences,
         "is_active": user.is_active,
+        "openai_api_key": decrypt_credential(user.openai_api_key),
+        "sec_user_agent": user.sec_user_agent,
     }
+
+
+async def enforce_rate_limit(redis: Redis, key: str, limit: int, window_seconds: int) -> None:
+    """Fixed-window counter in Redis; raises 429 once `limit` hits occur within the window."""
+    try:
+        count = await redis.incr(f"ratelimit:{key}")
+        if count == 1:
+            await redis.expire(f"ratelimit:{key}", window_seconds)
+    except Exception as e:
+        # Fail open: a Redis outage should degrade protection, not take auth down.
+        logger.warning(f"Rate limiter unavailable, allowing request: {e}")
+        return
+    if count > limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests, please try again later.",
+            headers={"Retry-After": str(window_seconds)},
+        )
 
 
 # Type aliases for common dependencies

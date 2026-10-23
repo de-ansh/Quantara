@@ -8,15 +8,16 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 | Category | Open Issues | P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Low) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Authentication & Routing (AUTH)** | 0 | 0 | 0 | 0 | 0 |
+| **Authentication & Routing (AUTH)** | 1 | 0 | 0 | 1 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
 | **Risk Analytics & Views (RSK)** | 0 | 0 | 0 | 0 | 0 |
 | **Signal Engine & Ingestion (SIG)**| 0 | 0 | 0 | 0 | 0 |
 | **Navigation & Explorer UX (NAV)** | 0 | 0 | 0 | 0 | 0 |
-| **Qualitative Analysis / RAG (RAG)**| 0 | 0 | 0 | 0 | 0 |
-| **Total** | **0** | **0** | **0** | **0** | **0** |
+| **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
+| **Product Usability (UX)** | 0 | 0 | 0 | 0 | 0 |
+| **Total** | **2** | **0** | **0** | **2** | **0** |
 
 ---
 
@@ -251,3 +252,55 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
   - [x] Generate Alembic migration script for pgvector and document chunks table.
   - [x] Implement async vector storage (`store_chunks`) and cosine similarity search (`search_similar_chunks`) with <=> operator.
   - [x] 100% test coverage in `backend/app/tests/test_vector_store.py`.
+
+---
+
+## 🛡️ Hardening & Usability Pass (Oct 2026) — Completed
+
+| ID | Summary |
+| :--- | :--- |
+| QTR-SEC-01 ✅ | OpenAI key read only from encrypted server storage; removed from `localStorage` and request headers |
+| QTR-SEC-02 ✅ | Redis rate limits on login, register and research generation; minimum password length 8 |
+| QTR-SEC-03 ✅ | Inactive users blocked; refresh tokens; `POST /auth/logout` revokes all tokens through `users.token_version` |
+| QTR-SEC-04 ✅ | `CREDENTIAL_ENCRYPTION_KEY` (MultiFernet keeps legacy values readable); `debug` off by default |
+| QTR-RAG-04 ✅ | Query and chunks embedded in the same vector space; stored chunks tagged with their embedding model; no synthesized transcripts |
+| QTR-PORT-05 ✅ | Simulation uses real 1Y returns (vol, correlation, beta, drawdown) with CAPM; weights must sum to 1; estimated tickers flagged |
+| QTR-PORT-06 ✅ | Portfolios page (CRUD) and save/load in Simulation |
+| QTR-NAV-05 ✅ | Watchlist API and UI (Explorer/Stock Detail stars, Dashboard strip, watchlist-first ticker chips, command palette) |
+| QTR-STK-04 ✅ | Prices and market caps stored numerically and formatted per listing currency; search returns sector/P/E/beta |
+| QTR-RSK-05 ✅ | Risk page bound to the real scenario schema; placeholder KPIs, trends and scenarios removed |
+| QTR-OPS-01 ✅ | Alembic owns the schema (frozen baseline, `alembic check`); single-worker signal job through advisory lock |
+| QTR-OPS-02 ✅ | CI: ruff, mypy, migrations, pytest, ESLint, tsc, build, Playwright; frontend Dockerfile and compose service |
+
+---
+
+## ✅ Follow-up Pass (Oct 2026) — Completed
+
+| ID | Summary |
+| :--- | :--- |
+| QTR-AUTH-03 ✅ (partial) | `POST /auth/change-password` (revokes other sessions) and an Account page form. The email reset flow is still open below. |
+| QTR-AUTH-04 ✅ | Refresh token in an `HttpOnly; SameSite=Strict` cookie scoped to `/api/v1/auth`; access token in memory only; logout clears the cookie; query cache cleared on logout |
+| QTR-RSK-04 ✅ | Risk API returns `assumed_inputs` and drops factor sensitivities derived from assumed values; Risk page warns |
+| QTR-RSK-06 ✅ | D/E computed from reported debt / stockholders' equity (was debt / (assets − debt), and 0 when unknown); SEC `LongTermDebt`/`StockholdersEquity` tags added |
+| QTR-PORT-04 ✅ | Portfolio tickers verified against Yahoo (shared `stock_lookup` service); duplicates rejected; nothing written on failure |
+| QTR-UX-01 ✅ | Report "generated N ago" with Refresh (`?refresh=true`), "Data as of" on Stock Detail, UTC-safe timestamp parsing |
+| QTR-UX-02 ✅ | In-app watchlist alerts: `GET /watchlist/alerts`, `POST /watchlist/alerts/seen`, header bell with unread count |
+| QTR-UX-03 ✅ | Recent Activity card on Account (audit log) |
+| QTR-UX-04 ✅ | `/compare` page: risk metrics side by side plus a real 1Y correlation matrix; Explorer "Compare (2–4)" |
+| QTR-NAV-04 ✅ | `/stocks/search` `limit`/`offset` with a true `total_count`; Explorer pagination |
+| QTR-NAV-06 ✅ | Explorer "Simulate Selected" now opens Simulation with those tickers (`?tickers=` was ignored) |
+| QTR-OPS-03 ✅ | Route-level error boundary so one page crash no longer blanks the app |
+
+---
+
+## 📋 Open Tickets
+
+### [QTR-AUTH-05] Email Password Reset (P2)
+- **Description**: Users who are signed in can change their password; a forgotten password still can't be recovered.
+- **Acceptance Criteria**:
+  - [ ] Choose an email provider; single-use, time-limited reset tokens; bump `token_version` on reset.
+
+### [QTR-RAG-03] Real Earnings Transcript Source (P2)
+- **Description**: Only hardcoded AAPL/NVDA/MSFT excerpts exist; other tickers get no qualitative RAG context.
+- **Acceptance Criteria**:
+  - [ ] Integrate a transcript provider and persist chunks with `store_chunks`.

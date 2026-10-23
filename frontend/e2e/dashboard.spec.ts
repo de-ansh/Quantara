@@ -2,14 +2,18 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Dashboard E2E Tests', () => {
   test.beforeEach(async ({ page }) => {
-    // Inject mock credentials in localStorage to bypass authentication check
+    // A remembered profile plus a (mocked) refresh cookie restores the session
     await page.addInitScript(() => {
-      window.localStorage.setItem('quantara_token', 'mocked_jwt_token_xyz');
       window.localStorage.setItem(
         'quantara_user',
         JSON.stringify({ id: '1', email: 'analyst@quantara.com' })
       );
     });
+
+    // Session restore: the httpOnly refresh cookie is exchanged for an access token
+    await page.route('**/api/v1/auth/refresh', route =>
+      route.fulfill({ json: { access_token: 'mocked_jwt_token_xyz', token_type: 'bearer' } })
+    );
 
     // Mock API requests for dashboard data
     await page.route('**/api/v1/market/status', async route => {
@@ -79,7 +83,7 @@ test.describe('Dashboard E2E Tests', () => {
     await expect(page.getByText('QUANTARA').first()).toBeVisible();
 
     // Verify Portfolio Risk Card
-    await expect(page.locator('text=Portfolio Risk Score')).toBeVisible();
+    await expect(page.locator('text=Avg Opportunity Risk')).toBeVisible();
 
     // Verify Opportunities Table
     await expect(page.locator('table')).toBeVisible();

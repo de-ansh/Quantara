@@ -1,6 +1,6 @@
 """Unit and integration tests for TranscriptProvider and RAG qualitative excerpt retrieval."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
@@ -25,15 +25,10 @@ class TestTranscriptProvider:
         assert "Tim Cook" in transcript["full_text"]
 
     @pytest.mark.asyncio
-    async def test_fetch_transcript_dynamic_fallback(self):
+    async def test_fetch_transcript_unknown_ticker_returns_none(self):
+        """No fabricated management commentary for tickers without a transcript."""
         provider = TranscriptProvider()
-        transcript = await provider.fetch_transcript("PLTR", quarter="Q2", year=2024)
-
-        assert transcript["ticker"] == "PLTR"
-        assert transcript["quarter"] == "Q2"
-        assert transcript["year"] == 2024
-        assert "executive_remarks" in transcript["sections"]
-        assert "PLTR" in transcript["full_text"]
+        assert await provider.fetch_transcript("PLTR", quarter="Q2", year=2024) is None
 
     def test_chunk_transcript_sliding_window(self):
         provider = TranscriptProvider()
@@ -119,7 +114,7 @@ class TestTranscriptProvider:
 
         with patch("openai.AsyncOpenAI") as mock_client_cls:
             mock_client = MagicMock()
-            mock_client.embeddings.create = MagicMock(return_value=mock_embedding_response)
+            mock_client.embeddings.create = AsyncMock(return_value=mock_embedding_response)
             mock_client_cls.return_value = mock_client
 
             embeddings = await provider.generate_embeddings(["Sample text for embedding test"])

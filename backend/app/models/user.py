@@ -45,6 +45,10 @@ class User(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # Bumped on logout; tokens carrying an older version are rejected.
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0", nullable=False)
+    # Watchlist alerts detected after this are unread
+    alerts_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, risk_level={self.risk_level})>"

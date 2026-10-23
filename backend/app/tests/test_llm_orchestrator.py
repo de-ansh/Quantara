@@ -136,3 +136,18 @@ async def test_store_result_node(db_session, orchestrator, sample_state):
     assert report is not None
     assert report.confidence_score == 85.0
     assert report.structured_json["summary"] == "Strong fundamentals"
+
+
+@pytest.mark.asyncio
+async def test_risk_classification_debt_to_equity(orchestrator, sample_state):
+    """D/E comes from debt / stockholders' equity; missing data is not treated as debt-free."""
+    sample_state["computed_metrics"] = {"historical_volatility": 0.2, "beta": 1.1}
+    sample_state["raw_data"]["financials"] = {"total_debt": 82.0, "total_equity": 107.0}
+    known = await orchestrator._risk_classification(sample_state)
+    assert known["computed_metrics"]["debt_to_equity"] == pytest.approx(82.0 / 107.0)
+
+    sample_state["computed_metrics"] = {"historical_volatility": 0.2, "beta": 1.1}
+    sample_state["raw_data"]["financials"] = {"total_debt": None, "total_assets": 383.0}
+    unknown = await orchestrator._risk_classification(sample_state)
+    assert unknown["computed_metrics"]["debt_to_equity"] is None
+    assert unknown["risk_classification"]["components"]["leverage_score"] > 0.0

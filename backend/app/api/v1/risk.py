@@ -6,8 +6,8 @@ from typing import Any
 
 import pandas as pd
 import yfinance as yf
-from fastapi import APIRouter, Header
-from pydantic import BaseModel
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
@@ -63,6 +63,10 @@ class RiskAnalysisResponse(BaseModel):
     drawdown_series: list[DrawdownPoint] = []
     scenarios: list[ScenarioStressResult] = []
     factor_sensitivities: dict[str, float] = {}
+    assumed_inputs: list[str] = Field(
+        default_factory=list,
+        description="Inputs that were unavailable and replaced by defaults; results using them are estimates",
+    )
 
 
 @router.get("/stocks/{ticker}/risk", response_model=RiskAnalysisResponse)
@@ -70,7 +74,6 @@ async def get_stock_risk_analysis(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
-    x_sec_user_agent: str | None = Header(None, alias="X-SEC-User-Agent"),
 ) -> RiskAnalysisResponse:
     """
     Get risk analysis for a stock.
@@ -100,9 +103,10 @@ async def get_stock_risk_analysis(
         "final_output": None,
         "db": db,
         "openai_api_key": None,
-        "sec_user_agent": x_sec_user_agent,
+        "sec_user_agent": current_user["sec_user_agent"],
     }
 
+    state: AnalysisState | None = None
     try:
         # Run nodes sequentially to compute metrics and execute risk engine
         state = await orchestrator._retrieve_data(initial_state)
@@ -110,6 +114,7 @@ async def get_stock_risk_analysis(
         state = await orchestrator._risk_classification(state)
         risk_data = state.get("risk_classification", {})
     except Exception:
+        state = None
         # Graceful fallback if external APIs or calculations fail
         from app.services.risk_engine import RiskEngine
 
@@ -151,16 +156,32 @@ async def get_stock_risk_analysis(
     components = risk_data.get("components", {})
 
     # Compute quantitative factor sensitivities and scenario stress tests
-    stock_beta = 1.1
-    stock_pe = 25.0
-    stock_de = 0.5
-    stock_sector = "Technology"
-
-    if "state" in locals() and state:
-        stock_beta = state.get("computed_metrics", {}).get("beta") or stock_beta
-        stock_pe = state.get("raw_data", {}).get("pe_ratio") or stock_pe
-        stock_de = state.get("computed_metrics", {}).get("debt_to_equity") or stock_de
-        stock_sector = state.get("raw_data", {}).get("sector") or stock_sector
+    # Real inputs where available; each default used is reported in `assumed_inputs`.
+    metrics = state.get("computed_metrics", {}) if state else {}
+    raw = state.get("raw_data", {}) if state else {}
+    actual = {
+        "beta": metrics.get("beta"),
+        "pe_ratio": raw.get("pe_ratio"),
+        "debt_to_equity": metrics.get("debt_to_equity"),
+        "sector": raw.get("sector") if raw.get("sector") not in (None, "", "Unknown") else None,
+    }
+    defaults: dict[str, Any] = {
+        "beta": 1.1,
+        "pe_ratio": 25.0,
+        "debt_to_equity": 0.5,
+        "sector": "Technology",
+    }
+    assumed = [k for k, v in actual.items() if v is None]
+    if state is None:
+        assumed.insert(0, "price_history")
+    stock_beta = actual["beta"] if actual["beta"] is not None else defaults["beta"]
+    stock_pe = actual["pe_ratio"] if actual["pe_ratio"] is not None else defaults["pe_ratio"]
+    stock_de = (
+        actual["debt_to_equity"]
+        if actual["debt_to_equity"] is not None
+        else defaults["debt_to_equity"]
+    )
+    stock_sector = actual["sector"] or defaults["sector"]
 
     factor_sens = risk_engine.calculate_factor_sensitivities(
         ticker=ticker.upper(),
@@ -169,6 +190,17 @@ async def get_stock_risk_analysis(
         debt_to_equity=stock_de,
         sector=stock_sector,
     )
+    # Drop sensitivities that would be derived from an assumed input
+    depends_on = {
+        "market_beta": {"beta"},
+        "interest_rate_beta": {"pe_ratio", "debt_to_equity"},
+        "credit_spread_beta": {"debt_to_equity"},
+        "oil_beta": {"sector"},
+        "tech_momentum_beta": {"sector", "beta"},
+    }
+    factor_sens = {
+        k: v for k, v in factor_sens.items() if not depends_on.get(k, set()) & set(assumed)
+    }
     scenarios_data = risk_engine.run_scenario_stress_test(
         ticker=ticker.upper(),
         beta=stock_beta,
@@ -195,6 +227,7 @@ async def get_stock_risk_analysis(
         drawdown_series=risk_data.get("drawdown_series", []),
         scenarios=[ScenarioStressResult(**s) for s in scenarios_data],
         factor_sensitivities=factor_sens,
+        assumed_inputs=assumed,
     )
 
 
@@ -216,6 +249,7 @@ async def get_stock_scenarios(
         List of macro scenario stress test results with factor breakdown.
     """
     from sqlalchemy import select
+
     from app.models.stock import Stock
 
     stmt = select(Stock).where(Stock.ticker == ticker.upper())

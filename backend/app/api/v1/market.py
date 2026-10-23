@@ -155,7 +155,8 @@ async def _get_quotes() -> dict[str, tuple[float, float]]:
     if _quote_cache["quotes"] is None or now - _quote_cache["at"] > _QUOTE_TTL_SECONDS:
         _quote_cache["quotes"] = await asyncio.to_thread(_fetch_quotes_sync)
         _quote_cache["at"] = now
-    return _quote_cache["quotes"]
+    quotes: dict[str, tuple[float, float]] = _quote_cache["quotes"]
+    return quotes
 
 
 def _pct(value: float, change: float) -> float:

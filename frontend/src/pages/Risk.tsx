@@ -12,8 +12,7 @@ import {
     DollarSign,
     ShieldAlert,
     Sliders,
-    Info,
-    ChevronRight,
+    AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -36,19 +35,15 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog"
-import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
+import { isIndianAsset } from "@/lib/currency"
+import { useQuickTickers } from "@/hooks/useStockUniverse"
+import type { RiskAnalysis, StockCorrelation, StressScenario } from "@/types/api"
 
-const CORE_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "GOOGL", "AMZN", "META", "TLT", "GLD"]
 
 
-interface DrawdownPoint {
-    time: string
-    historical?: number | null
-    projected?: number | null
-    drawdown_pct?: number | null
-}
 
 export default function Risk() {
+    const universe = useQuickTickers()
     const { ticker: urlTicker } = useParams()
     const navigate = useNavigate()
     const [localTicker, setLocalTicker] = useState("NVDA")
@@ -62,7 +57,7 @@ export default function Risk() {
     const { data: riskData, isLoading, refetch: refetchRisk } = useQuery({
         queryKey: ["stockRisk", activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get(`/stocks/${activeTicker}/risk`)
+            const res = await apiClient.get<RiskAnalysis>(`/stocks/${activeTicker}/risk`)
             return res.data
         }
     })
@@ -71,7 +66,7 @@ export default function Risk() {
     const { data: corrData, refetch: refetchCorr } = useQuery({
         queryKey: ["stockCorrelation", activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get(`/stocks/${activeTicker}/correlation`)
+            const res = await apiClient.get<StockCorrelation>(`/stocks/${activeTicker}/correlation`)
             return res.data
         }
     })
@@ -94,143 +89,74 @@ export default function Risk() {
         }
     }
 
-    // Dynamic calculations
-    const components = riskData?.components || {
-        volatility_score: 50.0,
-        beta_score: 50.0,
-        leverage_score: 50.0,
-        earnings_stability_score: 50.0,
-        sector_risk_score: 50.0,
-        valuation_risk_score: 50.0
-    }
-
-    const overallRiskScore = riskData?.overall_risk_score || 50.0
-    const riskLevel = riskData?.risk_level || "Moderate"
+    // Missing data renders as "—" / empty bars; no placeholder scores.
+    const components = riskData?.components
+    const score = (v?: number) => (v === undefined ? "—" : v.toFixed(1))
+    const level = (v?: number) => (v === undefined ? "" : v > 60 ? "ELEVATED" : v > 40 ? "MODERATE" : "LOW")
+    const status = (v?: number) => (v !== undefined && v > 60 ? "danger" : "success")
+    const marketBeta = riskData?.factor_sensitivities?.market_beta
+    const riskLevel = riskData?.risk_level ?? "Unrated"
+    const overallRiskScore = riskData?.overall_risk_score
 
     const kpis = [
         {
-            label: "Beta (5Y Trailing)",
-            value: (components.beta_score / 50.0).toFixed(2),
-            trend: components.beta_score > 50 ? "+2.1% ↑" : "-0.8% ↓",
-            status: components.beta_score > 60 ? "danger" : "success",
-            fill: `${components.beta_score}%`
+            label: `Beta vs ${isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500"}`,
+            value: marketBeta === undefined ? "—" : marketBeta.toFixed(2),
+            trend: level(components?.beta_score),
+            status: status(components?.beta_score),
+            fill: `${components?.beta_score ?? 0}%`
         },
         {
             label: "Annual Volatility Score",
-            value: `${components.volatility_score.toFixed(1)}/100`,
-            trend: components.volatility_score > 50 ? "+1.5% ↑" : "-0.5% ↓",
-            status: components.volatility_score > 60 ? "danger" : "success",
-            isSpark: true
+            value: `${score(components?.volatility_score)}/100`,
+            trend: level(components?.volatility_score),
+            status: status(components?.volatility_score),
+            fill: `${components?.volatility_score ?? 0}%`
         },
         {
             label: "Liquidity/Leverage Index",
-            value: `${(100 - components.leverage_score).toFixed(0)}/100`,
-            trend: components.leverage_score > 50 ? "-1.2% ↓" : "+0.2% ↑",
-            status: components.leverage_score > 50 ? "warning" : "success",
-            isDots: true
+            value: components ? `${(100 - components.leverage_score).toFixed(0)}/100` : "—/100",
+            trend: level(components?.leverage_score),
+            status: status(components?.leverage_score),
+            dots: components ? Math.round((100 - components.leverage_score) / 10) : 0
         },
         {
             label: "Valuation Risk Score",
-            value: `${components.valuation_risk_score.toFixed(1)}/100`,
-            trend: components.valuation_risk_score > 50 ? "+2.8% ↑" : "-1.1% ↓",
-            status: components.valuation_risk_score > 60 ? "danger" : "success",
-            sub: "CONFIDENCE: 95%"
+            value: `${score(components?.valuation_risk_score)}/100`,
+            trend: level(components?.valuation_risk_score),
+            status: status(components?.valuation_risk_score),
+            fill: `${components?.valuation_risk_score ?? 0}%`
         },
     ]
 
     const factors = [
-        { name: "MARKET SYSTEMIC RISK (BETA)", val: `${components.beta_score.toFixed(1)}%`, width: `${components.beta_score}%`, opacity: "bg-primary/40" },
-        { name: "SECTOR RISK OVERLAYS", val: `${components.sector_risk_score.toFixed(1)}%`, width: `${components.sector_risk_score}%`, opacity: "bg-primary/30" },
-        { name: "VALUATION EXPOSURE", val: `${components.valuation_risk_score.toFixed(1)}%`, width: `${components.valuation_risk_score}%`, opacity: "bg-primary/20" },
-        { name: "LEVERAGE RISK COEFFICIENT", val: `${components.leverage_score.toFixed(1)}%`, width: `${components.leverage_score}%`, opacity: "bg-primary/10" },
-    ]
+        { name: "MARKET SYSTEMIC RISK (BETA)", v: components?.beta_score, opacity: "bg-primary/40" },
+        { name: "SECTOR RISK OVERLAYS", v: components?.sector_risk_score, opacity: "bg-primary/30" },
+        { name: "VALUATION EXPOSURE", v: components?.valuation_risk_score, opacity: "bg-primary/20" },
+        { name: "LEVERAGE RISK COEFFICIENT", v: components?.leverage_score, opacity: "bg-primary/10" },
+    ].map(f => ({ ...f, val: `${score(f.v)}%`, width: `${f.v ?? 0}%` }))
 
+    // Scenario ids come from the risk engine (US and India sets); match on keywords
     const getScenarioIcon = (id: string) => {
-        switch (id) {
-            case "fed_pivot_50bps":
-                return BarChart3
-            case "global_recession":
-                return Globe
-            case "oil_spike_120":
-                return Droplets
-            case "ai_infra_expansion":
-                return Zap
-            case "credit_spread_widening":
-                return ShieldAlert
-            case "usd_surge_10":
-                return DollarSign
-            default:
-                return Sliders
-        }
+        if (/rate|repo|fed/.test(id)) return BarChart3
+        if (/recession|slowdown|monsoon/.test(id)) return Globe
+        if (/oil|crude/.test(id)) return Droplets
+        if (/ai_|capex|infra/.test(id)) return Zap
+        if (/credit|spread/.test(id)) return ShieldAlert
+        if (/usd|inr|fx/.test(id)) return DollarSign
+        return Sliders
     }
 
-    const allScenarios = (riskData?.scenarios && riskData.scenarios.length > 0)
-        ? riskData.scenarios
-        : [
-            {
-                scenario_id: "fed_pivot_50bps",
-                name: "Fed Pivot +50bps",
-                macro_event: "Interest Rate Spike",
-                impact_pct: -Number((components.valuation_risk_score * 0.15).toFixed(1)),
-                confidence: 0.88,
-                horizon: "3M - 6M",
-                primary_driver: "Duration & Valuation Multiples",
-                factor_breakdown: { "Interest Rate Beta": -Number((components.valuation_risk_score * 0.15).toFixed(1)) }
-            },
-            {
-                scenario_id: "global_recession",
-                name: "Global Recession (Bear)",
-                macro_event: "Consumer Confidence Drop",
-                impact_pct: -Number((overallRiskScore * 0.35).toFixed(1)),
-                confidence: 0.82,
-                horizon: "12M",
-                primary_driver: "Systemic Market Beta",
-                factor_breakdown: { "Systemic Beta": -Number((overallRiskScore * 0.35).toFixed(1)) }
-            },
-            {
-                scenario_id: "oil_spike_120",
-                name: "Oil Spike to $120",
-                macro_event: "Supply Chain Shock",
-                impact_pct: -Number((components.sector_risk_score * 0.1).toFixed(1)),
-                confidence: 0.75,
-                horizon: "3M",
-                primary_driver: "Commodity & Input Inflation",
-                factor_breakdown: { "Energy Beta": -Number((components.sector_risk_score * 0.1).toFixed(1)) }
-            },
-            {
-                scenario_id: "ai_infra_expansion",
-                name: "AI Infrastructure Expansion",
-                macro_event: "Catalyst Event",
-                impact_pct: Number((components.earnings_stability_score * 0.5).toFixed(1)),
-                confidence: 0.91,
-                horizon: "6M - 18M",
-                primary_driver: "Tech Momentum & Capex",
-                factor_breakdown: { "Tech Momentum Beta": Number((components.earnings_stability_score * 0.5).toFixed(1)) }
-            },
-            {
-                scenario_id: "credit_spread_widening",
-                name: "Credit Spread Widening (+200bps)",
-                macro_event: "High Yield Spread Blowout",
-                impact_pct: -Number((components.leverage_score * 0.18).toFixed(1)),
-                confidence: 0.80,
-                horizon: "6M",
-                primary_driver: "Debt Refinancing & High-Yield Beta",
-                factor_breakdown: { "Credit Spread Beta": -Number((components.leverage_score * 0.18).toFixed(1)) }
-            },
-            {
-                scenario_id: "usd_surge_10",
-                name: "USD Dollar Surge (+10%)",
-                macro_event: "Foreign Exchange Shock",
-                impact_pct: -Number((components.sector_risk_score * 0.08).toFixed(1)),
-                confidence: 0.78,
-                horizon: "3M - 9M",
-                primary_driver: "Multinational FX Headwinds",
-                factor_breakdown: { "FX Translation Beta": -Number((components.sector_risk_score * 0.08).toFixed(1)) }
-            }
-        ]
+    /** The factor contributing most to a scenario's impact. */
+    const primaryDriver = (sc: StressScenario) => {
+        const top = Object.entries(sc.factor_breakdown).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0]
+        return top ? top[0].replace(/_/g, " ") : "—"
+    }
 
-    const activeScenarioId = selectedScenarioId || allScenarios[0]?.scenario_id
-    const activeScenario = allScenarios.find((s: any) => s.scenario_id === activeScenarioId) || allScenarios[0]
+    const allScenarios: StressScenario[] = riskData?.scenarios ?? []
+
+    const activeScenarioId = selectedScenarioId || allScenarios[0]?.id
+    const activeScenario = allScenarios.find(sc => sc.id === activeScenarioId) || allScenarios[0]
 
     return (
         <div className="flex flex-col flex-1 p-6 bg-background space-y-6 overflow-y-auto custom-scrollbar">
@@ -239,7 +165,7 @@ export default function Risk() {
                 <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mr-2">Quick Tickers:</span>
                     <div className="flex flex-wrap gap-1.5">
-                        {CORE_TICKERS.map((t) => (
+                        {universe.map((t) => (
                             <button
                                 key={t}
                                 onClick={() => handleSelectTicker(t)}
@@ -283,7 +209,7 @@ export default function Risk() {
                         Asset: {activeTicker} | <span className={cn(
                             riskLevel === "Conservative" ? "text-green-400" :
                                 riskLevel === "Moderate" ? "text-yellow-400" : "text-q-risk-high"
-                        )}>Risk: {riskLevel} ({overallRiskScore.toFixed(1)})</span>
+                        )}>Risk: {riskLevel} ({score(overallRiskScore)})</span>
                     </h2>
                     <p className="text-muted-foreground text-[11px] max-w-2xl font-bold uppercase tracking-tight">
                         Decomposed risk factors based on 252-day trailing variance and institutional SEC EDGAR debt/profitability metrics.
@@ -311,6 +237,16 @@ export default function Risk() {
                 </div>
             ) : (
                 <>
+                    {riskData && riskData.assumed_inputs.length > 0 && (
+                        <div role="status" className="flex items-center gap-2 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider rounded-sm">
+                            <AlertTriangle className="size-3.5 shrink-0" />
+                            <span>
+                                Estimate: no data for {riskData.assumed_inputs.map(i => i.replace(/_/g, " ")).join(", ")}.
+                                Defaults were used and dependent factors are hidden.
+                            </span>
+                        </div>
+                    )}
+
                     {/* KPI Row */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
                         {kpis.map((stat, i) => (
@@ -328,26 +264,11 @@ export default function Risk() {
                                         </div>
                                     )}
 
-                                    {stat.isSpark && (
-                                        <div className="h-8 w-full flex items-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                                            {[4, 6, 10, 8, 5].map((h, idx) => (
-                                                <div key={idx} className={cn("flex-1 bg-q-border rounded-t-sm", idx === 2 ? "bg-primary" : "")} style={{ height: `${h * 10}%` }} />
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {stat.isDots && (
+                                    {stat.dots !== undefined && (
                                         <div className="grid grid-cols-10 gap-1.5 h-2">
                                             {[...Array(10)].map((_, idx) => (
-                                                <div key={idx} className={cn("rounded-full", idx < 8 ? "bg-q-risk-low" : "bg-q-border")} />
+                                                <div key={idx} className={cn("rounded-full", idx < (stat.dots ?? 0) ? "bg-q-risk-low" : "bg-q-border")} />
                                             ))}
-                                        </div>
-                                    )}
-
-                                    {stat.sub && (
-                                        <div className="flex items-center justify-between border-t border-q-border/30 pt-3 mt-1">
-                                            <span className="text-[8px] font-black font-mono text-muted-foreground uppercase tracking-widest">{stat.sub}</span>
-                                            <span className="text-[8px] font-black font-mono text-muted-foreground uppercase tracking-widest">Horizon: 1D</span>
                                         </div>
                                     )}
                                 </CardContent>
@@ -385,8 +306,8 @@ export default function Risk() {
                                     <div className="text-right">
                                         <p className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em] mb-1">Total Attributed Risk</p>
                                         <div className="flex items-baseline justify-end gap-3 text-3xl font-black tabular-nums tracking-tighter text-foreground leading-none">
-                                            {overallRiskScore.toFixed(1)}%
-                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Residual: {(100 - overallRiskScore).toFixed(0)}%</span>
+                                            {score(overallRiskScore)}%
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Residual: {overallRiskScore === undefined ? "—" : (100 - overallRiskScore).toFixed(0)}%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -400,14 +321,17 @@ export default function Risk() {
                                 <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Projected % impact under market shocks</p>
                             </CardHeader>
                             <CardContent className="p-4 space-y-2 flex-1 overflow-auto custom-scrollbar">
-                                {allScenarios.slice(0, 4).map((s: any) => {
-                                    const Icon = getScenarioIcon(s.scenario_id)
+                                {allScenarios.length === 0 && (
+                                    <p className="p-3 text-[10px] text-muted-foreground uppercase tracking-widest">No stress scenarios available</p>
+                                )}
+                                {allScenarios.slice(0, 4).map((s) => {
+                                    const Icon = getScenarioIcon(s.id)
                                     const isPositive = s.impact_pct >= 0
-                                    const isSelected = s.scenario_id === activeScenario?.scenario_id
+                                    const isSelected = s.id === activeScenario?.id
                                     return (
                                         <div
-                                            key={s.scenario_id}
-                                            onClick={() => setSelectedScenarioId(s.scenario_id)}
+                                            key={s.id}
+                                            onClick={() => setSelectedScenarioId(s.id)}
                                             className={cn(
                                                 "p-3 rounded-md bg-background/50 border transition-all cursor-pointer group flex items-center justify-between",
                                                 isSelected
@@ -424,7 +348,7 @@ export default function Risk() {
                                                 </div>
                                                 <div>
                                                     <p className="text-[10px] font-black uppercase tracking-tight text-foreground">{s.name}</p>
-                                                    <p className="text-[8px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.macro_event}</p>
+                                                    <p className="text-[8px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.type}</p>
                                                 </div>
                                             </div>
                                             <span className={cn(
@@ -441,12 +365,11 @@ export default function Risk() {
                                     <div className="p-3 rounded-md bg-background/80 border border-q-border/60 text-[10px] space-y-1.5 mt-2">
                                         <div className="flex justify-between font-mono font-bold">
                                             <span className="text-muted-foreground uppercase text-[9px]">Primary Driver:</span>
-                                            <span className="text-foreground text-[9px] text-right truncate ml-2">{activeScenario.primary_driver}</span>
+                                            <span className="text-foreground text-[9px] text-right truncate ml-2 uppercase">{primaryDriver(activeScenario)}</span>
                                         </div>
-                                        <div className="text-[9px] text-muted-foreground font-mono flex justify-between">
-                                            <span>Horizon: {activeScenario.horizon}</span>
-                                            <span>Confidence: {(activeScenario.confidence * 100).toFixed(0)}%</span>
-                                        </div>
+                                        {activeScenario.narrative && (
+                                            <p className="text-[9px] text-muted-foreground font-mono leading-snug">{activeScenario.narrative}</p>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>
@@ -527,7 +450,7 @@ export default function Risk() {
                                                     fontWeight: 'bold',
                                                     textTransform: 'uppercase'
                                                 }}
-                                                formatter={(value: any, name: any) => [
+                                                formatter={(value, name) => [
                                                     `${Number(value).toFixed(1)}% (DD: -${(100 - Number(value)).toFixed(1)}%)`,
                                                     name === "historical" ? "Recovery vs Peak" : "Stressed Projection"
                                                 ]}
@@ -553,7 +476,7 @@ export default function Risk() {
                                     </ResponsiveContainer>
                                     <div className="absolute top-2 left-10 text-[9px] font-black font-mono text-muted-foreground bg-background/50 px-1">0% PEAK</div>
                                     <div className="absolute bottom-6 left-10 text-[9px] font-black font-mono text-q-risk-high bg-q-risk-high/10 px-1 border border-q-risk-high/20">
-                                        HIST MAX DD: {riskData?.max_drawdown ? `${(riskData.max_drawdown * 100).toFixed(1)}%` : `-${(overallRiskScore * 0.4).toFixed(1)}%`} | PROJ SHOCK: -{overallRiskScore.toFixed(0)}%
+                                        HIST MAX DD: {riskData?.max_drawdown ? `${(riskData.max_drawdown * 100).toFixed(1)}%` : "—"} | WORST SCENARIO: {allScenarios.length ? `${Math.min(...allScenarios.map(sc => sc.impact_pct)).toFixed(1)}%` : "—"}
                                     </div>
                                 </div>
                             </CardContent>
@@ -565,19 +488,19 @@ export default function Risk() {
                                 <div>
                                     <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Sector Peer & Cross-Asset Correlation</CardTitle>
                                     <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
-                                        Pairwise co-movement with {activeTicker} ({corrData?.sector || "Technology"})
+                                        Pairwise co-movement with {activeTicker} ({corrData?.sector || "sector unknown"})
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2 font-mono text-[9px] font-black uppercase">
                                     <span className="text-muted-foreground">{corrData?.benchmark_ticker || (isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500")}:</span>
                                     <Badge variant="outline" className="text-primary font-mono font-bold bg-primary/10 border-primary/30">
-                                        ρ = {corrData?.benchmark_correlation ? corrData.benchmark_correlation.toFixed(2) : "0.72"}
+                                        ρ = {corrData ? corrData.benchmark_correlation.toFixed(2) : "—"}
                                     </Badge>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-4 bg-background/5 border-b border-q-border/30">
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2 h-64 overflow-y-auto custom-scrollbar">
-                                    {(corrData?.peers || []).map((peer: any) => {
+                                    {(corrData?.peers || []).map((peer) => {
                                         const corr = peer.correlation
                                         const isNegative = corr < 0
                                         const isHigh = corr >= 0.65
@@ -655,31 +578,31 @@ export default function Risk() {
                                 <div className="p-2 bg-background border border-border rounded-sm">
                                     <div className="text-[9px] text-muted-foreground">Market Beta</div>
                                     <div className="text-xs font-bold text-foreground">
-                                        {riskData.factor_sensitivities.market_beta?.toFixed(2) ?? "1.00"}
+                                        {riskData.factor_sensitivities.market_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
                                     <div className="text-[9px] text-muted-foreground">Rate Beta</div>
                                     <div className="text-xs font-bold text-foreground">
-                                        {riskData.factor_sensitivities.interest_rate_beta?.toFixed(2) ?? "-1.20"}
+                                        {riskData.factor_sensitivities.interest_rate_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
                                     <div className="text-[9px] text-muted-foreground">Oil Beta</div>
                                     <div className="text-xs font-bold text-foreground">
-                                        {riskData.factor_sensitivities.oil_beta?.toFixed(2) ?? "-0.15"}
+                                        {riskData.factor_sensitivities.oil_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
                                     <div className="text-[9px] text-muted-foreground">Tech Mom Beta</div>
                                     <div className="text-xs font-bold text-foreground">
-                                        {riskData.factor_sensitivities.tech_momentum_beta?.toFixed(2) ?? "1.10"}
+                                        {riskData.factor_sensitivities.tech_momentum_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
                                     <div className="text-[9px] text-muted-foreground">Credit Beta</div>
                                     <div className="text-xs font-bold text-foreground">
-                                        {riskData.factor_sensitivities.credit_spread_beta?.toFixed(2) ?? "-0.65"}
+                                        {riskData.factor_sensitivities.credit_spread_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                             </div>
@@ -688,12 +611,12 @@ export default function Risk() {
 
                     {/* Scenarios List */}
                     <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-                        {allScenarios.map((s: any) => {
-                            const Icon = getScenarioIcon(s.scenario_id)
+                        {allScenarios.map((s) => {
+                            const Icon = getScenarioIcon(s.id)
                             const isPositive = s.impact_pct >= 0
                             return (
                                 <div
-                                    key={s.scenario_id}
+                                    key={s.id}
                                     className="p-3 bg-card border border-border rounded-sm space-y-2"
                                 >
                                     <div className="flex items-center justify-between">
@@ -706,7 +629,7 @@ export default function Risk() {
                                             </div>
                                             <div>
                                                 <div className="text-xs font-bold uppercase">{s.name}</div>
-                                                <div className="text-[10px] text-muted-foreground font-mono">{s.macro_event}</div>
+                                                <div className="text-[10px] text-muted-foreground font-mono">{s.type}</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
@@ -716,20 +639,17 @@ export default function Risk() {
                                             )}>
                                                 {isPositive ? `+${s.impact_pct.toFixed(1)}%` : `${s.impact_pct.toFixed(1)}%`}
                                             </div>
-                                            <div className="text-[9px] text-muted-foreground font-mono">
-                                                Confidence: {(s.confidence * 100).toFixed(0)}%
-                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono pt-1 border-t border-border/40">
-                                        <span>Driver: <strong className="text-foreground">{s.primary_driver}</strong></span>
-                                        <span>Horizon: {s.horizon}</span>
+                                        <span>Driver: <strong className="text-foreground uppercase">{primaryDriver(s)}</strong></span>
+                                        {s.narrative && <span className="text-right truncate ml-2">{s.narrative}</span>}
                                     </div>
 
                                     {s.factor_breakdown && Object.keys(s.factor_breakdown).length > 0 && (
                                         <div className="grid grid-cols-2 gap-1.5 pt-1 text-[9px] font-mono bg-muted/30 p-2 rounded">
-                                            {Object.entries(s.factor_breakdown).map(([factor, val]: [string, any]) => (
+                                            {Object.entries(s.factor_breakdown).map(([factor, val]) => (
                                                 <div key={factor} className="flex justify-between">
                                                     <span className="text-muted-foreground">{factor}:</span>
                                                     <span className={cn(

@@ -3,8 +3,8 @@
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 from app.api.v1.portfolio import (
     PortfolioCreate,
@@ -50,7 +50,7 @@ def sample_portfolio(mock_current_user):
         created_at=now,
         updated_at=now,
     )
-    p1 = PortfolioPosition(
+    PortfolioPosition(
         id=101,
         portfolio_id=10,
         ticker="AAPL",
@@ -59,7 +59,7 @@ def sample_portfolio(mock_current_user):
         weight=0.6,
         portfolio=p,
     )
-    p2 = PortfolioPosition(
+    PortfolioPosition(
         id=102,
         portfolio_id=10,
         ticker="MSFT",
@@ -105,8 +105,11 @@ async def test_list_portfolios_with_data(mock_current_user, sample_portfolio, mo
 
 
 @pytest.mark.asyncio
-async def test_create_portfolio(mock_current_user, mock_db):
-    """Test creating a new portfolio with positions and stock auto-seeding."""
+async def test_create_portfolio(mock_current_user, mock_db, monkeypatch):
+    """Test creating a new portfolio; untracked tickers are verified, then tracked."""
+    from app.services import stock_lookup
+
+    monkeypatch.setattr(stock_lookup, "last_close", lambda t: 120.0)
     stock_mock_aapl = MagicMock()
     stock_mock_aapl.scalar_one_or_none.return_value = Stock(ticker="AAPL", name="Apple Inc.")
 
@@ -203,11 +206,12 @@ async def test_update_portfolio_positions(mock_current_user, sample_portfolio, m
     mock_pos_result = MagicMock()
     mock_pos_result.scalars().all.return_value = list(sample_portfolio.positions)
 
-    # 3rd execute: select(Stock) for newly added position
+    # select(Stock) for the new position
     stock_mock = MagicMock()
     stock_mock.scalar_one_or_none.return_value = Stock(ticker="GOOGL", name="Alphabet")
 
-    mock_db.execute.side_effect = [mock_port_result, mock_pos_result, stock_mock]
+    # Tickers are verified before old positions are removed
+    mock_db.execute.side_effect = [mock_port_result, stock_mock, mock_pos_result]
 
     payload = PortfolioUpdate(
         positions=[

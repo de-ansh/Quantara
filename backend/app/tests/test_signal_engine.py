@@ -53,7 +53,7 @@ async def test_save_signal_to_db(db_session, sample_signal):
 
 def test_detect_sentiment_spike():
     engine = SignalEngine()
-    
+
     # Valid spike: sentiment change >= 0.2 and mentions >= 100
     sig = engine.detect_sentiment_spike(
         ticker="NVDA",
@@ -281,3 +281,30 @@ async def test_sentiment_curve_endpoint(client, db_session):
     assert "sentiment_trend" in data
 
 
+
+
+@pytest.mark.asyncio
+async def test_signal_pass_runs_in_only_one_worker(monkeypatch):
+    """A worker skips the pass while another holds the Postgres advisory lock."""
+    from sqlalchemy import text
+
+    from app.core.database import AsyncSessionLocal
+    from app.services import signal_engine
+
+    runs: list[int] = []
+
+    async def _fake_pass(sec, yahoo, engine):
+        runs.append(1)
+
+    monkeypatch.setattr(signal_engine, "_run_signal_pass", _fake_pass)
+    # Private key, so a running app's real signal pass can't block or skew this test
+    monkeypatch.setattr(signal_engine, "SIGNAL_PASS_LOCK_ID", 7_301_999)
+    lock = {"k": signal_engine.SIGNAL_PASS_LOCK_ID}
+
+    async with AsyncSessionLocal() as other_worker:
+        await other_worker.execute(text("SELECT pg_advisory_lock(:k)"), lock)
+        assert await signal_engine.run_signal_pass_if_leader(None, None, None) is False
+        await other_worker.execute(text("SELECT pg_advisory_unlock(:k)"), lock)
+
+    assert await signal_engine.run_signal_pass_if_leader(None, None, None) is True
+    assert runs == [1]

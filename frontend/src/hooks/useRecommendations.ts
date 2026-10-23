@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api';
-import type { Opportunity } from '@/types';
 
 interface RecommendationResponse {
     recommendations: Array<{
@@ -14,7 +13,7 @@ interface RecommendationResponse {
             final_score: number;
         };
         explanation: string;
-        reasoning_metadata: any;
+        reasoning_metadata: Record<string, unknown>;
     }>;
     total_count: number;
     user_risk_level: string;

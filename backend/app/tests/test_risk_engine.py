@@ -190,6 +190,7 @@ async def test_get_stock_correlations_falls_back_when_yahoo_fails(monkeypatch):
 def test_generate_drawdown_series_with_dataframe():
     """Test drawdown calculation with actual price DataFrame."""
     import pandas as pd
+
     from app.services.risk_engine import RiskEngine
 
     engine = RiskEngine()
@@ -271,10 +272,11 @@ def test_generate_drawdown_series_fallback():
 async def test_get_stock_risk_analysis_endpoint():
     """Test get_stock_risk_analysis endpoint returns drawdown series and risk components."""
     from unittest.mock import AsyncMock
+
     from app.api.v1.risk import get_stock_risk_analysis
 
     mock_db = AsyncMock()
-    current_user = {"id": "1", "email": "analyst@quantara.com"}
+    current_user = {"id": "1", "email": "analyst@quantara.com", "sec_user_agent": None}
 
     resp = await get_stock_risk_analysis(ticker="NVDA", current_user=current_user, db=mock_db)
 
@@ -345,6 +347,7 @@ def test_run_scenario_stress_test():
 async def test_get_stock_scenarios_endpoint():
     """Test dedicated GET /stocks/{ticker}/scenarios endpoint."""
     from unittest.mock import AsyncMock, MagicMock
+
     from app.api.v1.risk import get_stock_scenarios
     from app.models.stock import Stock
 
@@ -368,3 +371,25 @@ async def test_get_stock_scenarios_endpoint():
         assert s.type
         assert s.status in ["danger", "warning", "success"]
         assert s.impact_pct is not None
+
+
+@pytest.mark.asyncio
+async def test_risk_endpoint_reports_assumed_inputs_when_data_unavailable(monkeypatch):
+    """With no market data, defaults are disclosed and dependent factors are omitted."""
+    from unittest.mock import AsyncMock
+
+    from app.api.v1.risk import get_stock_risk_analysis
+    from app.services.llm_orchestrator import LLMOrchestrator
+
+    async def _offline(self, state):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr(LLMOrchestrator, "_retrieve_data", _offline)
+    resp = await get_stock_risk_analysis(
+        ticker="ZZZZ",
+        current_user={"id": "1", "email": "a@b.com", "sec_user_agent": None},
+        db=AsyncMock(),
+    )
+
+    assert resp.assumed_inputs == ["price_history", "beta", "pe_ratio", "debt_to_equity", "sector"]
+    assert resp.factor_sensitivities == {}

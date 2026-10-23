@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
@@ -10,6 +11,7 @@ from app.core.dependencies import CurrentUser, DBSession
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.stock import Stock
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
+from app.services.stock_lookup import get_or_track_stock
 
 router = APIRouter()
 
@@ -17,7 +19,7 @@ router = APIRouter()
 class PositionBase(BaseModel):
     """Position request schema."""
 
-    ticker: str
+    ticker: str = Field(..., pattern=r"^[A-Za-z0-9.\-^]{1,20}$")
     weight: float = Field(..., ge=0, le=1, description="Portfolio weight (0.0 - 1.0)")
     shares: float = Field(0.0, ge=0)
     cost_basis: float = Field(0.0, ge=0)
@@ -59,6 +61,22 @@ class PortfolioResponse(BaseModel):
     positions: list[PositionResponse]
     created_at: datetime
     updated_at: datetime
+
+
+async def _verify_positions(db: DBSession, positions: list[PositionBase]) -> None:
+    """Reject duplicate or unknown tickers before anything is written."""
+    tickers = [p.ticker.upper() for p in positions]
+    if len(set(tickers)) != len(tickers):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Each ticker can appear only once in a portfolio",
+        )
+    unknown = [t for t in tickers if await get_or_track_stock(db, t) is None]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No market data found for: {', '.join(unknown)}",
+        )
 
 
 class PortfoliosListResponse(BaseModel):
@@ -118,6 +136,7 @@ async def create_portfolio(
 ) -> PortfolioResponse:
     """Create a new portfolio with initial positions."""
     user_id = int(current_user["id"])
+    await _verify_positions(db, request.positions)
     now = datetime.utcnow()
     new_portfolio = Portfolio(
         user_id=user_id,
@@ -132,12 +151,6 @@ async def create_portfolio(
 
     for pos in request.positions:
         ticker_upper = pos.ticker.upper()
-        # Verify or auto-seed stock dependency for FK integrity
-        stock_check = await db.execute(select(Stock).where(Stock.ticker == ticker_upper))
-        if not stock_check.scalar_one_or_none():
-            db.add(Stock(ticker=ticker_upper, name=ticker_upper))
-            await db.flush()
-
         p_pos = PortfolioPosition(
             portfolio=new_portfolio,
             portfolio_id=new_portfolio.id or 0,
@@ -240,6 +253,8 @@ async def update_portfolio(
         portfolio.initial_investment = request.initial_investment
 
     if request.positions is not None:
+        await _verify_positions(db, request.positions)
+
         # Remove previous positions
         del_stmt = select(PortfolioPosition).where(PortfolioPosition.portfolio_id == portfolio.id)
         existing = (await db.execute(del_stmt)).scalars().all()
@@ -251,11 +266,6 @@ async def update_portfolio(
         # Add new positions
         for pos in request.positions:
             ticker_upper = pos.ticker.upper()
-            stock_check = await db.execute(select(Stock).where(Stock.ticker == ticker_upper))
-            if not stock_check.scalar_one_or_none():
-                db.add(Stock(ticker=ticker_upper, name=ticker_upper))
-                await db.flush()
-
             p_pos = PortfolioPosition(
                 portfolio=portfolio,
                 portfolio_id=portfolio.id,
@@ -325,7 +335,7 @@ class PortfolioStock(BaseModel):
 class SimulationRequest(BaseModel):
     """Portfolio simulation request schema."""
 
-    stocks: list[PortfolioStock]
+    stocks: list[PortfolioStock] = Field(..., min_length=1)
     initial_investment: float = Field(..., gt=0)
     time_horizon_months: int = Field(..., ge=1, le=360)
     volatility_mode: str = Field(
@@ -334,7 +344,7 @@ class SimulationRequest(BaseModel):
 
 
 class TrajectoryPoint(BaseModel):
-    """Monte Carlo trajectory point."""
+    """Projected portfolio value percentiles (lognormal model) at a given month."""
 
     month: int
     median: float
@@ -350,6 +360,7 @@ class SimulationResult(BaseModel):
     sharpe_ratio: float
     max_drawdown: float
     risk_adjusted_return: float
+    portfolio_beta: float = Field(0.0, description="Weighted beta vs S&P 500 / NIFTY 50")
     trajectory: list[TrajectoryPoint]
     diversification_benefit_pct: float = Field(
         0.0, description="Volatility reduction achieved through diversification (%)"
@@ -363,6 +374,10 @@ class SimulationResult(BaseModel):
     covariance_matrix: list[list[float]] = Field(
         default_factory=list, description="Asset covariance matrix (w^T * Sigma * w)"
     )
+    estimated_tickers: list[str] = Field(
+        default_factory=list,
+        description="Tickers lacking price history, simulated with default asset-class estimates",
+    )
 
 
 @router.post("/simulate", response_model=SimulationResult)
@@ -374,6 +389,10 @@ async def simulate_portfolio(
     """
     Run portfolio simulation using Markowitz Modern Portfolio Theory covariance.
 
+    Volatility, correlation, beta and drawdown come from one year of daily returns;
+    expected return is CAPM (risk-free + beta * equity premium). Tickers without enough
+    history fall back to asset-class defaults and are listed in `estimated_tickers`.
+
     Args:
         request: Simulation parameters
         current_user: Authenticated user
@@ -384,61 +403,94 @@ async def simulate_portfolio(
     """
     import math
 
-    from sqlalchemy import select
+    from app.api.v1.risk import MIN_OVERLAP_DAYS, _get_daily_returns
 
-    from app.models.stock import Stock
+    total_weight = sum(item.weight for item in request.stocks)
+    if abs(total_weight - 1.0) > 0.01:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Portfolio weights must sum to 1.0 (got {total_weight:.3f})",
+        )
 
-    # Asset class fallbacks if stocks are not in DB
+    rf = 0.025  # Risk-free rate
+    equity_premium = 0.055  # Long-run equity risk premium for CAPM
+
+    # Fallbacks for tickers without price history
     DEFAULT_METRICS = {
-        "AAPL": {"return": 0.12, "volatility": 0.22, "beta": 1.2, "max_dd": -0.25},
-        "MSFT": {"return": 0.11, "volatility": 0.20, "beta": 1.1, "max_dd": -0.22},
-        "NVDA": {"return": 0.18, "volatility": 0.35, "beta": 1.7, "max_dd": -0.38},
-        "TSLA": {"return": 0.15, "volatility": 0.40, "beta": 1.5, "max_dd": -0.50},
-        "GOOGL": {"return": 0.10, "volatility": 0.21, "beta": 1.1, "max_dd": -0.24},
-        "AMZN": {"return": 0.11, "volatility": 0.24, "beta": 1.15, "max_dd": -0.28},
-        "META": {"return": 0.13, "volatility": 0.28, "beta": 1.25, "max_dd": -0.32},
-        "TLT": {"return": 0.04, "volatility": 0.08, "beta": 0.15, "max_dd": -0.12},
-        "GLD": {"return": 0.06, "volatility": 0.12, "beta": 0.05, "max_dd": -0.15},
-        "BIL": {"return": 0.025, "volatility": 0.01, "beta": 0.00, "max_dd": -0.01},
+        "TLT": {"volatility": 0.08, "beta": 0.15, "max_dd": -0.12},
+        "GLD": {"volatility": 0.12, "beta": 0.05, "max_dd": -0.15},
+        "BIL": {"volatility": 0.01, "beta": 0.00, "max_dd": -0.01},
     }
+    GENERIC_EQUITY = {"volatility": 0.25, "beta": 1.0, "max_dd": -0.30}
 
-    tickers: list[str] = []
-    weights: list[float] = []
+    tickers = [item.ticker.upper() for item in request.stocks]
+    weights = [item.weight for item in request.stocks]
+    benchmarks = {t: "^NSEI" if t.endswith((".NS", ".BO")) else "^GSPC" for t in tickers}
+    daily = await _get_daily_returns(tuple(dict.fromkeys(tickers + list(benchmarks.values()))))
+
+    def _history(t: str) -> "pd.Series | None":
+        if daily is None or t not in daily:
+            return None
+        series = daily[t].dropna()
+        return series if len(series) >= MIN_OVERLAP_DAYS else None
+
+    db_rows = (await db.execute(select(Stock).where(Stock.ticker.in_(tickers)))).scalars().all()
+    db_stocks = {row.ticker: row for row in db_rows}
+
     vols: list[float] = []
     returns: list[float] = []
     sectors: dict[str, str | None] = {}
+    estimated: list[str] = []
     portfolio_beta = 0.0
-    portfolio_max_dd = 0.0
+    asset_max_dd = 0.0
 
-    for item in request.stocks:
-        ticker_upper = item.ticker.upper()
-        tickers.append(ticker_upper)
-        weights.append(item.weight)
+    for t, w in zip(tickers, weights, strict=True):
+        db_stock = db_stocks.get(t)
+        sectors[t] = db_stock.sector if db_stock else None
+        hist, bench = _history(t), _history(benchmarks[t])
 
-        stmt = select(Stock).where(Stock.ticker == ticker_upper)
-        res = await db.execute(stmt)
-        db_stock = res.scalar_one_or_none()
-
-        if db_stock:
-            stock_vol = (db_stock.risk_score or 50.0) / 200.0
-            stock_beta = db_stock.beta or 1.0
-            stock_return = 0.02 + (db_stock.research_score or 50.0) * 0.0015
-            stock_max_dd = -stock_vol * 1.2
-            sectors[ticker_upper] = db_stock.sector
+        if hist is not None:
+            vol = float(hist.std() * math.sqrt(252))
+            growth = (1 + hist).cumprod()
+            max_dd = float((growth / growth.cummax() - 1).min())
+            pair = pd.concat([hist, bench], axis=1).dropna() if bench is not None else None
+            if pair is not None and len(pair) >= MIN_OVERLAP_DAYS and pair.iloc[:, 1].var() > 0:
+                beta = float(pair.iloc[:, 0].cov(pair.iloc[:, 1]) / pair.iloc[:, 1].var())
+            else:
+                beta = db_stock.beta if db_stock and db_stock.beta is not None else 1.0
         else:
-            m = DEFAULT_METRICS.get(
-                ticker_upper, {"return": 0.08, "volatility": 0.15, "beta": 1.0, "max_dd": -0.15}
-            )
-            stock_return = m["return"]
-            stock_vol = m["volatility"]
-            stock_beta = m["beta"]
-            stock_max_dd = m["max_dd"]
-            sectors[ticker_upper] = None
+            estimated.append(t)
+            m = DEFAULT_METRICS.get(t, GENERIC_EQUITY)
+            vol, max_dd = m["volatility"], m["max_dd"]
+            beta = db_stock.beta if db_stock and db_stock.beta is not None else m["beta"]
 
-        returns.append(stock_return)
-        vols.append(stock_vol)
-        portfolio_beta += item.weight * stock_beta
-        portfolio_max_dd = min(portfolio_max_dd, stock_max_dd)
+        vols.append(vol)
+        returns.append(rf + beta * equity_premium)
+        portfolio_beta += w * beta
+        asset_max_dd = min(asset_max_dd, max_dd)
+
+    # Real pairwise correlations override the asset-class estimates where history overlaps
+    custom_corr = PortfolioAnalyticsEngine.build_correlation_matrix(tickers, sectors)
+    for a in tickers:
+        for b in tickers:
+            ha, hb = _history(a), _history(b)
+            if a == b or ha is None or hb is None:
+                continue
+            pair = pd.concat([ha, hb], axis=1).dropna()
+            if len(pair) >= MIN_OVERLAP_DAYS:
+                corr = pair.iloc[:, 0].corr(pair.iloc[:, 1])
+                if not pd.isna(corr):
+                    custom_corr[a][b] = round(float(corr), 4)
+
+    # Portfolio drawdown from the weighted daily series when every asset has history
+    if not estimated:
+        portfolio_daily = (
+            pd.concat([_history(t) for t in tickers], axis=1).dropna() * weights
+        ).sum(axis=1)
+        growth = (1 + portfolio_daily).cumprod()
+        portfolio_max_dd = float((growth / growth.cummax() - 1).min())
+    else:
+        portfolio_max_dd = asset_max_dd
 
     # Calculate MPT Covariance Matrix & Portfolio Risk
     analytics = PortfolioAnalyticsEngine.calculate_portfolio_metrics(
@@ -447,6 +499,7 @@ async def simulate_portfolio(
         volatilities=vols,
         expected_returns=returns,
         sectors=sectors,
+        custom_correlations=custom_corr,
     )
 
     portfolio_return = analytics.portfolio_return
@@ -463,20 +516,19 @@ async def simulate_portfolio(
         portfolio_return *= 1.10
         portfolio_max_dd *= 0.85
 
-    rf = 0.025  # Risk-free rate
     sharpe = (portfolio_return - rf) / portfolio_vol if portfolio_vol > 0 else 0.0
     risk_adjusted = portfolio_return - (0.5 * portfolio_vol)
 
-    # Calculate monthly projection trajectory
+    # Lognormal (GBM) percentiles: median grows at the log drift mu - sigma^2 / 2
     trajectory = []
     current_val = request.initial_investment
-    monthly_ret = portfolio_return / 12.0
-    monthly_vol = portfolio_vol / (12.0**0.5)
+    log_drift = math.log1p(portfolio_return) - 0.5 * portfolio_vol**2
 
     for month in range(0, request.time_horizon_months + 1):
-        median_val = current_val * ((1.0 + monthly_ret) ** month)
-        upper_val = median_val * math.exp(1.645 * monthly_vol * (month**0.5))
-        lower_val = median_val * math.exp(-1.645 * monthly_vol * (month**0.5))
+        years = month / 12.0
+        median_val = current_val * math.exp(log_drift * years)
+        upper_val = median_val * math.exp(1.645 * portfolio_vol * math.sqrt(years))
+        lower_val = median_val * math.exp(-1.645 * portfolio_vol * math.sqrt(years))
 
         trajectory.append(
             TrajectoryPoint(
@@ -493,9 +545,11 @@ async def simulate_portfolio(
         sharpe_ratio=round(sharpe, 2),
         max_drawdown=round(portfolio_max_dd * 100, 2),
         risk_adjusted_return=round(risk_adjusted * 100, 2),
+        portfolio_beta=round(portfolio_beta, 2),
         trajectory=trajectory,
         diversification_benefit_pct=analytics.diversification_benefit_pct,
         asset_volatilities=analytics.asset_volatilities,
         correlation_matrix=analytics.correlation_matrix,
         covariance_matrix=analytics.covariance_matrix,
+        estimated_tickers=estimated,
     )

@@ -59,7 +59,7 @@ test.describe('Authentication Flow', () => {
     await page.locator('button[type="submit"]').click();
     
     // Verify error message container appears
-    const errorContainer = page.locator('text=Request failed with status code 401');
+    const errorContainer = page.locator('text=Invalid credentials provided');
     await expect(errorContainer).toBeVisible();
   });
 
@@ -73,9 +73,8 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should allow user to open profile dropdown and log out', async ({ page }) => {
-    // Inject mock authenticated session in localStorage before loading
+    // A remembered profile; the session itself comes from the mocked refresh cookie
     await page.addInitScript(() => {
-      localStorage.setItem('quantara_token', 'mock_jwt_token_123');
       localStorage.setItem(
         'quantara_user',
         JSON.stringify({
@@ -87,7 +86,7 @@ test.describe('Authentication Flow', () => {
       );
     });
 
-    // Mock API requests
+    // Mock API requests (later routes take precedence)
     await page.route('**/api/v1/**', async route => {
       await route.fulfill({
         status: 200,
@@ -95,6 +94,10 @@ test.describe('Authentication Flow', () => {
         body: JSON.stringify({}),
       });
     });
+    await page.route('**/api/v1/auth/refresh', route =>
+      route.fulfill({ json: { access_token: 'mock_jwt_token_123', token_type: 'bearer' } })
+    );
+    const logoutCall = page.waitForRequest(req => req.url().endsWith('/auth/logout') && req.method() === 'POST');
 
     await page.goto('/');
     await expect(page).toHaveURL('/');
@@ -112,10 +115,24 @@ test.describe('Authentication Flow', () => {
     // Click logout
     await logoutBtn.click();
 
-    // Should redirect to login and clear token
+    // Should revoke server-side, redirect to login and forget the profile
+    await logoutCall;
     await expect(page).toHaveURL(/\/login/);
-    const token = await page.evaluate(() => localStorage.getItem('quantara_token'));
-    expect(token).toBeNull();
+    const stored = await page.evaluate(() => localStorage.getItem('quantara_user'));
+    expect(stored).toBeNull();
   });
 });
 
+
+test('an expired session (refresh rejected) returns to login', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('quantara_user', JSON.stringify({ id: '1', email: 'analyst@quantara.com' }));
+  });
+  await page.route('**/api/v1/auth/refresh', route =>
+    route.fulfill({ status: 401, json: { detail: 'Invalid or expired refresh token' } })
+  );
+
+  await page.goto('/portfolios');
+  await expect(page).toHaveURL(/\/login/);
+  expect(await page.evaluate(() => localStorage.getItem('quantara_user'))).toBeNull();
+});

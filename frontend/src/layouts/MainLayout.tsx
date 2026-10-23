@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import CommandPalette from "@/components/CommandPalette"
+import AlertsBell from "@/components/AlertsBell"
 import {
     LayoutDashboard,
     BarChart3,
@@ -17,13 +18,15 @@ import {
     Menu,
     X,
     TrendingUp,
-    AlertTriangle
+    AlertTriangle,
+    Briefcase,
+    Columns3
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
 import type { NavItem } from "@/types"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/context/AuthContext"
 import {
@@ -44,6 +47,8 @@ const navigation: NavItem[] = [
     { name: "Signal Monitor", href: "/signals", icon: Activity },
     { name: "Risk Breakdown", href: "/risk", icon: AlertTriangle },
     { name: "Simulation", href: "/simulation", icon: TrendingUp },
+    { name: "Portfolios", href: "/portfolios", icon: Briefcase },
+    { name: "Compare", href: "/compare", icon: Columns3 },
 ]
 
 const adminNavigation: NavItem[] = [
@@ -235,6 +240,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                         >
                             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                         </Button>
+                        <AlertsBell />
                         <Separator orientation="vertical" className="h-6" />
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>

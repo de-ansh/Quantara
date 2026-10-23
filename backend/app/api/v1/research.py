@@ -1,10 +1,14 @@
 """Research API endpoints."""
 
 
-from fastapi import APIRouter, Header, HTTPException, status
+from datetime import datetime, timedelta
+from typing import Annotated, Any
+
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from app.core.dependencies import CurrentUser, DBSession
+from app.core.config import settings
+from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_rate_limit
 from app.services.research_engine import ResearchEngine
 
 router = APIRouter()
@@ -22,6 +26,7 @@ class ResearchReportResponse(BaseModel):
     opportunities: list[str]
     threats: list[str]
     confidence_score: float
+    generated_at: datetime | None = None
 
 
 class StockSearchItem(BaseModel):
@@ -35,6 +40,56 @@ class StockSearchItem(BaseModel):
     signal: str
     alpha: str
     status: str
+    updated_at: datetime | None = None
+    sector: str | None = None
+    pe: float | None = None
+    beta: float | None = None
+
+
+def _currency(ticker: str) -> str:
+    return "₹" if ticker.upper().endswith((".NS", ".BO")) else "$"
+
+
+def format_price(value: float | None, ticker: str) -> str:
+    """Display price in the listing currency, e.g. $189.42 / ₹1,215.40."""
+    return f"{_currency(ticker)}{value:,.2f}" if value is not None else "N/A"
+
+
+def format_market_cap(value: float | None, ticker: str) -> str:
+    """Display market cap with T/B/M suffix in the listing currency."""
+    if value is None:
+        return "N/A"
+    for divisor, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+        if value >= divisor:
+            return f"{_currency(ticker)}{value / divisor:.2f}{suffix}"
+    return f"{_currency(ticker)}{value:,.0f}"
+
+
+def to_search_item(stock: Any) -> StockSearchItem:
+    """Explorer row for a Stock record."""
+    sig_str = "Neutral"
+    if stock.research_score is not None:
+        if stock.research_score >= 88:
+            sig_str = "Strong"
+        elif stock.research_score >= 70:
+            sig_str = "High"
+        elif stock.research_score < 40:
+            sig_str = "Weak"
+
+    return StockSearchItem(
+        ticker=stock.ticker,
+        name=stock.name or stock.ticker,
+        price=format_price(stock.price, stock.ticker),
+        cap=format_market_cap(stock.market_cap, stock.ticker),
+        risk=stock.risk_score or 50.0,
+        signal=sig_str,
+        alpha=stock.alpha_projection or "+0.0%",
+        status=stock.status or "neutral",
+        updated_at=stock.last_updated,
+        sector=stock.sector,
+        pe=stock.pe_ratio,
+        beta=stock.beta,
+    )
 
 
 class StockSearchListResponse(BaseModel):
@@ -57,11 +112,15 @@ async def search_stocks(
     risk_min: float | None = None,
     risk_max: float | None = None,
     signals: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StockSearchListResponse:
     """
     Search stocks with criteria filters and optional market region.
+
+    Results are ordered by ticker; `total_count` is the number of matches before paging.
     """
-    from sqlalchemy import and_, or_, select
+    from sqlalchemy import and_, func, or_, select
 
     from app.models.signal import Signal
     from app.models.stock import Stock
@@ -110,34 +169,13 @@ async def search_stocks(
     if risk_max is not None:
         stmt = stmt.where(Stock.risk_score <= risk_max)
 
-    result = await db.execute(stmt)
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    result = await db.execute(stmt.order_by(Stock.ticker).limit(limit).offset(offset))
     db_stocks = result.scalars().all()
 
-    response_items = []
-    for stock in db_stocks:
-        sig_str = "Neutral"
-        if stock.research_score is not None:
-            if stock.research_score >= 88:
-                sig_str = "Strong"
-            elif stock.research_score >= 70:
-                sig_str = "High"
-            elif stock.research_score < 40:
-                sig_str = "Weak"
+    response_items = [to_search_item(stock) for stock in db_stocks]
 
-        response_items.append(
-            StockSearchItem(
-                ticker=stock.ticker,
-                name=stock.name or stock.ticker,
-                price=stock.price or "$0.00",
-                cap=stock.market_cap or "0.0B",
-                risk=stock.risk_score or 50.0,
-                signal=sig_str,
-                alpha=stock.alpha_projection or "+0.0%",
-                status=stock.status or "neutral",
-            )
-        )
-
-    return StockSearchListResponse(stocks=response_items, total_count=len(response_items))
+    return StockSearchListResponse(stocks=response_items, total_count=int(total))
 
 
 @router.get("/stocks/{ticker}/research", response_model=ResearchReportResponse)
@@ -145,8 +183,8 @@ async def get_stock_research(
     ticker: str,
     current_user: CurrentUser,
     db: DBSession,
-    x_openai_api_key: str | None = Header(None, alias="X-OpenAI-API-Key"),
-    x_sec_user_agent: str | None = Header(None, alias="X-SEC-User-Agent"),
+    redis: RedisClient,
+    refresh: bool = False,
 ) -> ResearchReportResponse:
     """
     Get research report for a stock.
@@ -155,6 +193,7 @@ async def get_stock_research(
         ticker: Stock ticker symbol
         current_user: Authenticated user
         db: Database session
+        refresh: Regenerate even if the cached report is still fresh
 
     Returns:
         Research report
@@ -170,18 +209,36 @@ async def get_stock_research(
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
 
-    if report and report.structured_json:
-        return ResearchReportResponse(**report.structured_json)
+    max_age = timedelta(hours=settings.research_cache_max_age_hours)
+    if (
+        not refresh
+        and report
+        and report.structured_json
+        and datetime.utcnow() - report.updated_at < max_age
+    ):
+        return ResearchReportResponse(**{**report.structured_json, "generated_at": report.updated_at})
 
-    # Generate new report
+    # Each generation is a paid LLM call, so cap it per user.
+    await enforce_rate_limit(
+        redis,
+        f"research:{current_user['id']}",
+        settings.research_generation_limit_per_hour,
+        3600,
+    )
     report_data = await research_engine.generate_research_report(
-        db, ticker_upper, openai_api_key=x_openai_api_key, sec_user_agent=x_sec_user_agent
+        db,
+        ticker_upper,
+        openai_api_key=current_user["openai_api_key"],
+        sec_user_agent=current_user["sec_user_agent"],
     )
 
+    if not report_data and report and report.structured_json:
+        # Refresh failed: a stale report beats an error.
+        return ResearchReportResponse(**{**report.structured_json, "generated_at": report.updated_at})
     if not report_data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate research report for {ticker}",
         )
 
-    return ResearchReportResponse(**report_data)
+    return ResearchReportResponse(**{**report_data, "generated_at": datetime.utcnow()})

@@ -1,9 +1,9 @@
 import base64
-from datetime import datetime, timedelta
 import hashlib
+from datetime import datetime, timedelta
 from typing import Any
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -32,9 +32,23 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
 
-    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return str(encoded_jwt)
+
+
+def create_refresh_token(data: dict[str, Any]) -> str:
+    """Create a long-lived JWT that can only be exchanged at /auth/refresh."""
+    to_encode = data.copy()
+    now = datetime.utcnow()
+    to_encode.update(
+        {
+            "exp": now + timedelta(days=settings.refresh_token_expire_days),
+            "iat": now,
+            "type": "refresh",
+        }
+    )
+    return str(jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm))
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
@@ -46,16 +60,24 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def verify_token(token: str) -> dict[str, Any] | None:
-    """Verify a JWT token and return the payload."""
-    return decode_access_token(token)
+def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
+    """Verify a JWT and return its payload if it is the expected token type."""
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    # Tokens issued before the type claim existed are access tokens.
+    if payload.get("type", "access") != token_type:
+        return None
+    return payload
 
 
-def _get_credential_cipher() -> Fernet:
-    """Generate a consistent Fernet cipher key derived from application secret_key."""
+def _get_credential_cipher() -> MultiFernet:
+    """Encrypt with credential_encryption_key when set; still decrypt secret_key-derived values."""
     key_bytes = hashlib.sha256(settings.secret_key.encode("utf-8")).digest()
-    fernet_key = base64.urlsafe_b64encode(key_bytes)
-    return Fernet(fernet_key)
+    keys = [Fernet(base64.urlsafe_b64encode(key_bytes))]
+    if settings.credential_encryption_key:
+        keys.insert(0, Fernet(settings.credential_encryption_key.encode("utf-8")))
+    return MultiFernet(keys)
 
 
 def encrypt_credential(plain_text: str | None) -> str | None:

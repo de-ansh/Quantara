@@ -130,6 +130,7 @@ async def test_get_cik_async_static(sec_provider):
 async def test_load_company_tickers_dynamic_success(sec_provider, monkeypatch):
     """Test dynamic ingestion of company_tickers.json from SEC EDGAR."""
     from unittest.mock import AsyncMock, MagicMock
+
     import httpx
 
     mock_sec_directory = {
@@ -168,6 +169,7 @@ async def test_load_company_tickers_dynamic_success(sec_provider, monkeypatch):
 async def test_load_company_tickers_network_error_fallback(sec_provider, monkeypatch):
     """Test graceful fallback to static CIK mapping when SEC network fails."""
     from unittest.mock import AsyncMock
+
     import httpx
 
     mock_client = AsyncMock()

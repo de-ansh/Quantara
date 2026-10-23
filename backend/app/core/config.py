@@ -19,13 +19,17 @@ class Settings(BaseSettings):
     app_name: str = "Quantara"
     app_version: str = "0.1.0"
     environment: str = "development"
-    debug: bool = True
+    debug: bool = False
     log_level: str = "INFO"
 
     # Security
     secret_key: str = Field(..., min_length=32)
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    # Fernet key for stored user credentials. Unset: derived from secret_key (rotating
+    # secret_key would then make stored credentials unreadable, so set this in production).
+    credential_encryption_key: str | None = None
 
     # Database
     database_url: str = Field(..., description="PostgreSQL connection string")
@@ -34,7 +38,6 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = Field(..., description="Redis connection string")
-    redis_cache_ttl: int = 3600
 
     # OpenAI
     openai_api_key: str = Field(..., description="OpenAI API key")
@@ -47,26 +50,18 @@ class Settings(BaseSettings):
         "Quantara admin@example.com", description="SEC EDGAR User-Agent string"
     )
 
-    # Vector Database
-    vector_db_type: str = "pinecone"
-    pinecone_api_key: str | None = None
-    pinecone_environment: str | None = None
-    pinecone_index_name: str | None = None
-
-    # Celery
-    celery_broker_url: str = Field(..., description="Celery broker URL")
-    celery_result_backend: str = Field(..., description="Celery result backend URL")
-
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Rate Limiting
-    rate_limit_per_minute: int = 60
+    login_rate_limit_per_minute: int = 10
+    research_generation_limit_per_hour: int = 20
+
+    # Research reports older than this are regenerated on next request
+    research_cache_max_age_hours: int = 24
 
     # Background Tasks
     enable_background_tasks: bool = True
-    risk_recompute_schedule: str = "0 2 * * *"
-    research_refresh_schedule: str = "0 3 * * *"
 
     @field_validator("cors_origins")
     @classmethod
