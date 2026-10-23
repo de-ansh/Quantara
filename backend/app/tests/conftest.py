@@ -49,6 +49,19 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client."""
+    from redis.asyncio import Redis
+
+    from app.core.config import settings
+
+    # Rate-limit counters persist in Redis across tests; start each test clean.
+    redis = Redis.from_url(settings.redis_url)
+    try:
+        async for key in redis.scan_iter("ratelimit:*"):
+            await redis.delete(key)
+    except Exception:
+        pass
+    finally:
+        await redis.close()
 
     async def override_get_db():
         yield db_session

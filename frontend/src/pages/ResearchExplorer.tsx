@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom"
 import {
     Search,
     ChevronDown,
-    Bookmark,
     Download,
     List,
     Grid,
@@ -15,15 +14,18 @@ import {
     MoreHorizontal,
     Clock,
     CheckCircle2,
-    SlidersHorizontal,
     X,
-    Globe
+    Globe,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { exportToCsv } from "@/lib/export"
-import { isIndianAsset, getMarketLabel, formatAssetPrice } from "@/lib/currency"
+import { isIndianAsset, getMarketLabel } from "@/lib/currency"
+import WatchlistButton from "@/components/WatchlistButton"
+import type { StockSearchItem } from "@/types/api"
+
+const PAGE_SIZE = 25
 
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
@@ -35,20 +37,25 @@ export default function ResearchExplorer() {
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
+    // Page resets whenever the filters change (derived during render, no effect needed)
+    const filterKey = JSON.stringify([query, selectedMarket, peLimit, betaLimit, selectedSignals])
+    const [pageState, setPageState] = useState({ key: filterKey, page: 0 })
+    const page = pageState.key === filterKey ? pageState.page : 0
+    const setPage = (p: number) => setPageState({ key: filterKey, page: p })
     const [selectedTickers, setSelectedTickers] = useState<string[]>([])
 
     // Query backend Stock Search API
     const { data, isLoading } = useQuery({
-        queryKey: ["stocksSearch", query, selectedMarket, peLimit, betaLimit, selectedSignals],
+        queryKey: ["stocksSearch", query, selectedMarket, peLimit, betaLimit, selectedSignals, page],
         queryFn: async () => {
-            const params: any = {}
+            const params: Record<string, string | number> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE }
             if (query) params.query = query
             if (selectedMarket !== "all") params.market = selectedMarket
             if (peLimit < 50) params.pe_max = peLimit
             if (betaLimit < 2.0) params.beta_max = betaLimit
             if (selectedSignals.length > 0) params.signals = selectedSignals.join(",")
 
-            const res = await apiClient.get("/stocks/search", { params })
+            const res = await apiClient.get<{ stocks: StockSearchItem[]; total_count: number }>("/stocks/search", { params })
             return res.data
         }
     })
@@ -85,18 +92,18 @@ export default function ResearchExplorer() {
         if (selectedTickers.length === results.length && results.length > 0) {
             setSelectedTickers([])
         } else {
-            setSelectedTickers(results.map((r: any) => r.ticker))
+            setSelectedTickers(results.map((r) => r.ticker))
         }
     }
 
     const handleExport = (onlySelected = false) => {
         const source = onlySelected
-            ? results.filter((r: any) => selectedTickers.includes(r.ticker))
+            ? results.filter((r) => selectedTickers.includes(r.ticker))
             : results
 
         if (source.length === 0) return
 
-        const exportRows = source.map((r: any) => ({
+        const exportRows = source.map((r) => ({
             ticker: r.ticker,
             name: r.name || "",
             price: r.price,
@@ -141,14 +148,14 @@ export default function ResearchExplorer() {
                         </summary>
                         <div className="px-4 pb-4 space-y-1.5">
                             {[
-                                { key: "all", label: "Global (All Markets)", icon: "🌐" },
-                                { key: "india", label: "Indian Equities (NSE)", icon: "🇮🇳" },
-                                { key: "us", label: "US Equities (NYSE/NASDAQ)", icon: "🇺🇸" }
+                                { key: "all" as const, label: "Global (All Markets)", icon: "🌐" },
+                                { key: "india" as const, label: "Indian Equities (NSE)", icon: "🇮🇳" },
+                                { key: "us" as const, label: "US Equities (NYSE/NASDAQ)", icon: "🇺🇸" }
                             ].map((m) => (
                                 <button
                                     key={m.key}
                                     type="button"
-                                    onClick={() => setSelectedMarket(m.key as any)}
+                                    onClick={() => setSelectedMarket(m.key)}
                                     className={cn(
                                         "w-full flex items-center justify-between px-3 py-2 rounded text-xs transition-colors text-left",
                                         selectedMarket === m.key
@@ -312,10 +319,20 @@ export default function ResearchExplorer() {
                                 </Button>
                                 <Button
                                     size="sm"
+                                    variant="outline"
+                                    disabled={selectedTickers.length < 2 || selectedTickers.length > 4}
+                                    title="Select 2–4 stocks to compare side by side"
+                                    onClick={() => navigate(`/compare?tickers=${selectedTickers.join(",")}`)}
+                                    className="h-7 text-[10px] font-black uppercase tracking-wider bg-background"
+                                >
+                                    Compare (2–4)
+                                </Button>
+                                <Button
+                                    size="sm"
                                     onClick={() => navigate(`/simulation?tickers=${selectedTickers.join(",")}`)}
                                     className="h-7 text-[10px] font-black uppercase tracking-wider"
                                 >
-                                    Compare in Simulation
+                                    Simulate Selected
                                 </Button>
                             </div>
                         </div>
@@ -329,7 +346,7 @@ export default function ResearchExplorer() {
                             </div>
                         ) : view === "grid" ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
-                                {results.map((row: any) => {
+                                {results.map((row) => {
                                     const isSelected = selectedTickers.includes(row.ticker)
                                     return (
                                         <div
@@ -355,6 +372,7 @@ export default function ResearchExplorer() {
                                                     <div>
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="font-mono text-base font-black text-foreground">{row.ticker}</span>
+                                                            <WatchlistButton ticker={row.ticker} />
                                                             <span className={cn(
                                                                 "text-[8px] font-bold px-1 py-0.2 rounded border uppercase font-mono",
                                                                 isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
@@ -455,7 +473,7 @@ export default function ResearchExplorer() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border font-mono text-xs">
-                                    {results.map((row: any, i: number) => (
+                                    {results.map((row, i: number) => (
                                         <tr 
                                             key={i} 
                                             onClick={() => navigate(`/research/${row.ticker}`)}
@@ -481,6 +499,7 @@ export default function ResearchExplorer() {
                                                     )}>
                                                         {getMarketLabel(row.ticker)}
                                                     </span>
+                                                    <WatchlistButton ticker={row.ticker} />
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>
@@ -514,6 +533,24 @@ export default function ResearchExplorer() {
                             </table>
                         )}
                     </div>
+
+                    {totalCount > PAGE_SIZE && (
+                        <nav aria-label="Results pages" className="flex items-center justify-between pt-4 text-xs font-mono">
+                            <span className="text-muted-foreground">
+                                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}
+                            </span>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setPage(page - 1)} disabled={page === 0}
+                                    className="px-3 py-1.5 border border-border rounded-sm hover:bg-muted disabled:opacity-40">
+                                    Prev
+                                </button>
+                                <button type="button" onClick={() => setPage(page + 1)} disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                                    className="px-3 py-1.5 border border-border rounded-sm hover:bg-muted disabled:opacity-40">
+                                    Next
+                                </button>
+                            </div>
+                        </nav>
+                    )}
                 </main>
             </div>
 

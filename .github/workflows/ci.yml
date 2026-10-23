@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: quantara
+          POSTGRES_PASSWORD: quantara
+          POSTGRES_DB: quantara
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U quantara"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SECRET_KEY: ci-secret-key-not-for-production-0123456789abcdef
+      DATABASE_URL: postgresql+asyncpg://quantara:quantara@localhost:5432/quantara
+      REDIS_URL: redis://localhost:6379/0
+      OPENAI_API_KEY: sk-fake-ci  # keeps embeddings local and LLM calls offline
+      PGPASSWORD: quantara
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check app alembic
+      - run: uv run mypy app/
+      - name: Migrations apply and match the models
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+      - run: createdb -h localhost -U quantara quantara_test
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm exec tsc -b
+      - run: pnpm lint
+      - run: pnpm build
+      - name: E2E (API is mocked in the specs)
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:e2e

@@ -5,7 +5,6 @@ import {
     CheckCircle2,
     AlertTriangle,
     ShieldCheck,
-    Info,
     BarChart3,
     Radar,
     Activity,
@@ -14,16 +13,18 @@ import {
     ShieldAlert,
     Clock,
     DollarSign,
-    Layers
+    Layers,
 } from "lucide-react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { useResearch } from "@/hooks/useResearch"
-import apiClient from "@/lib/api"
+import { useRefreshResearch, useResearch } from "@/hooks/useResearch"
+import apiClient, { apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
-import { cn } from "@/lib/utils"
+import { cn, timeAgo } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
-import { isIndianAsset, cleanTickerDisplay, getMarketLabel } from "@/lib/currency"
+import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
+import WatchlistButton from "@/components/WatchlistButton"
+import type { ApiSignal, StockSearchItem } from "@/types/api"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -37,20 +38,20 @@ type TabType = typeof TABS[number]["id"]
 
 export default function StockDetail() {
     const { ticker: paramTicker } = useParams()
-    const navigate = useNavigate()
     const activeTicker = (paramTicker || 'AAPL').toUpperCase()
     const [activeTab, setActiveTab] = useState<TabType>("thesis")
     const { user } = useAuth()
 
     // 1. Fetch LLM Structured Research Report
     const { data: report, isLoading: loadingReport } = useResearch(activeTicker)
+    const refreshReport = useRefreshResearch(activeTicker)
 
     // 2. Fetch Stock Database Metadata
     const { data: searchData, isLoading: loadingStock } = useQuery({
         queryKey: ['stockMetadata', activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get('/stocks/search', { params: { query: activeTicker } })
-            const found = res.data.stocks?.find((s: any) => s.ticker.toUpperCase() === activeTicker)
+            const res = await apiClient.get<{ stocks: StockSearchItem[] }>('/stocks/search', { params: { query: activeTicker } })
+            const found = res.data.stocks?.find((s) => s.ticker.toUpperCase() === activeTicker)
             return found || res.data.stocks?.[0] || null
         },
         enabled: !!activeTicker,
@@ -70,7 +71,7 @@ export default function StockDetail() {
     const { data: signals = [] } = useQuery({
         queryKey: ['stockSignals', activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get('/signals', { params: { ticker: activeTicker, limit: 10 } })
+            const res = await apiClient.get<{ signals: ApiSignal[] }>('/signals', { params: { ticker: activeTicker, limit: 10 } })
             return res.data.signals || []
         },
         enabled: !!activeTicker,
@@ -79,28 +80,23 @@ export default function StockDetail() {
     const isLoading = loadingReport || loadingStock || loadingRisk
 
     // Derive Dynamic Metrics
-    const companyName = searchData?.name || `${activeTicker} Corporation`
-    const sector = searchData?.sector || "Technology"
-    const price = searchData?.price || (isIndianAsset(activeTicker) ? "₹1,250.00" : "$189.42")
+    // Unknown values render as "—"; never substitute another company's numbers.
+    const companyName = searchData?.name || activeTicker
+    const sector = searchData?.sector || "Unclassified"
+    const price = searchData?.price || "—"
     const marketCap = searchData?.cap || "N/A"
-    const peRatio = searchData?.pe ? `${searchData.pe.toFixed(1)}x` : "28.4x"
-    const betaVal = searchData?.beta
-        ? Number(searchData.beta).toFixed(2)
-        : (riskData?.components?.beta_score ? (riskData.components.beta_score / 50).toFixed(2) : "1.10")
-    const alphaStr = searchData?.alpha || "+6.4%"
-    const statusTrend = searchData?.status || "up"
+    const peRatio = searchData?.pe ? `${searchData.pe.toFixed(1)}x` : "—"
+    const betaVal = searchData?.beta ? Number(searchData.beta).toFixed(2) : "—"
+    const alphaStr = searchData?.alpha || "—"
+    const statusTrend = searchData?.status || "neutral"
 
     // Risk Classification
-    const overallRiskScore = Math.round(riskData?.overall_risk_score ?? searchData?.risk ?? 48.0)
-    const riskLevel = riskData?.risk_level || (overallRiskScore < 34 ? "Conservative" : overallRiskScore < 67 ? "Moderate" : "Aggressive")
-    const components = riskData?.components || {
-        volatility_score: 45.0,
-        beta_score: 52.0,
-        leverage_score: 38.0,
-        earnings_stability_score: 72.0,
-        sector_risk_score: 40.0,
-        valuation_risk_score: 55.0,
-    }
+    const riskScoreRaw = riskData?.overall_risk_score ?? searchData?.risk
+    const hasRiskScore = riskScoreRaw !== undefined && riskScoreRaw !== null
+    const overallRiskScore = hasRiskScore ? Math.round(riskScoreRaw) : 0
+    const riskLevel = riskData?.risk_level || (!hasRiskScore ? "Unrated" : overallRiskScore < 34 ? "Conservative" : overallRiskScore < 67 ? "Moderate" : "Aggressive")
+    const components = riskData?.components
+    const score = (v?: number) => (v === undefined || v === null ? "—" : v.toFixed(1))
 
     // Dynamic Risk Alignment Calculation
     const userRiskLevel = user?.risk_level || "Moderate"
@@ -120,10 +116,10 @@ export default function StockDetail() {
     // Dynamic Stats Table
     const dynamicStats = [
         { label: "P/E Ratio", value: peRatio },
-        { label: "Beta (Trailed)", value: `${betaVal}x` },
-        { label: "Volatility Score", value: `${components.volatility_score.toFixed(1)}/100` },
-        { label: "Leverage Index", value: `${(100 - components.leverage_score).toFixed(0)}/100` },
-        { label: "Earnings Stability", value: `${components.earnings_stability_score.toFixed(1)}/100` },
+        { label: "Beta (Trailed)", value: betaVal === "—" ? "—" : `${betaVal}x` },
+        { label: "Volatility Score", value: `${score(components?.volatility_score)}/100` },
+        { label: "Leverage Index", value: components ? `${(100 - components.leverage_score).toFixed(0)}/100` : "—/100" },
+        { label: "Earnings Stability", value: `${score(components?.earnings_stability_score)}/100` },
         { label: "Alpha Projection", value: alphaStr },
     ]
 
@@ -135,6 +131,7 @@ export default function StockDetail() {
                     <div className="flex items-baseline gap-4">
                         <div className="flex items-center gap-3">
                             <h2 className="text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h2>
+                            <WatchlistButton ticker={activeTicker} className="[&_svg]:size-6" />
                             {isIndianAsset(activeTicker) ? (
                                 <Badge className="bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono text-xs uppercase px-2 py-0.5">
                                     🇮🇳 NSE
@@ -165,6 +162,12 @@ export default function StockDetail() {
                         <span>Price: <strong className="text-foreground">{price}</strong></span>
                         <div className="size-1 rounded-full bg-border" />
                         <span>MCap: <strong className="text-foreground">{marketCap}</strong></span>
+                        {searchData?.updated_at && (
+                            <>
+                                <div className="size-1 rounded-full bg-border" />
+                                <span className="text-xs">Data as of {timeAgo(searchData.updated_at)}</span>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -173,7 +176,7 @@ export default function StockDetail() {
                     <div className="flex flex-col items-end">
                         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Institutional Risk Score</span>
                         <span className="text-3xl font-black text-foreground leading-none">
-                            {overallRiskScore}
+                            {hasRiskScore ? overallRiskScore : "—"}
                             <span className="text-lg text-muted-foreground font-medium ml-1">/100</span>
                         </span>
                         <span className={cn(
@@ -226,6 +229,20 @@ export default function StockDetail() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
                 <div className="lg:col-span-8 space-y-6">
                     {/* TAB 1: Investment Thesis */}
+                    {report && (
+                        <div className="flex items-center justify-end gap-2 mb-2 text-[11px] text-muted-foreground">
+                            {report.generated_at && <span>Report generated {timeAgo(report.generated_at)}</span>}
+                            <button
+                                type="button"
+                                onClick={() => refreshReport.mutate()}
+                                disabled={refreshReport.isPending}
+                                className="font-bold text-primary hover:underline disabled:opacity-50"
+                            >
+                                {refreshReport.isPending ? "Regenerating..." : "Refresh"}
+                            </button>
+                            {refreshReport.isError && <span className="text-red-400">{apiErrorDetail(refreshReport.error) ?? "Refresh failed"}</span>}
+                        </div>
+                    )}
                     {activeTab === "thesis" && (
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                             {/* Thesis */}
@@ -242,14 +259,10 @@ export default function StockDetail() {
                                         </div>
                                     )}
                                     <p className="text-sm leading-relaxed text-muted-foreground mb-4 font-medium">
-                                        {report?.summary || `${companyName} presents a structured investment profile within the ${sector} domain. Our quantitative valuation and volatility models suggest consistent positioning.`}
+                                        {report?.summary || `No research report is available for ${companyName} yet.`}
                                     </p>
                                     <ul className="space-y-3">
-                                        {(report?.key_insights && report.key_insights.length > 0 ? report.key_insights : (report?.strengths && report.strengths.length > 0 ? report.strengths : [
-                                            `Strong sector moat and stable market footprint in ${sector}.`,
-                                            `Robust capital allocation efficiency and disciplined balance sheet.`,
-                                            `Favorable structural runway extending over forward 12-month horizon.`
-                                        ])).map((item, i) => (
+                                        {(report?.key_insights && report.key_insights.length > 0 ? report.key_insights : (report?.strengths && report.strengths.length > 0 ? report.strengths : [])).map((item, i) => (
                                             <li key={i} className="flex items-start gap-3 group">
                                                 <CheckCircle2 className="text-primary size-4 mt-0.5 group-hover:scale-110 transition-transform" />
                                                 <span className="text-sm text-foreground/90 font-medium">{item}</span>
@@ -268,14 +281,10 @@ export default function StockDetail() {
                                 </div>
                                 <div className="p-6">
                                     <p className="text-sm leading-relaxed text-muted-foreground mb-4 font-medium">
-                                        Systemic sensitivity to interest rate fluctuations and sector competition represent the primary tail-risk constraints.
+                                        {report ? "Weaknesses and threats identified in the latest research report." : "No research report is available yet."}
                                     </p>
                                     <ul className="space-y-3">
-                                        {(report?.weaknesses && report.weaknesses.length > 0 ? report.weaknesses : (report?.threats && report.threats.length > 0 ? report.threats : [
-                                            `Valuation multiples trade sensitive to broader macroeconomic cycles.`,
-                                            `Competitive margin compression risks across key operating segments.`,
-                                            `Exposure to broader regulatory and supply chain variability.`
-                                        ])).map((item, i) => (
+                                        {(report?.weaknesses && report.weaknesses.length > 0 ? report.weaknesses : (report?.threats && report.threats.length > 0 ? report.threats : [])).map((item, i) => (
                                             <li key={i} className="flex items-start gap-3 group">
                                                 <ShieldAlert className="text-q-warning size-4 mt-0.5 group-hover:scale-110 transition-transform" />
                                                 <span className="text-sm text-foreground/90 font-medium">{item}</span>
@@ -302,17 +311,17 @@ export default function StockDetail() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
                                     <span className="text-[10px] uppercase font-bold text-muted-foreground">Earnings Stability</span>
-                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{components.earnings_stability_score.toFixed(1)}/100</div>
+                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.earnings_stability_score)}/100</div>
                                     <p className="text-[10px] text-muted-foreground mt-1">Multi-quarter profitability score</p>
                                 </div>
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
                                     <span className="text-[10px] uppercase font-bold text-muted-foreground">Leverage Score</span>
-                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{components.leverage_score.toFixed(1)}/100</div>
+                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.leverage_score)}/100</div>
                                     <p className="text-[10px] text-muted-foreground mt-1">Debt-to-equity vulnerability</p>
                                 </div>
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
                                     <span className="text-[10px] uppercase font-bold text-muted-foreground">Valuation Risk</span>
-                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{components.valuation_risk_score.toFixed(1)}/100</div>
+                                    <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.valuation_risk_score)}/100</div>
                                     <p className="text-[10px] text-muted-foreground mt-1">Historical multiple expansion</p>
                                 </div>
                             </div>
@@ -331,12 +340,12 @@ export default function StockDetail() {
                             </div>
                             <div className="space-y-4">
                                 {[
-                                    { label: "Annualized Volatility Risk", val: components.volatility_score },
-                                    { label: "Market Beta Exposure", val: components.beta_score },
-                                    { label: "Balance Sheet Leverage", val: components.leverage_score },
-                                    { label: "Earnings Dispersion", val: 100 - components.earnings_stability_score },
-                                    { label: "Sector Systemic Exposure", val: components.sector_risk_score },
-                                    { label: "Valuation Premium Risk", val: components.valuation_risk_score },
+                                    { label: "Annualized Volatility Risk", val: components?.volatility_score ?? 0 },
+                                    { label: "Market Beta Exposure", val: components?.beta_score ?? 0 },
+                                    { label: "Balance Sheet Leverage", val: components?.leverage_score ?? 0 },
+                                    { label: "Earnings Dispersion", val: components ? 100 - components.earnings_stability_score : 0 },
+                                    { label: "Sector Systemic Exposure", val: components?.sector_risk_score ?? 0 },
+                                    { label: "Valuation Premium Risk", val: components?.valuation_risk_score ?? 0 },
                                 ].map((item) => (
                                     <div key={item.label} className="space-y-1">
                                         <div className="flex justify-between text-xs font-mono">
@@ -376,7 +385,7 @@ export default function StockDetail() {
                                 </div>
                             ) : (
                                 <div className="divide-y divide-border">
-                                    {signals.map((sig: any) => (
+                                    {signals.map((sig) => (
                                         <div key={sig.id} className="py-3 flex items-center justify-between">
                                             <div className="flex items-center gap-3">
                                                 <div className="size-2 rounded-full bg-primary" />
@@ -417,14 +426,7 @@ export default function StockDetail() {
                                     <span className="text-[10px] font-bold uppercase text-muted-foreground">Sector Sensitivity</span>
                                     <p className="text-sm font-bold text-foreground">{sector} Industry Index</p>
                                     <p className="text-xs text-muted-foreground leading-relaxed">
-                                        Beta correlation of {betaVal}x relative to broad market benchmark ({isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500"}).
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-muted/30 border border-border space-y-2">
-                                    <span className="text-[10px] font-bold uppercase text-muted-foreground">Macro Fit Rating</span>
-                                    <p className="text-sm font-bold text-green-400">FAVORABLE ALLOCATION</p>
-                                    <p className="text-xs text-muted-foreground leading-relaxed">
-                                        Current monetary environment aligns with capital expenditure trends across {sector}.
+                                        Beta of {betaVal === "—" ? "—" : `${betaVal}x`} relative to broad market benchmark ({isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500"}).
                                     </p>
                                 </div>
                             </div>
@@ -505,8 +507,8 @@ export default function StockDetail() {
                         </div>
                         <div className="p-4 space-y-6">
                             {[
-                                { label: "Projected Alpha", valColor: alphaStr.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high", val: alphaStr, fill: "h-2/3" },
-                                { label: "Systemic Beta", valColor: Number(betaVal) > 1.2 ? "text-amber-400" : "text-q-risk-low", val: `${betaVal}x`, fill: "h-1/2" },
+                                { label: "Projected Alpha", valColor: alphaStr.startsWith("+") ? "text-q-risk-low" : alphaStr === "—" ? "text-muted-foreground" : "text-q-risk-high", val: alphaStr, fill: "h-2/3" },
+                                { label: "Systemic Beta", valColor: Number(betaVal) > 1.2 ? "text-amber-400" : "text-q-risk-low", val: betaVal === "—" ? "—" : `${betaVal}x`, fill: "h-1/2" },
                                 { label: "Risk Classification", valColor: "text-primary", val: riskLevel.toUpperCase(), fill: "h-full" },
                             ].map((item) => (
                                 <div key={item.label} className="flex items-center justify-between group cursor-help">

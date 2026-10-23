@@ -51,7 +51,7 @@ export interface User {
     risk_level?: string | null
     volatility_tolerance?: number | null
     investment_horizon?: number | null
-    sector_preferences?: Record<string, any> | null
+    sector_preferences?: Record<string, number> | null
 }
 
 export interface AuthState {

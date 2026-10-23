@@ -6,7 +6,10 @@ import {
     MoveRight,
     Filter,
     AlertTriangle,
+    Star,
 } from "lucide-react"
+import { Link } from "react-router-dom"
+import { useWatchlist } from "@/hooks/useWatchlist"
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +32,7 @@ interface StatItem {
 }
 
 export default function Dashboard() {
+    const { data: watchlist = [], isLoading: loadingWatchlist } = useWatchlist()
     const { data: opportunities = [], isLoading: isLoadingOpportunities } = useRecommendations();
     const { data: liveSignals = [], isLoading: isLoadingSignals } = useSignals({ refetchInterval: 5000 });
 
@@ -171,6 +175,43 @@ export default function Dashboard() {
                     </Card>
                 ))}
             </div>
+
+            {/* Watchlist */}
+            <section aria-labelledby="watchlist-heading" className="bg-q-surface border border-q-border shrink-0">
+                <div className="px-4 py-2 border-b border-q-border flex items-center justify-between">
+                    <h2 id="watchlist-heading" className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <Star className="size-3.5 text-amber-400 fill-current" /> Watchlist
+                    </h2>
+                    <Link to="/explorer" className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline">
+                        Browse stocks
+                    </Link>
+                </div>
+                {watchlist.length === 0 ? (
+                    <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                        {loadingWatchlist ? "Loading..." : "Star a stock in Research Explorer or Stock Detail to pin it here."}
+                    </p>
+                ) : (
+                    <ul className="flex gap-2 overflow-x-auto custom-scrollbar p-3">
+                        {watchlist.map(w => (
+                            <li key={w.ticker} className="shrink-0">
+                                <Link
+                                    to={`/research/${w.ticker}`}
+                                    className="flex flex-col gap-0.5 min-w-[130px] border border-q-border hover:border-primary/60 bg-background/40 px-3 py-2 rounded-sm transition-colors"
+                                >
+                                    <span className="flex items-center justify-between gap-2 font-mono">
+                                        <span className="text-xs font-black text-foreground">{w.ticker}</span>
+                                        <span className={cn("text-[9px] font-bold", w.status === "up" ? "text-q-risk-low" : w.status === "down" ? "text-q-risk-high" : "text-muted-foreground")}>
+                                            {w.alpha}
+                                        </span>
+                                    </span>
+                                    <span className="text-sm font-bold font-mono text-foreground">{w.price}</span>
+                                    <span className="text-[9px] uppercase text-muted-foreground font-bold">Risk {w.risk.toFixed(0)} · {w.signal}</span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
 
             <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
                 {/* Opportunities Table */}

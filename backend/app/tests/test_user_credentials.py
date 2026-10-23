@@ -1,10 +1,11 @@
 """Tests for User Credential Encryption and Storage endpoints."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
+from app.api.v1.users import UserCredentialsUpdate, get_user_credentials, update_user_credentials
 from app.core.security import decrypt_credential, encrypt_credential, mask_credential
-from app.api.v1.users import get_user_credentials, update_user_credentials, UserCredentialsUpdate
 from app.models.user import User
 
 

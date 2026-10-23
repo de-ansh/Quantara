@@ -1,7 +1,6 @@
 """Tests for Recommendations API and Engine."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -147,7 +146,7 @@ async def test_get_recommendations_deactivates_stale_records(mock_current_user, 
         mock_active_prev,
     ]
 
-    response = await get_recommendations(
+    await get_recommendations(
         current_user=mock_current_user,
         db=mock_db,
         limit=5,

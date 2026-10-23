@@ -8,9 +8,8 @@ Implements Markowitz Modern Portfolio Theory (MPT) calculations:
 - Asset-class and cross-sector correlation modeling
 """
 
-from dataclasses import dataclass
 import math
-from typing import Any
+from dataclasses import dataclass
 
 from app.core.logging import get_logger
 
@@ -186,7 +185,7 @@ class PortfolioAnalyticsEngine:
             norm_weights = [w / total_weight for w in weights]
 
         # 2. Portfolio return: linear combination w^T * mu
-        port_return = sum(w * r for w, r in zip(norm_weights, expected_returns))
+        port_return = sum(w * r for w, r in zip(norm_weights, expected_returns, strict=True))
 
         # 3. Correlation matrix R
         corr_matrix = custom_correlations or cls.build_correlation_matrix(tickers, sectors)
@@ -213,7 +212,7 @@ class PortfolioAnalyticsEngine:
         port_volatility = math.sqrt(port_variance)
 
         # 6. Weighted average volatility (volatility assuming correlation = 1.0)
-        weighted_vol = sum(w * v for w, v in zip(norm_weights, volatilities))
+        weighted_vol = sum(w * v for w, v in zip(norm_weights, volatilities, strict=True))
 
         # 7. Diversification benefit percentage
         if weighted_vol > 0:

@@ -417,7 +417,7 @@ class SignalEngine:
         bucket_interval = timedelta(hours=1)
         start_time = ref_time - (bucket_interval * (num_buckets - 1))
 
-        points = []
+        points: list[dict[str, Any]] = []
         for i in range(num_buckets):
             b_time = start_time + (bucket_interval * i)
             time_str = b_time.strftime("%H:00")
@@ -428,16 +428,7 @@ class SignalEngine:
             bucket_signals = [
                 s
                 for s in filtered_signals
-                if w_start
-                <= (
-                    getattr(s, "timestamp", None)
-                    or (
-                        datetime.fromisoformat(s["timestamp"])
-                        if isinstance(s, dict) and isinstance(s.get("timestamp"), str)
-                        else (s.get("timestamp") if isinstance(s, dict) else b_time)
-                    )
-                )
-                <= w_end
+                if (ts := _signal_time(s)) is not None and w_start <= ts <= w_end
             ]
 
             if bucket_signals:
@@ -611,14 +602,167 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
         logger.info(f"Saved signal {signal.signal_type.value} for {signal.ticker} to database")
 
 
-async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
-    """Background task to periodically fetch SEC filings, market sentiment, and generate signals."""
-    import asyncio
+def _signal_time(s: Any) -> datetime | None:
+    """Timestamp of a Signal object or signal dict; None when it is missing or unparseable."""
+    ts = s.get("timestamp") if isinstance(s, dict) else getattr(s, "timestamp", None)
+    if isinstance(ts, str):
+        try:
+            return datetime.fromisoformat(ts)
+        except ValueError:
+            return None
+    return ts if isinstance(ts, datetime) else None
 
+
+# Arbitrary app-wide key for the Postgres advisory lock guarding the signal pass.
+SIGNAL_PASS_LOCK_ID = 7_301_001
+
+
+async def run_signal_pass_if_leader(sec: Any, yahoo: Any, engine: "SignalEngine") -> bool:
+    """Run one signal pass unless another worker holds the lock; returns whether it ran."""
+    from sqlalchemy import text
+
+    from app.core.database import AsyncSessionLocal
+
+    # Session-level lock on a dedicated connection; Postgres frees it if the worker dies.
+    async with AsyncSessionLocal() as lock_session:
+        acquired = (
+            await lock_session.execute(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": SIGNAL_PASS_LOCK_ID}
+            )
+        ).scalar()
+        # Session-level locks outlive the transaction; end it so the connection isn't
+        # left "idle in transaction" for the whole pass.
+        await lock_session.commit()
+        if not acquired:
+            logger.info("Signal pass already running in another worker; skipping")
+            return False
+        try:
+            await _run_signal_pass(sec, yahoo, engine)
+        finally:
+            await lock_session.execute(
+                text("SELECT pg_advisory_unlock(:k)"), {"k": SIGNAL_PASS_LOCK_ID}
+            )
+            await lock_session.commit()
+    return True
+
+
+async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None:
+    """Fetch SEC filings and market sentiment for every tracked ticker and store signals."""
     from sqlalchemy import select
 
     from app.core.database import AsyncSessionLocal
     from app.models.stock import Stock
+
+    logger.info("Running scheduled signal generation pass...")
+
+    # Dynamic active tickers from database if available, falling back to CIK_MAPPING
+    tickers = list(sec.CIK_MAPPING.keys())
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(Stock.ticker)
+            db_res = await session.execute(stmt)
+            db_tickers = db_res.scalars().all()
+            if db_tickers:
+                tickers = list(dict.fromkeys(tickers + list(db_tickers)))
+    except Exception as e:
+        logger.warning(f"Unable to query active tickers from DB, using fallback: {e}")
+
+    async with AsyncSessionLocal() as db:
+        for ticker in tickers:
+            # 1. Fetch Form 4 insider transactions
+            try:
+                logger.info(f"Fetching Form 4 insider transactions for {ticker}")
+                txs = await sec.fetch_insider_transactions(ticker, limit=10)
+
+                if txs:
+                    insider_buy_vol = 0.0
+                    insider_sell_vol = 0.0
+                    insiders_buying = set()
+
+                    for tx in txs:
+                        shares = tx.get("shares") or 0.0
+                        price = tx.get("price_per_share") or 0.0
+                        vol = shares * price
+
+                        if tx.get("classification") == "Buy":
+                            insider_buy_vol += vol
+                            insiders_buying.add(tx.get("reporting_owner"))
+                        elif tx.get("classification") == "Sell":
+                            insider_sell_vol += vol
+
+                    num_insiders = len(insiders_buying)
+
+                    insider_sig = engine.detect_insider_buying(
+                        ticker=ticker,
+                        insider_buy_volume=insider_buy_vol,
+                        insider_sell_volume=insider_sell_vol,
+                        num_insiders_buying=num_insiders,
+                    )
+
+                    if insider_sig:
+                        await save_signal_to_db(db, insider_sig)
+            except Exception as ins_err:
+                logger.warning(f"Error processing insider signals for {ticker}: {ins_err}")
+
+            # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
+            try:
+                facts = await sec.fetch_company_facts(ticker)
+                if facts:
+                    extracted = sec.extract_metrics(facts)
+                    eps_history = extracted.get("eps", [])
+                    if eps_history:
+                        actual_eps = eps_history[-1]["val"]
+                        estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
+
+                        surprise_sig = engine.detect_earnings_surprise(
+                            ticker=ticker,
+                            actual_eps=actual_eps,
+                            estimated_eps=estimated_eps,
+                            timestamp=(
+                                datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
+                                if eps_history[-1].get("filed")
+                                else None
+                            ),
+                        )
+                        if surprise_sig:
+                            await save_signal_to_db(db, surprise_sig)
+            except Exception as earn_err:
+                logger.warning(f"Error processing earnings surprise for {ticker}: {earn_err}")
+
+            # 3. Detect sentiment spikes from news & social mention volume
+            try:
+                sentiment_data = await engine.fetch_sentiment_metrics(ticker, yahoo_provider=yahoo)
+                sentiment_sig = engine.detect_sentiment_spike(
+                    ticker=ticker,
+                    current_sentiment=sentiment_data["current_sentiment"],
+                    baseline_sentiment=sentiment_data["baseline_sentiment"],
+                    mention_volume=sentiment_data["mention_volume"],
+                )
+                if sentiment_sig:
+                    await save_signal_to_db(db, sentiment_sig)
+            except Exception as sent_err:
+                logger.warning(f"Error processing sentiment spike for {ticker}: {sent_err}")
+
+            # 4. Detect institutional buying accumulation
+            try:
+                inst_data = await engine.fetch_institutional_metrics(ticker, yahoo_provider=yahoo)
+                inst_sig = engine.detect_institutional_buying(
+                    ticker=ticker,
+                    institutional_ownership_change=inst_data["ownership_change_pct"],
+                    num_institutions_buying=inst_data["num_institutions_buying"],
+                )
+                if inst_sig:
+                    await save_signal_to_db(db, inst_sig)
+            except Exception as inst_err:
+                logger.warning(f"Error processing institutional accumulation for {ticker}: {inst_err}")
+
+    logger.info("Signal generation pass completed successfully")
+
+
+async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
+    """Background task to periodically fetch SEC filings, market sentiment, and generate signals."""
+    import asyncio
+
     from app.providers.sec import SECProvider
     from app.providers.yahoo import YahooFinanceProvider
 
@@ -630,111 +774,7 @@ async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
 
     while True:
         try:
-            logger.info("Running scheduled signal generation pass...")
-
-            # Dynamic active tickers from database if available, falling back to CIK_MAPPING
-            tickers = list(sec.CIK_MAPPING.keys())
-            try:
-                async with AsyncSessionLocal() as session:
-                    stmt = select(Stock.ticker)
-                    db_res = await session.execute(stmt)
-                    db_tickers = db_res.scalars().all()
-                    if db_tickers:
-                        tickers = list(dict.fromkeys(tickers + list(db_tickers)))
-            except Exception as e:
-                logger.warning(f"Unable to query active tickers from DB, using fallback: {e}")
-
-            async with AsyncSessionLocal() as db:
-                for ticker in tickers:
-                    # 1. Fetch Form 4 insider transactions
-                    try:
-                        logger.info(f"Fetching Form 4 insider transactions for {ticker}")
-                        txs = await sec.fetch_insider_transactions(ticker, limit=10)
-
-                        if txs:
-                            insider_buy_vol = 0.0
-                            insider_sell_vol = 0.0
-                            insiders_buying = set()
-
-                            for tx in txs:
-                                shares = tx.get("shares") or 0.0
-                                price = tx.get("price_per_share") or 0.0
-                                vol = shares * price
-
-                                if tx.get("classification") == "Buy":
-                                    insider_buy_vol += vol
-                                    insiders_buying.add(tx.get("reporting_owner"))
-                                elif tx.get("classification") == "Sell":
-                                    insider_sell_vol += vol
-
-                            num_insiders = len(insiders_buying)
-
-                            insider_sig = engine.detect_insider_buying(
-                                ticker=ticker,
-                                insider_buy_volume=insider_buy_vol,
-                                insider_sell_volume=insider_sell_vol,
-                                num_insiders_buying=num_insiders,
-                            )
-
-                            if insider_sig:
-                                await save_signal_to_db(db, insider_sig)
-                    except Exception as ins_err:
-                        logger.warning(f"Error processing insider signals for {ticker}: {ins_err}")
-
-                    # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
-                    try:
-                        facts = await sec.fetch_company_facts(ticker)
-                        if facts:
-                            extracted = sec.extract_metrics(facts)
-                            eps_history = extracted.get("eps", [])
-                            if eps_history:
-                                actual_eps = eps_history[-1]["val"]
-                                estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
-
-                                surprise_sig = engine.detect_earnings_surprise(
-                                    ticker=ticker,
-                                    actual_eps=actual_eps,
-                                    estimated_eps=estimated_eps,
-                                    timestamp=(
-                                        datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
-                                        if eps_history[-1].get("filed")
-                                        else None
-                                    ),
-                                )
-                                if surprise_sig:
-                                    await save_signal_to_db(db, surprise_sig)
-                    except Exception as earn_err:
-                        logger.warning(f"Error processing earnings surprise for {ticker}: {earn_err}")
-
-                    # 3. Detect sentiment spikes from news & social mention volume
-                    try:
-                        sentiment_data = await engine.fetch_sentiment_metrics(ticker, yahoo_provider=yahoo)
-                        sentiment_sig = engine.detect_sentiment_spike(
-                            ticker=ticker,
-                            current_sentiment=sentiment_data["current_sentiment"],
-                            baseline_sentiment=sentiment_data["baseline_sentiment"],
-                            mention_volume=sentiment_data["mention_volume"],
-                        )
-                        if sentiment_sig:
-                            await save_signal_to_db(db, sentiment_sig)
-                    except Exception as sent_err:
-                        logger.warning(f"Error processing sentiment spike for {ticker}: {sent_err}")
-
-                    # 4. Detect institutional buying accumulation
-                    try:
-                        inst_data = await engine.fetch_institutional_metrics(ticker, yahoo_provider=yahoo)
-                        inst_sig = engine.detect_institutional_buying(
-                            ticker=ticker,
-                            institutional_ownership_change=inst_data["ownership_change_pct"],
-                            num_institutions_buying=inst_data["num_institutions_buying"],
-                        )
-                        if inst_sig:
-                            await save_signal_to_db(db, inst_sig)
-                    except Exception as inst_err:
-                        logger.warning(f"Error processing institutional accumulation for {ticker}: {inst_err}")
-
-            logger.info("Signal generation pass completed successfully")
-
+            await run_signal_pass_if_leader(sec, yahoo, engine)
         except asyncio.CancelledError:
             logger.info("Background signal processing task cancelled")
             raise

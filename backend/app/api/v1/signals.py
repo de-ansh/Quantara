@@ -126,7 +126,9 @@ async def get_sentiment_curve(
         SentimentCurveResponse with time-series points and aggregate trend
     """
     from datetime import datetime, timedelta
+
     from sqlalchemy import desc, select
+
     from app.models.signal import Signal as DBSignal
     from app.services.signal_engine import SignalEngine
 

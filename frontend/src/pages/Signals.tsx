@@ -2,7 +2,6 @@ import { useState } from "react"
 import {
     MessageSquare,
     Download,
-    Maximize2,
     TrendingUp,
     TrendingDown,
     Minus,
@@ -25,23 +24,27 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { useSignals } from "@/hooks/useSignals"
+import { useQuickTickers } from "@/hooks/useStockUniverse"
+import { getCurrencySymbol } from "@/lib/currency"
+import type { ApiSignal } from "@/types/api"
 
+// Signals are per-ticker aggregates from 13F / Form 4 filings, not individual filers.
 interface AccumulationData {
-    fund: string
-    shares: string
+    ticker: string
+    institutions: string
     change: string
-    value: string
     date: string
     type: "buy" | "sell"
 }
 
 interface InsiderData {
-    person: string
-    role: string
-    type: string
-    shares: string
-    price: string
+    ticker: string
+    insiders: string
+    buyVolume: string
+    sellVolume: string
+    net: string
     date: string
+    type: "buy" | "sell"
 }
 
 interface SentimentPoint {
@@ -62,38 +65,10 @@ interface SentimentCurveResponse {
     sentiment_trend: "IMPROVING" | "STABLE" | "DETERIORATING"
 }
 
-const fallbackAccumulationData: AccumulationData[] = [
-    { fund: "Vanguard Group Inc.", shares: "284,541,200", change: "+4.2%", value: "$342.1B", date: "Q4 2023", type: "buy" },
-    { fund: "BlackRock Inc.", shares: "245,120,450", change: "+1.8%", value: "$295.4B", date: "Q4 2023", type: "buy" },
-    { fund: "FMR LLC", shares: "112,450,100", change: "-2.1%", value: "$135.2B", date: "Q4 2023", type: "sell" },
-    { fund: "State Street Corp", shares: "98,120,400", change: "+0.5%", value: "$118.1B", date: "Q4 2023", type: "buy" },
-    { fund: "Price (T.Rowe) Assoc", shares: "85,450,200", change: "+12.4%", value: "$102.8B", date: "Q4 2023", type: "buy" },
-]
-
-const fallbackInsiderData: InsiderData[] = [
-    { person: "Huang Jen Hsun", role: "CEO", type: "Option Exercise", shares: "120,000", price: "$450.22", date: "2024-01-15" },
-    { person: "Kress Colette", role: "CFO", type: "Automatic Sell", shares: "15,400", price: "$520.10", date: "2024-01-12" },
-    { person: "Puri Ajay K", role: "Director", type: "Open Market Buy", shares: "2,500", price: "$490.45", date: "2024-01-10" },
-    { person: "Debesh Chowdry", role: "VP", type: "Stock Award", shares: "8,200", price: "$0.00", date: "2024-01-08" },
-    { person: "Stevens Mark A", role: "Director", type: "Automatic Sell", shares: "25,000", price: "$510.00", date: "2024-01-05" },
-]
-
-const sentimentData: SentimentPoint[] = [
-    { time: "09:00", social: 45, news: 30 },
-    { time: "10:00", social: 52, news: 35 },
-    { time: "11:00", social: 48, news: 42 },
-    { time: "12:00", social: 65, news: 55 },
-    { time: "13:00", social: 70, news: 60 },
-    { time: "14:00", social: 55, news: 65 },
-    { time: "15:00", social: 60, news: 58 },
-    { time: "16:00", social: 75, news: 62 },
-]
-
-const fallbackSignals = [
-    { time: "14:02:45", type: "BULLISH", text: "FED RATE UPDATE: STATEMENTS SUGGEST HAWKISH PAUSE. TECH SECTOR INFLOWS DETECTED." },
-    { time: "13:58:12", type: "NEUTRAL", text: "AAPL EARNINGS CALL PREP: ANALYST CONSENSUS SHIFTING TO OVERWEIGHT FOR Q3." },
-    { time: "13:45:01", type: "BEARISH", text: "CRUDE OIL FUTURES (WTI) BREAKING BELOW $75 SUPPORT. ENERGY EXPOSURE WARNING." },
-] as const;
+const compactMoney = (value: number | undefined, ticker: string) =>
+    value === undefined || value === null
+        ? "—"
+        : `${getCurrencySymbol(ticker)}${Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value)}`
 
 export default function Signals() {
     const { data: liveSignals = [], isLoading: loadingLive } = useSignals({ refetchInterval: 10000 });
@@ -103,7 +78,7 @@ export default function Signals() {
     const { data: sentimentCurve, isLoading: loadingSentiment } = useQuery<SentimentCurveResponse>({
         queryKey: ["signals", "sentiment-curve", selectedSentimentTicker],
         queryFn: async () => {
-            const params: Record<string, any> = { hours: 8 }
+            const params: Record<string, string | number> = { hours: 8 }
             if (selectedSentimentTicker !== "ALL") {
                 params.ticker = selectedSentimentTicker
             }
@@ -116,16 +91,15 @@ export default function Signals() {
     const { data: institutionalSignals = [], isLoading: loadingInst } = useQuery<AccumulationData[]>({
         queryKey: ["signals", "institutional_buying"],
         queryFn: async () => {
-            const res = await apiClient.get("/signals", { params: { signal_type: "institutional_buying", limit: 10 } })
-            return res.data.signals.map((s: any) => {
-                const changePct = s.metadata?.ownership_change_pct || s.strength / 10.0
+            const res = await apiClient.get<{ signals: ApiSignal[] }>("/signals", { params: { signal_type: "institutional_buying", limit: 10 } })
+            return res.data.signals.map((s): AccumulationData => {
+                const changePct: number | undefined = s.metadata?.ownership_change_pct
                 return {
-                    fund: s.metadata?.institution_name || `Institutional Fund (${s.ticker})`,
-                    shares: (s.metadata?.shares_held || Math.round(s.strength * 1250000)).toLocaleString(),
-                    change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`,
-                    value: `$${((s.metadata?.shares_held || s.strength * 1250000) * 150 / 1e9).toFixed(1)}B`,
-                    date: new Date(s.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
-                    type: changePct >= 0 ? "buy" : "sell"
+                    ticker: s.ticker,
+                    institutions: s.metadata?.num_institutions?.toLocaleString() ?? "—",
+                    change: changePct === undefined ? "—" : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`,
+                    date: new Date(s.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+                    type: (changePct ?? 0) >= 0 ? "buy" : "sell"
                 }
             })
         }
@@ -135,26 +109,26 @@ export default function Signals() {
     const { data: insiderSignals = [], isLoading: loadingInsider } = useQuery<InsiderData[]>({
         queryKey: ["signals", "insider_buying"],
         queryFn: async () => {
-            const res = await apiClient.get("/signals", { params: { signal_type: "insider_buying", limit: 10 } })
-            return res.data.signals.map((s: any) => {
-                const isBuy = s.metadata?.buy_volume >= s.metadata?.sell_volume
+            const res = await apiClient.get<{ signals: ApiSignal[] }>("/signals", { params: { signal_type: "insider_buying", limit: 10 } })
+            return res.data.signals.map((s): InsiderData => {
+                const net: number | undefined = s.metadata?.net_buying
                 return {
-                    person: s.metadata?.reporting_owner || `Insider (${s.ticker})`,
-                    role: s.metadata?.owner_relationship || "Director",
-                    type: s.metadata?.transaction_type || (isBuy ? "Purchase" : "Sale"),
-                    shares: (s.metadata?.shares_bought || Math.round(s.strength * 500)).toLocaleString(),
-                    price: `$${(s.metadata?.average_price || 120.0).toFixed(2)}`,
-                    date: new Date(s.timestamp).toISOString().split("T")[0]
+                    ticker: s.ticker,
+                    insiders: s.metadata?.num_insiders?.toLocaleString() ?? "—",
+                    buyVolume: compactMoney(s.metadata?.buy_volume, s.ticker),
+                    sellVolume: compactMoney(s.metadata?.sell_volume, s.ticker),
+                    net: compactMoney(net, s.ticker),
+                    date: new Date(s.timestamp).toISOString().split("T")[0],
+                    type: (net ?? 0) >= 0 ? "buy" : "sell"
                 }
             })
         }
     })
 
-    const finalAccumulation = institutionalSignals.length > 0 ? institutionalSignals : fallbackAccumulationData
-    const finalInsider = insiderSignals.length > 0 ? insiderSignals : fallbackInsiderData
-    const finalSentiment = sentimentCurve?.points && sentimentCurve.points.length > 0
-        ? sentimentCurve.points
-        : sentimentData
+    const finalAccumulation = institutionalSignals
+    const finalInsider = insiderSignals
+    const finalSentiment = sentimentCurve?.points ?? []
+    const universe = useQuickTickers()
 
     const isAnyLoading = loadingLive || loadingInst || loadingInsider || loadingSentiment
 
@@ -162,21 +136,23 @@ export default function Signals() {
         const rows = [
             ...finalAccumulation.map((a) => ({
                 signal_stream: "13F Institutional Accumulation",
-                entity: a.fund,
-                shares: a.shares,
-                change_pct: a.change,
-                holding_value: a.value,
-                date: a.date,
-                action: a.type
+                ticker: a.ticker,
+                filers: a.institutions,
+                ownership_change_pct: a.change,
+                buy_volume: "",
+                sell_volume: "",
+                net_buying: "",
+                date: a.date
             })),
             ...finalInsider.map((ins) => ({
                 signal_stream: "Form 4 Insider Trading",
-                entity: `${ins.person} (${ins.role})`,
-                shares: ins.shares,
-                change_pct: ins.type,
-                holding_value: ins.price,
-                date: ins.date,
-                action: ins.type
+                ticker: ins.ticker,
+                filers: ins.insiders,
+                ownership_change_pct: "",
+                buy_volume: ins.buyVolume,
+                sell_volume: ins.sellVolume,
+                net_buying: ins.net,
+                date: ins.date
             }))
         ]
         exportToCsv("quantara_market_signals.csv", rows)
@@ -190,14 +166,18 @@ export default function Signals() {
                     <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Market Context</span>
                         <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-foreground uppercase tracking-tight">Tech Sector (XLK)</span>
-                            <Badge variant="secondary" className="bg-q-risk-low/10 text-q-risk-low border-none h-4 px-1.5 text-[9px] font-black font-mono">STRONG OVERWEIGHT</Badge>
+                            <span className="text-sm font-black text-foreground uppercase tracking-tight">
+                                {selectedSentimentTicker === "ALL" ? "All Tracked" : selectedSentimentTicker} Sentiment
+                            </span>
+                            <Badge variant="secondary" className="bg-q-risk-low/10 text-q-risk-low border-none h-4 px-1.5 text-[9px] font-black font-mono">
+                                {sentimentCurve?.sentiment_trend ?? "—"}
+                            </Badge>
                         </div>
                     </div>
                     <div className="h-8 w-px bg-q-border hidden sm:block" />
                     <div className="flex flex-col hidden sm:flex font-mono">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Signal Confidence</span>
-                        <span className="text-sm font-black text-primary">94.2% [HIGH]</span>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Signals</span>
+                        <span className="text-sm font-black text-primary">{liveSignals.length}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -230,21 +210,28 @@ export default function Signals() {
                         <Table>
                             <TableHeader className="bg-q-surface font-mono sticky top-0 z-10 border-b border-q-border">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Institution / Fund</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Shares</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Change</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Value</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Institutions</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Ownership Δ</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Date</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
+                                {finalAccumulation.length === 0 && !loadingInst && (
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[10px]">
+                                            No 13F accumulation signals yet
+                                        </TableCell>
+                                    </TableRow>
+                                )}
                                 {finalAccumulation.map((row, i) => (
                                     <TableRow key={i} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
-                                        <TableCell className="px-4 py-2 font-bold text-foreground uppercase tracking-tight">{row.fund}</TableCell>
-                                        <TableCell className="px-4 py-2 text-right text-foreground">{row.shares}</TableCell>
+                                        <TableCell className="px-4 py-2 font-bold text-foreground uppercase tracking-tight">{row.ticker}</TableCell>
+                                        <TableCell className="px-4 py-2 text-right text-foreground">{row.institutions}</TableCell>
                                         <TableCell className={cn("px-4 py-2 text-right font-black", row.type === "buy" ? "text-q-risk-low" : "text-q-risk-high")}>
                                             {row.change}
                                         </TableCell>
-                                        <TableCell className="px-4 py-2 text-right font-black pr-4 text-foreground">{row.value}</TableCell>
+                                        <TableCell className="px-4 py-2 text-right font-black pr-4 text-foreground">{row.date}</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -264,24 +251,29 @@ export default function Signals() {
                         <Table>
                             <TableHeader className="bg-q-surface font-mono sticky top-0 z-10 border-b border-q-border">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Relationship / Name</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-center text-muted-foreground">Trans Type</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Shares</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Price</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker / Insiders</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Bought</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Sold</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Net</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
+                                {finalInsider.length === 0 && !loadingInsider && (
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[10px]">
+                                            No Form 4 insider signals yet
+                                        </TableCell>
+                                    </TableRow>
+                                )}
                                 {finalInsider.map((row, i) => (
                                     <TableRow key={i} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
                                         <TableCell className="px-4 py-2">
-                                            <div className="font-bold text-foreground uppercase leading-none">{row.person}</div>
-                                            <div className="text-[9px] text-muted-foreground uppercase font-black mt-0.5">{row.role}</div>
+                                            <div className="font-bold text-foreground uppercase leading-none">{row.ticker}</div>
+                                            <div className="text-[9px] text-muted-foreground uppercase font-black mt-0.5">{row.insiders} insiders · {row.date}</div>
                                         </TableCell>
-                                        <TableCell className="px-4 py-2 text-center">
-                                            <Badge variant="outline" className="text-[8px] font-black px-1.5 py-0 border-q-border uppercase tracking-widest text-muted-foreground leading-none">{row.type}</Badge>
-                                        </TableCell>
-                                        <TableCell className="px-4 py-2 text-right font-black text-foreground">{row.shares}</TableCell>
-                                        <TableCell className="px-4 py-2 text-right font-black pr-4 text-foreground">{row.price}</TableCell>
+                                        <TableCell className="px-4 py-2 text-right font-black text-foreground">{row.buyVolume}</TableCell>
+                                        <TableCell className="px-4 py-2 text-right font-black text-foreground">{row.sellVolume}</TableCell>
+                                        <TableCell className={cn("px-4 py-2 text-right font-black pr-4", row.type === "buy" ? "text-q-risk-low" : "text-q-risk-high")}>{row.net}</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -304,7 +296,10 @@ export default function Signals() {
                                 <span className="animate-pulse tracking-widest">CONNECTING_TO_NODES...</span>
                             </div>
                         )}
-                        {(liveSignals.length > 0 ? liveSignals : fallbackSignals).map((item, i) => (
+                        {!loadingLive && liveSignals.length === 0 && (
+                            <div className="p-6 text-center text-muted-foreground uppercase tracking-widest">No signals detected yet</div>
+                        )}
+                        {liveSignals.map((item, i) => (
                             <div key={i} className="p-3 border-b border-q-border/30 hover:bg-primary/5 transition-colors cursor-help">
                                 <div className="flex justify-between mb-1">
                                     <span className="text-muted-foreground font-bold">{item.time}</span>
@@ -332,11 +327,11 @@ export default function Signals() {
                             <div className="flex items-center gap-3 text-[9px] font-black font-mono tracking-widest text-muted-foreground">
                                 <div className="flex items-center gap-1.5">
                                     <div className="size-2 bg-primary rounded-full" />
-                                    <span>SOCIAL: {sentimentCurve?.current_social_score?.toFixed(1) ?? "62.4"}%</span>
+                                    <span>SOCIAL: {sentimentCurve?.current_social_score?.toFixed(1) ?? "—"}%</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <div className="size-2 bg-q-risk-low rounded-full" />
-                                    <span>NEWS: {sentimentCurve?.current_news_score?.toFixed(1) ?? "58.2"}%</span>
+                                    <span>NEWS: {sentimentCurve?.current_news_score?.toFixed(1) ?? "—"}%</span>
                                 </div>
                                 {sentimentCurve?.sentiment_trend && (
                                     <Badge
@@ -358,7 +353,7 @@ export default function Signals() {
                         </div>
                         <div className="flex items-center gap-1.5">
                             <div className="flex items-center gap-1">
-                                {["ALL", "NVDA", "AAPL", "MSFT", "XLK", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"].map((t) => (
+                                {["ALL", ...universe].map((t) => (
                                     <button
                                         key={t}
                                         onClick={() => setSelectedSentimentTicker(t)}
@@ -376,7 +371,12 @@ export default function Signals() {
                         </div>
                     </CardHeader>
                     <CardContent className="p-4 flex-1 flex flex-col bg-background/5">
-                        <div className="flex-1 min-h-[280px]">
+                        <div className="flex-1 min-h-[280px] relative">
+                            {!loadingSentiment && finalSentiment.length === 0 && (
+                                <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-muted-foreground uppercase tracking-widest z-10">
+                                    No sentiment data in the last 8 hours
+                                </div>
+                            )}
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={finalSentiment} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                     <defs>
@@ -394,7 +394,7 @@ export default function Signals() {
                                     <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))', fontWeight: 'bold' }} />
                                     <Tooltip
                                         contentStyle={{ backgroundColor: 'hsl(var(--q-surface))', borderColor: 'hsl(var(--q-border))', fontSize: '10px', fontWeight: 'bold' }}
-                                        formatter={(value: any, name: any) => [
+                                        formatter={(value, name) => [
                                             `${Number(value).toFixed(1)}%`,
                                             name === "social" ? "Social Mentions Index" : "News Polarity Index"
                                         ]}

@@ -61,11 +61,8 @@ async def get_recommendations(
     """
     # 1. Fetch user risk profile from current authenticated user
     user_risk_level = current_user.get("risk_level") or "Moderate"
-    user_volatility_tolerance = (
-        float(current_user.get("volatility_tolerance"))
-        if current_user.get("volatility_tolerance") is not None
-        else 60.0
-    )
+    tolerance = current_user.get("volatility_tolerance")
+    user_volatility_tolerance = float(tolerance) if tolerance is not None else 60.0
 
     # 2. Fetch active stocks from database
     stmt = select(Stock)
@@ -82,7 +79,7 @@ async def get_recommendations(
     # 3. Aggregate recent signal strength per ticker across all signals
     sig_stmt = select(Signal.ticker, func.avg(Signal.strength)).group_by(Signal.ticker)
     sig_result = await db.execute(sig_stmt)
-    signal_averages = dict(sig_result.all())
+    signal_averages: dict[str, float] = {t: float(avg) for t, avg in sig_result.all()}
 
     # Build candidate stock dictionaries
     candidate_stocks = [
@@ -118,7 +115,7 @@ async def get_recommendations(
     user_id_int = int(current_user["id"])
     active_stmt = select(Recommendation).where(
         Recommendation.user_id == user_id_int,
-        Recommendation.is_active == True,
+        Recommendation.is_active.is_(True),
     )
     prev_active = (await db.execute(active_stmt)).scalars().all()
     for prev in prev_active:

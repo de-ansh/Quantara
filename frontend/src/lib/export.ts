@@ -9,7 +9,7 @@ export interface CsvColumn {
 
 export function exportToCsv(
     filename: string,
-    rows: Record<string, any>[],
+    rows: Record<string, unknown>[],
     columns?: CsvColumn[]
 ): void {
     if (!rows || rows.length === 0) {

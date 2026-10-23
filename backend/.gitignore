@@ -32,7 +32,6 @@ env/
 
 # UV
 .uv/
-uv.lock
 
 # Environment
 .env
@@ -91,7 +90,6 @@ logs/
 alembic/versions/*.pyc
 
 # Docker
-.dockerignore
 docker-compose.override.yml
 
 # OS files

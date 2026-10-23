@@ -79,21 +79,24 @@ async def test_users_risk_profile_sync(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_custom_headers_parsing(client: AsyncClient):
-    """Test that custom headers are accepted by the endpoints without breaking."""
+async def test_stored_credentials_reach_risk_endpoint(client: AsyncClient):
+    """Server-stored credentials (not request headers) are used by analysis endpoints."""
     reg_payload = {"email": "headers_user@quantara.com", "password": "securepassword123"}
     await client.post("/api/v1/auth/register", json=reg_payload)
     login_resp = await client.post("/api/v1/auth/login", json=reg_payload)
-    token = login_resp.json()["access_token"]
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-OpenAI-API-Key": "sk-proj-testkeyoverride12345",
-        "X-SEC-User-Agent": "TestAgent Override contact@test.com",
-    }
+    headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-    # Verify custom user agent header on risk analysis (triggers _retrieve_data nodes)
+    put_resp = await client.put(
+        "/api/v1/users/credentials",
+        json={
+            "openai_api_key": "sk-proj-testkeyoverride12345",
+            "sec_user_agent": "TestAgent Override contact@test.com",
+        },
+        headers=headers,
+    )
+    assert put_resp.status_code == 200
+
     resp = await client.get("/api/v1/stocks/AAPL/risk", headers=headers)
-    # Regardless of actual external API result (which might fallback), the endpoint itself should not raise a 500 error due to headers.
     assert resp.status_code == 200
 
 

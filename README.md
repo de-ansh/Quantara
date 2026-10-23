@@ -219,6 +219,17 @@ DATABASE_URL=postgresql+asyncpg://quantara:quantara@localhost:5432/quantara
 REDIS_URL=redis://localhost:6379/0
 ```
 
+For production, also set `ENVIRONMENT=production` (which marks the session cookie `Secure`, so HTTPS is required) and a stable `CREDENTIAL_ENCRYPTION_KEY`.
+
+### Sessions & deployment
+
+Sign-in keeps the access token in memory and the refresh token in an `HttpOnly; SameSite=Strict` cookie scoped to `/api/v1/auth`. The browser only sends that cookie when the UI and API are on the **same site** (the same registrable domain; ports may differ). Examples:
+
+- ✅ `localhost:5173` → `localhost:8000`, or `app.example.com` → `api.example.com`
+- ❌ `app.example.com` → `example-api.herokuapp.com` (users are signed out on every reload)
+
+The UI's origin must also be listed in `CORS_ORIGINS`.
+
 ## 🧪 Testing
 
 ### Backend Tests

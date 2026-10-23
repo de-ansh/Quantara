@@ -30,11 +30,11 @@ class Stock(Base):
         Float, nullable=True, comment="Price-to-earnings ratio"
     )
     beta: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Beta vs market")
-    market_cap: Mapped[str | None] = mapped_column(
-        String(50), nullable=True, comment="Market cap formatted"
+    market_cap: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Market cap in listing currency"
     )
-    price: Mapped[str | None] = mapped_column(
-        String(50), nullable=True, comment="Current price formatted"
+    price: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Last price in listing currency"
     )
     alpha_projection: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Alpha projection percentage formatted"

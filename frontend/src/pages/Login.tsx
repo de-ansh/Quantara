@@ -10,7 +10,7 @@ import {
     Monitor
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { api } from "@/lib/api"
+import { api, apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import type { User } from "@/types"
 
@@ -42,8 +42,8 @@ export default function Login() {
 
             login(data.access_token, user)
             navigate("/")
-        } catch (err: any) {
-            setError(err.message || "Failed to authenticate. Please check your credentials.")
+        } catch (err) {
+            setError(apiErrorDetail(err) ?? ((err instanceof Error && err.message) || "Failed to authenticate. Please check your credentials."))
         } finally {
             setIsLoading(false)
         }

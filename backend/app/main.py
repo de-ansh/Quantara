@@ -7,10 +7,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import engine
 from app.core.logging import configure_logging, get_logger
 
 # Configure logging
@@ -25,12 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
 
-    # Create database tables
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
-
-    logger.info("Database tables created")
+    # Schema is owned by Alembic: run `alembic upgrade head` before starting the app.
 
     # Seed database with core stocks if empty
     from sqlalchemy import select
@@ -47,8 +41,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=14.0,
                     research_score=85.0,
-                    price="$189.42",
-                    market_cap="2.94T",
+                    price=189.42,
+                    market_cap=2.94e12,
                     pe_ratio=25.0,
                     beta=1.1,
                     status="up",
@@ -60,8 +54,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=32.0,
                     research_score=90.0,
-                    price="$415.20",
-                    market_cap="3.08T",
+                    price=415.2,
+                    market_cap=3.08e12,
                     pe_ratio=35.0,
                     beta=1.2,
                     status="up",
@@ -73,8 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=68.0,
                     research_score=95.0,
-                    price="$822.79",
-                    market_cap="2.06T",
+                    price=822.79,
+                    market_cap=2.06e12,
                     pe_ratio=75.0,
                     beta=1.7,
                     status="neutral",
@@ -86,8 +80,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Consumer Discretionary",
                     risk_score=72.0,
                     research_score=60.0,
-                    price="$175.22",
-                    market_cap="558.2B",
+                    price=175.22,
+                    market_cap=5.582e11,
                     pe_ratio=60.0,
                     beta=1.5,
                     status="down",
@@ -99,8 +93,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=21.0,
                     research_score=88.0,
-                    price="$151.24",
-                    market_cap="1.89T",
+                    price=151.24,
+                    market_cap=1.89e12,
                     pe_ratio=22.0,
                     beta=1.05,
                     status="up",
@@ -112,8 +106,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Consumer Discretionary",
                     risk_score=28.0,
                     research_score=87.0,
-                    price="$178.12",
-                    market_cap="1.85T",
+                    price=178.12,
+                    market_cap=1.85e12,
                     pe_ratio=40.0,
                     beta=1.15,
                     status="up",
@@ -125,8 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=18.0,
                     research_score=89.0,
-                    price="$496.22",
-                    market_cap="1.26T",
+                    price=496.22,
+                    market_cap=1.26e12,
                     pe_ratio=24.0,
                     beta=1.25,
                     status="up",
@@ -139,8 +133,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Energy",
                     risk_score=34.0,
                     research_score=92.0,
-                    price="₹1,215.40",
-                    market_cap="18.5T",
+                    price=1215.4,
+                    market_cap=1.85e13,
                     pe_ratio=24.5,
                     beta=1.05,
                     status="up",
@@ -152,8 +146,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=22.0,
                     research_score=94.0,
-                    price="₹3,950.00",
-                    market_cap="14.2T",
+                    price=3950.0,
+                    market_cap=1.42e13,
                     pe_ratio=28.0,
                     beta=0.85,
                     status="up",
@@ -165,8 +159,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Financials",
                     risk_score=26.0,
                     research_score=91.0,
-                    price="₹1,680.00",
-                    market_cap="12.8T",
+                    price=1680.0,
+                    market_cap=1.28e13,
                     pe_ratio=19.5,
                     beta=1.10,
                     status="up",
@@ -178,8 +172,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Technology",
                     risk_score=24.0,
                     research_score=90.0,
-                    price="₹1,820.00",
-                    market_cap="7.6T",
+                    price=1820.0,
+                    market_cap=7.6e12,
                     pe_ratio=26.0,
                     beta=0.95,
                     status="up",
@@ -191,8 +185,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Financials",
                     risk_score=28.0,
                     research_score=93.0,
-                    price="₹1,240.00",
-                    market_cap="8.7T",
+                    price=1240.0,
+                    market_cap=8.7e12,
                     pe_ratio=17.5,
                     beta=1.15,
                     status="up",
@@ -204,8 +198,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Consumer Discretionary",
                     risk_score=48.0,
                     research_score=86.0,
-                    price="₹940.00",
-                    market_cap="3.4T",
+                    price=940.0,
+                    market_cap=3.4e12,
                     pe_ratio=16.0,
                     beta=1.45,
                     status="neutral",
@@ -217,8 +211,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Consumer Staples",
                     risk_score=18.0,
                     research_score=89.0,
-                    price="₹480.00",
-                    market_cap="6.0T",
+                    price=480.0,
+                    market_cap=6e12,
                     pe_ratio=25.5,
                     beta=0.65,
                     status="up",
@@ -230,8 +224,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Communication Services",
                     risk_score=25.0,
                     research_score=92.0,
-                    price="₹1,650.00",
-                    market_cap="9.8T",
+                    price=1650.0,
+                    market_cap=9.8e12,
                     pe_ratio=42.0,
                     beta=0.90,
                     status="up",
@@ -243,8 +237,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Industrials",
                     risk_score=30.0,
                     research_score=91.0,
-                    price="₹3,600.00",
-                    market_cap="4.9T",
+                    price=3600.0,
+                    market_cap=4.9e12,
                     pe_ratio=32.0,
                     beta=1.10,
                     status="up",
@@ -256,8 +250,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     sector="Healthcare",
                     risk_score=21.0,
                     research_score=88.0,
-                    price="₹1,850.00",
-                    market_cap="4.4T",
+                    price=1850.0,
+                    market_cap=4.4e12,
                     pe_ratio=34.0,
                     beta=0.70,
                     status="up",
@@ -280,22 +274,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     from app.services.signal_engine import run_periodic_signal_processing
 
-    # Run every hour in production, but let's check settings/env or use 3600 seconds as default
-    bg_task = asyncio.create_task(run_periodic_signal_processing(interval_seconds=3600))
+    # Every worker schedules the hourly pass; a Postgres advisory lock lets only one run it.
+    bg_task = None
+    if settings.enable_background_tasks:
+        bg_task = asyncio.create_task(run_periodic_signal_processing(interval_seconds=3600))
+        logger.info("Background signal processing task started")
     app.state.bg_task = bg_task
-    logger.info("Background signal processing task started")
 
     yield
 
     # Shutdown
     logger.info("Shutting down application")
-    bg_task.cancel()
-    try:
-        await bg_task
-    except asyncio.CancelledError:
-        logger.info("Background signal processing task stopped")
-    except Exception as e:
-        logger.error(f"Error stopping background task: {e}")
+    if bg_task is not None:
+        bg_task.cancel()
+        try:
+            await bg_task
+        except asyncio.CancelledError:
+            logger.info("Background signal processing task stopped")
+        except Exception as e:
+            logger.error(f"Error stopping background task: {e}")
 
     await engine.dispose()
 
@@ -352,6 +349,7 @@ from app.api.v1 import (
     risk,
     signals,
     users,
+    watchlist,
 )
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -365,6 +363,7 @@ app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfoli
 app.include_router(risk.router, prefix="/api/v1", tags=["risk"])
 app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
 app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
+app.include_router(watchlist.router, prefix="/api/v1/watchlist", tags=["watchlist"])
 
 
 @app.exception_handler(Exception)

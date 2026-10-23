@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.providers.transcript import TranscriptChunk
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,7 @@ class AnalysisState(TypedDict, total=False):
     openai_api_key: str | None
     sec_user_agent: str | None
     transcripts: list[dict[str, Any]]
-    transcript_chunks: list[dict[str, Any]]
+    transcript_chunks: list[TranscriptChunk]
     qualitative_excerpts: list[dict[str, Any]]
 
 
@@ -310,10 +311,17 @@ class LLMOrchestrator:
         if beta is None:
             beta = 1.0
 
-        latest_assets = financials.get("total_assets") or 0.0
-        latest_debt = financials.get("total_debt") or 0.0
-        equity = latest_assets - latest_debt
-        debt_to_equity = (latest_debt / equity) if equity > 0 else 0.0
+        # D/E only from reported debt and stockholders' equity; unknown is not "no debt"
+        latest_debt = financials.get("total_debt")
+        latest_equity = financials.get("total_equity")
+        known_de: float | None = (
+            latest_debt / latest_equity
+            if latest_debt is not None and latest_equity and latest_equity > 0
+            else None
+        )
+        state.setdefault("computed_metrics", {})["debt_to_equity"] = known_de
+        # Neutral placeholder when unknown; the risk API reports it in assumed_inputs
+        debt_to_equity = known_de if known_de is not None else 0.5
 
         # Compute quarterly earnings volatility
         net_inc_list = [
@@ -424,6 +432,12 @@ class LLMOrchestrator:
         try:
             # 1. Ingest transcript
             transcript_data = await provider.fetch_transcript(ticker)
+            if transcript_data is None:
+                logger.info(f"No earnings transcript available for {ticker}; skipping RAG")
+                state["transcripts"] = []
+                state["transcript_chunks"] = []
+                state["qualitative_excerpts"] = []
+                return state
             state["transcripts"] = [transcript_data]
             if "raw_data" in state:
                 state["raw_data"]["transcripts"] = [transcript_data]
@@ -432,25 +446,26 @@ class LLMOrchestrator:
             chunks = provider.chunk_transcript(transcript_data, chunk_size=500, chunk_overlap=100)
             state["transcript_chunks"] = chunks
 
-            # 3. Generate embeddings
-            texts = [c["text"] for c in chunks]
-            embeddings = await provider.generate_embeddings(
-                texts, openai_api_key=state.get("openai_api_key")
-            )
-
-            # 4. Formulate qualitative semantic query based on company and risk profile
+            # 3. Formulate qualitative semantic query based on company and risk profile
             risk_band = state.get("risk_classification", {}).get("risk_band", "balanced")
             query = (
                 f"{ticker} revenue growth drivers, operating margin trajectory, capital expenditures, "
                 f"customer demand guidance, supply chain constraints, competitive risks, and {risk_band} outlook"
             )
 
+            # 4. Embed chunks and query in one call so both share the same vector space
+            texts = [c["text"] for c in chunks]
+            embeddings = await provider.generate_embeddings(
+                texts + [query], openai_api_key=state.get("openai_api_key")
+            )
+
             # 5. Retrieve top-K relevant qualitative excerpts
             top_excerpts = provider.retrieve_top_k(
                 query=query,
                 chunks=chunks,
-                chunk_embeddings=embeddings,
+                chunk_embeddings=embeddings[:-1],
                 k=3,
+                query_embedding=embeddings[-1],
             )
             state["qualitative_excerpts"] = top_excerpts
             logger.info(
@@ -625,31 +640,14 @@ Generate a structured analysis based on this data.
             raw_mcap = state.get("raw_data", {}).get("market_cap")
             raw_price = state.get("raw_data", {}).get("price")
 
-            def format_market_cap(val: Any) -> str:
-                if not val:
-                    return "N/A"
+            def to_float(val: Any) -> float | None:
                 try:
-                    val = float(val)
-                    if val >= 1e12:
-                        return f"{val / 1e12:.2f}T"
-                    elif val >= 1e9:
-                        return f"{val / 1e9:.2f}B"
-                    elif val >= 1e6:
-                        return f"{val / 1e6:.2f}M"
-                    return f"{val:,.0f}"
-                except Exception:
-                    return "N/A"
+                    return float(val) if val else None
+                except (TypeError, ValueError):
+                    return None
 
-            def format_price(val: Any) -> str:
-                if not val:
-                    return "N/A"
-                try:
-                    return f"${float(val):,.2f}"
-                except Exception:
-                    return "N/A"
-
-            market_cap_str = format_market_cap(raw_mcap)
-            price_str = format_price(raw_price)
+            market_cap_val = to_float(raw_mcap)
+            price_val = to_float(raw_price)
 
             # Deterministic Alpha Projection
             research_val = research_score or 50.0
@@ -672,8 +670,8 @@ Generate a structured analysis based on this data.
                     research_score=research_score,
                     pe_ratio=pe_ratio,
                     beta=beta,
-                    market_cap=market_cap_str,
-                    price=price_str,
+                    market_cap=market_cap_val,
+                    price=price_val,
                     alpha_projection=alpha_str,
                     status=status,
                 )
@@ -685,8 +683,8 @@ Generate a structured analysis based on this data.
                     stock.sector = sector
                 stock.pe_ratio = pe_ratio
                 stock.beta = beta
-                stock.market_cap = market_cap_str
-                stock.price = price_str
+                stock.market_cap = market_cap_val
+                stock.price = price_val
                 stock.alpha_projection = alpha_str
                 stock.status = status
 

@@ -141,7 +141,7 @@ class TranscriptProvider:
 
     async def fetch_transcript(
         self, ticker: str, quarter: str | None = None, year: int | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """
         Fetch qualitative earnings call transcript or management discussion disclosures.
 
@@ -151,7 +151,8 @@ class TranscriptProvider:
             year: Target fiscal year.
 
         Returns:
-            Dictionary containing metadata, full transcript text, and categorized sections.
+            Dictionary containing metadata, full transcript text, and categorized sections,
+            or None when no transcript is available for the ticker.
         """
         t = ticker.upper()
 
@@ -171,41 +172,8 @@ class TranscriptProvider:
                 "full_text": full_text,
             }
 
-        # Dynamic fallback: Synthesize executive earnings disclosures based on company SEC facts
-        quarter_label = quarter or "Q3"
-        year_val = year or 2024
-        sections = {
-            "executive_remarks": (
-                f"Chief Executive Officer: During {quarter_label} {year_val}, {t} demonstrated solid operational execution "
-                f"across core business segments. We achieved disciplined volume growth while investing in product innovation "
-                f"and strategic customer expansion to solidify long-term market leadership."
-            ),
-            "financial_review": (
-                f"Chief Financial Officer: Operating results reflected resilient gross margins and focused cost containment. "
-                f"Cash flow generation from operations remained robust, enabling strategic capital reinvestment while "
-                f"preserving a conservative liquidity profile and healthy debt coverage ratios."
-            ),
-            "guidance": (
-                f"Management Guidance: For subsequent quarters, {t} anticipates steady mid-single digit revenue expansion. "
-                f"Operating margins are projected to remain stable, with selective efficiency gains offsetting inflationary "
-                f"input cost pressures and targeted technology modernization expenditures."
-            ),
-            "qa_session": (
-                f"Analyst Q&A: Management reiterated strict capital allocation priorities, focusing on internal high-ROIC "
-                f"investments and opportunistic shareholder returns while maintaining balance sheet flexibility."
-            ),
-        }
-        full_text = "\n\n".join(f"[{s.upper()}]: {c}" for s, c in sections.items())
-        return {
-            "ticker": t,
-            "quarter": quarter_label,
-            "year": year_val,
-            "date": f"{year_val}-11-01",
-            "title": f"{t} Earnings Discussion & Qualitative Disclosure",
-            "source": "SEC Form 10-Q Item 2 / MD&A Synthesis",
-            "sections": sections,
-            "full_text": full_text,
-        }
+        # No transcript source for this ticker; never synthesize management quotes.
+        return None
 
     def chunk_transcript(
         self,
@@ -282,7 +250,7 @@ class TranscriptProvider:
                 }
             ]
 
-        sliced = []
+        sliced: list[TranscriptChunk] = []
         start = 0
         current_id = start_id
 
@@ -313,6 +281,16 @@ class TranscriptProvider:
 
         return sliced
 
+    OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+    LOCAL_EMBEDDING_MODEL = "local-hash-v1"
+
+    def embedding_model(self, openai_api_key: str | None = None) -> str:
+        """Name of the vector space generate_embeddings will use for this key."""
+        key = openai_api_key or self.openai_api_key
+        if key and not key.startswith("sk-fake") and len(key) > 20:
+            return self.OPENAI_EMBEDDING_MODEL
+        return self.LOCAL_EMBEDDING_MODEL
+
     async def generate_embeddings(
         self,
         texts: list[str],
@@ -331,25 +309,19 @@ class TranscriptProvider:
         if not texts:
             return []
 
-        key = openai_api_key or self.openai_api_key
+        # The model depends only on the key, never on call success: silently falling back
+        # would mix two vector spaces whose cosine similarities are meaningless together.
+        if self.embedding_model(openai_api_key) == self.OPENAI_EMBEDDING_MODEL:
+            from openai import AsyncOpenAI
 
-        # 1. Attempt OpenAI Embeddings API if key is present and not a mock/dummy
-        if key and not key.startswith("sk-fake") and len(key) > 20:
-            try:
-                from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=openai_api_key or self.openai_api_key)
+            response = await client.embeddings.create(
+                model=self.OPENAI_EMBEDDING_MODEL,
+                input=texts,
+            )
+            return [item.embedding for item in response.data]
 
-                client = AsyncOpenAI(api_key=key)
-                response = await client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=texts,
-                )
-                return [item.embedding for item in response.data]
-            except Exception as e:
-                logger.warning(
-                    f"OpenAI embeddings call failed ({e}), falling back to deterministic local embeddings"
-                )
-
-        # 2. Deterministic high-dimensional semantic hash embedding (1536 dims, normalized unit length)
+        # Offline / no key: deterministic high-dimensional semantic hash embedding (1536 dims, normalized unit length)
         return [self._compute_deterministic_embedding(text) for text in texts]
 
     def _compute_deterministic_embedding(self, text: str, dimensions: int = 1536) -> list[float]:
@@ -418,13 +390,13 @@ class TranscriptProvider:
             if query_embedding
             else np.array(self._compute_deterministic_embedding(query), dtype=np.float32)
         )
-        q_norm = np.linalg.norm(q_vec)
+        q_norm = float(np.linalg.norm(q_vec))
         if q_norm == 0:
             q_norm = 1.0
         q_vec = q_vec / q_norm
 
-        scored_chunks = []
-        for chunk, emb in zip(chunks, chunk_embeddings):
+        scored_chunks: list[dict[str, Any]] = []
+        for chunk, emb in zip(chunks, chunk_embeddings, strict=True):
             c_vec = np.array(emb, dtype=np.float32)
             c_norm = np.linalg.norm(c_vec)
             if c_norm > 0:
@@ -452,6 +424,7 @@ class TranscriptProvider:
         embeddings: list[list[float]],
         document_type: str = "earnings_call",
         period: str | None = None,
+        embedding_model: str | None = None,
     ) -> list[Any]:
         """
         Persist transcript chunks and vector embeddings into PostgreSQL document_chunks table.
@@ -463,11 +436,13 @@ class TranscriptProvider:
             embeddings: Corresponding 1536-dimensional embeddings.
             document_type: Category of document.
             period: Filing or earnings period.
+            embedding_model: Vector space of `embeddings`; defaults to this provider's model.
 
         Returns:
             List of created DocumentChunk model instances.
         """
         from sqlalchemy import select
+
         from app.models.document_chunk import DocumentChunk
         from app.models.stock import Stock
 
@@ -482,14 +457,12 @@ class TranscriptProvider:
                     sector="Technology",
                     risk_score=50.0,
                     research_score=75.0,
-                    price="$150.00",
-                    market_cap="1.0T",
                 )
             )
             await db.flush()
 
         records = []
-        for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+        for i, (chunk, emb) in enumerate(zip(chunks, embeddings, strict=True)):
             record = DocumentChunk(
                 ticker=ticker.upper(),
                 document_type=document_type,
@@ -502,6 +475,7 @@ class TranscriptProvider:
                     "speaker": chunk.get("speaker"),
                     "section": chunk.get("section"),
                     "chunk_id": chunk.get("chunk_id"),
+                    "embedding_model": embedding_model or self.embedding_model(),
                 },
             )
             db.add(record)
@@ -534,16 +508,23 @@ class TranscriptProvider:
             List of matching chunk dicts with similarity scores.
         """
         from sqlalchemy import select
+
         from app.models.document_chunk import DocumentChunk
 
+        model = None
         if query_embedding is None:
             if not query:
                 return []
             embeddings = await self.generate_embeddings([query])
             query_embedding = embeddings[0]
+            model = self.embedding_model()
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
         stmt = select(DocumentChunk, distance_expr.label("distance"))
+
+        if model:
+            # Only compare against chunks embedded in the same vector space as the query.
+            stmt = stmt.where(DocumentChunk.data["embedding_model"].as_string() == model)
 
         if ticker:
             stmt = stmt.where(DocumentChunk.ticker == ticker.upper())

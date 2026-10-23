@@ -450,6 +450,7 @@ class RiskEngine:
         )
 
         if has_valid_df:
+            assert df is not None  # narrowed by has_valid_df
             try:
                 price_col = (
                     "Close"
@@ -470,7 +471,7 @@ class RiskEngine:
                         indices = list(range(total_len))
                     else:
                         step = (total_len - 1) / 11.0
-                        indices = sorted(list({int(round(i * step)) for i in range(12)}))
+                        indices = sorted({int(round(i * step)) for i in range(12)})
 
                     for idx in indices:
                         ts = drawdown.index[idx]
@@ -660,7 +661,7 @@ class RiskEngine:
         is_indian = ticker.upper().endswith(".NS") or ticker.upper().endswith(".BO") or ".NS" in ticker.upper()
 
         if is_indian:
-            scenarios_definitions = [
+            scenarios_definitions: list[dict[str, Any]] = [
                 {
                     "id": "rbi_repo_rate_hike_50bps",
                     "name": "RBI Repo Rate Hike +50bps",

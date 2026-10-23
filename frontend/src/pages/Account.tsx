@@ -1,14 +1,25 @@
 import { useState, useEffect } from "react"
-import apiClient from "@/lib/api"
+import apiClient, { apiErrorDetail } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import ChangePasswordCard from "@/components/ChangePasswordCard"
+import RecentActivityCard from "@/components/RecentActivityCard"
 import { User, ShieldCheck, AlertTriangle, Save, Loader2, Sliders, CheckCircle2 } from "lucide-react"
 
 const AVAILABLE_SECTORS = ["Technology", "Consumer Discretionary", "Financials", "Healthcare", "Energy"]
 
+interface UserProfile {
+    id: number
+    email: string
+    risk_level: string | null
+    volatility_tolerance: number | null
+    investment_horizon: number | null
+    sector_preferences: Record<string, number> | null
+}
+
 export default function Account() {
-    const [user, setUser] = useState<any>(null)
+    const [user, setUser] = useState<UserProfile | null>(null)
     const [loading, setLoading] = useState(true)
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -23,7 +34,7 @@ export default function Account() {
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const res = await apiClient.get("/users/me")
+                const res = await apiClient.get<UserProfile>("/users/me")
                 const data = res.data
                 setUser(data)
                 setRiskLevel(data.risk_level || "Moderate")
@@ -36,7 +47,7 @@ export default function Account() {
                     initialSectors[sec] = data.sector_preferences?.[sec] ?? 30.0
                 })
                 setSectorPrefs(initialSectors)
-            } catch (err: any) {
+            } catch (err) {
                 console.error("Failed to load user profile:", err)
                 setError("Failed to load institutional profile. Please authenticate again.")
             } finally {
@@ -60,13 +71,13 @@ export default function Account() {
                 sector_preferences: sectorPrefs
             }
 
-            const res = await apiClient.post("/users/risk-profile", payload)
+            const res = await apiClient.post<UserProfile>("/users/risk-profile", payload)
             setUser(res.data)
             setSuccess(true)
             setTimeout(() => setSuccess(false), 3000)
-        } catch (err: any) {
+        } catch (err) {
             console.error("Failed to save risk profile:", err)
-            setError(err.response?.data?.detail || "Network error: Failed to persist risk parameters.")
+            setError(apiErrorDetail(err) ?? "Network error: Failed to persist risk parameters.")
         } finally {
             setUpdating(false)
         }
@@ -275,6 +286,9 @@ export default function Account() {
                     </div>
                 </Card>
             </form>
+
+            <ChangePasswordCard />
+            <RecentActivityCard />
         </div>
     )
 }

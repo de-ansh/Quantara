@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import apiClient from "@/lib/api"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import {
     Play,
     Zap,
@@ -13,6 +13,7 @@ import {
     Grid,
     ShieldCheck,
     Download,
+    Save,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { exportToCsv } from "@/lib/export"
@@ -26,6 +27,9 @@ import {
     CartesianGrid,
     Tooltip
 } from "recharts"
+import { useQuickTickers } from "@/hooks/useStockUniverse"
+import { usePortfolios, useSavePortfolio } from "@/hooks/usePortfolios"
+import { useSearchParams } from "react-router-dom"
 
 interface Holding {
     id: string
@@ -41,6 +45,45 @@ const defaultHoldings: Holding[] = [
     { id: "5", ticker: "BIL", weight: 8 },
 ]
 
+type Scenario = "conservative" | "base" | "aggressive"
+
+// API values stay as-is; labels describe what each mode does to the projection.
+const SCENARIOS: { value: Scenario; label: string; title: string }[] = [
+    { value: "conservative", label: "Stress", title: "Higher volatility, lower returns" },
+    { value: "base", label: "Base", title: "Historical estimates as measured" },
+    { value: "aggressive", label: "Optimistic", title: "Lower volatility, higher returns" },
+]
+const scenarioLabel = (v: Scenario) => SCENARIOS.find(s => s.value === v)?.label ?? v
+
+interface TrajectoryPoint {
+    month: number
+    median: number
+    upper_95: number
+    lower_5: number
+}
+
+interface SimulationResult {
+    expected_return: number
+    expected_volatility: number
+    sharpe_ratio: number
+    max_drawdown: number
+    risk_adjusted_return: number
+    portfolio_beta: number
+    trajectory: TrajectoryPoint[]
+    diversification_benefit_pct: number
+    asset_volatilities: Record<string, number>
+    correlation_matrix: Record<string, Record<string, number>>
+    covariance_matrix: number[][]
+    estimated_tickers: string[]
+}
+
+const toPayloadStocks = (holdings: Holding[]) => {
+    const sum = holdings.reduce((acc, h) => acc + h.weight, 0)
+    return holdings.map(h => ({ ticker: h.ticker, weight: sum > 0 ? h.weight / sum : 1 / holdings.length }))
+}
+
+const INVESTMENT_OPTIONS = [100000, 500000, 1000000, 2500000, 5000000]
+
 const INDIAN_PRESET: Holding[] = [
     { id: "in-1", ticker: "RELIANCE.NS", weight: 35 },
     { id: "in-2", ticker: "TCS.NS", weight: 25 },
@@ -48,16 +91,68 @@ const INDIAN_PRESET: Holding[] = [
     { id: "in-4", ticker: "INFY.NS", weight: 15 },
 ]
 
-const QUICK_CHIPS = ["NVDA", "AAPL", "MSFT", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"]
 
 export default function Simulation() {
-    const [holdings, setHoldings] = useState<Holding[]>(defaultHoldings)
+    const quickTickers = useQuickTickers()
+    const [searchParams] = useSearchParams()
+    const { data: portfolios = [] } = usePortfolios()
+    const savePortfolio = useSavePortfolio()
+    const [loaded, setLoaded] = useState<{ id: number; name: string } | null>(null)
+    const [saveName, setSaveName] = useState<string | null>(null)
+    const [saveMessage, setSaveMessage] = useState<{ text: string; ok: boolean } | null>(null)
+    // ?tickers=A,B,C (from Explorer) starts an equal-weight portfolio of those tickers
+    const [initialHoldings] = useState<Holding[]>(() => {
+        const tickers = [...new Set((searchParams.get("tickers") ?? "").split(",").map(t => t.trim().toUpperCase()).filter(Boolean))]
+        return tickers.length
+            ? tickers.map(t => ({ id: `q-${t}`, ticker: t, weight: Math.round(1000 / tickers.length) / 10 }))
+            : defaultHoldings
+    })
+    const [holdings, setHoldings] = useState<Holding[]>(initialHoldings)
     const [newTickerInput, setNewTickerInput] = useState("")
-    const [isLoading, setIsLoading] = useState(false)
-    const [result, setResult] = useState<any>(null)
+    // Holdings as of the last Recalculate/load; editing sliders doesn't refetch until then
+    const [runHoldings, setRunHoldings] = useState<Holding[]>(initialHoldings)
     const [horizonYears, setHorizonYears] = useState(10)
-    const [volatilityAssumption, setVolatilityAssumption] = useState<"conservative" | "base" | "aggressive">("base")
+    const [volatilityAssumption, setVolatilityAssumption] = useState<Scenario>("base")
     const [initialInvestment, setInitialInvestment] = useState(1000000)
+
+    // Load ?portfolio=<id> once its data arrives (state adjusted during render, not in an effect)
+    const requested = portfolios.find(p => String(p.id) === searchParams.get("portfolio"))
+    if (requested && loaded?.id !== requested.id) {
+        setLoaded({ id: requested.id, name: requested.name })
+        setHoldings(requested.positions.map(pos => ({
+            id: `p-${requested.id}-${pos.ticker}`,
+            ticker: pos.ticker,
+            weight: Math.round(pos.weight * 1000) / 10,
+        })))
+        setInitialInvestment(requested.initial_investment)
+        setRunHoldings(requested.positions.map(pos => ({
+            id: `p-${requested.id}-${pos.ticker}`,
+            ticker: pos.ticker,
+            weight: pos.weight * 100,
+        })))
+    }
+
+    const handleSavePortfolio = async (asNew: boolean) => {
+        const name = asNew ? saveName?.trim() : loaded?.name
+        if (!name) return
+        const sum = holdings.reduce((acc, h) => acc + h.weight, 0)
+        if (sum <= 0) return
+        try {
+            const saved = await savePortfolio.mutateAsync({
+                id: asNew ? undefined : loaded?.id,
+                name,
+                description: null,
+                initial_investment: initialInvestment,
+                positions: holdings.map(h => ({ ticker: h.ticker, weight: h.weight / sum })),
+            })
+            setLoaded({ id: saved.id, name: saved.name })
+            setSaveName(null)
+            setSaveMessage({ text: asNew ? `Saved as "${saved.name}"` : `Updated "${saved.name}"`, ok: true })
+        } catch {
+            setSaveMessage({ text: "Could not save portfolio", ok: false })
+        }
+        setTimeout(() => setSaveMessage(null), 3000)
+    }
     const [activeView, setActiveView] = useState<"chart" | "correlation">("chart")
 
     const { data: marketData } = useQuery({
@@ -109,70 +204,62 @@ export default function Simulation() {
         )
     }
 
-    const runSimulation = async () => {
-        setIsLoading(true)
-        try {
-            const sum = holdings.reduce((acc, s) => acc + s.weight, 0)
-            const stocks = holdings.map(item => ({
-                ticker: item.ticker,
-                weight: sum > 0 ? (item.weight / sum) : (1.0 / holdings.length)
-            }))
-
-            const payload = {
-                stocks,
+    const runStocks = toPayloadStocks(runHoldings)
+    const { data: result = null, isFetching: isLoading, refetch } = useQuery<SimulationResult>({
+        queryKey: ["simulate", runStocks, initialInvestment, horizonYears, volatilityAssumption],
+        queryFn: async () => {
+            const { data } = await apiClient.post<SimulationResult>("/portfolio/simulate", {
+                stocks: runStocks,
                 initial_investment: initialInvestment,
                 time_horizon_months: horizonYears * 12,
                 volatility_mode: volatilityAssumption,
-            }
+            })
+            return data
+        },
+        enabled: runStocks.length > 0,
+        placeholderData: keepPreviousData,
+    })
 
-            const res = await apiClient.post("/portfolio/simulate", payload)
-            setResult(res.data)
-        } catch (error) {
-            console.error("Simulation run failed:", error)
-        } finally {
-            setIsLoading(false)
-        }
+    const runSimulation = () => {
+        const unchanged = JSON.stringify(toPayloadStocks(holdings)) === JSON.stringify(runStocks)
+        if (unchanged) refetch()
+        else setRunHoldings(holdings)
     }
-
-    // Trigger simulation on mount and parameter change
-    useEffect(() => {
-        runSimulation()
-    }, [horizonYears, volatilityAssumption, initialInvestment])
 
     // Bind metrics from simulation result
     const metrics = [
         { 
             label: "Forward Sharpe", 
-            value: result ? result.sharpe_ratio.toFixed(2) : "1.84", 
-            sub: "CI: 1.6 - 2.1", 
+            value: result ? result.sharpe_ratio.toFixed(2) : "—", 
+            sub: "Risk-free 2.5%", 
             color: "text-green-400" 
         },
         { 
             label: "Portfolio Beta", 
-            value: result ? (result.expected_volatility / 14).toFixed(2) : "0.92", 
-            sub: "Rel. to S&P 500" 
+            value: result ? result.portfolio_beta.toFixed(2) : "—", 
+            sub: isIndianPortfolio ? "Rel. to NIFTY 50" : "Rel. to S&P 500" 
         },
         { 
             label: "Est. Annual Return", 
-            value: result ? `${result.expected_return.toFixed(1)}%` : "8.5%", 
-            sub: `${volatilityAssumption.toUpperCase()} Assumption`, 
+            value: result ? `${result.expected_return.toFixed(1)}%` : "—", 
+            sub: `${scenarioLabel(volatilityAssumption).toUpperCase()} Scenario`, 
             color: "text-green-500" 
         },
         { 
             label: "Volatility (Std Dev)", 
-            value: result ? `${result.expected_volatility.toFixed(1)}%` : "12.4%", 
+            value: result ? `${result.expected_volatility.toFixed(1)}%` : "—", 
             sub: "Annualized MPT" 
         },
         { 
             label: "Diversification Benefit", 
-            value: result ? `+${(result.diversification_benefit_pct || 0).toFixed(1)}%` : "+14.2%", 
+            value: result ? `+${(result.diversification_benefit_pct || 0).toFixed(1)}%` : "—", 
             sub: "Covariance Dampening", 
             color: "text-emerald-400" 
         },
         { 
             label: "Max Drawdown Projection", 
-            value: result ? `${result.max_drawdown.toFixed(1)}%` : "-12.3%", 
-            sub: "Stressed Scenario", 
+            value: result ? `${result.max_drawdown.toFixed(1)}%` : "—", 
+            sub: "Trailing 1Y", 
             color: "text-red-500" 
         },
     ]
@@ -182,18 +269,18 @@ export default function Simulation() {
     const handleExportSimulation = () => {
         if (!chartData || chartData.length === 0) return
 
-        const rows = chartData.map((pt: any) => ({
+        const rows = chartData.map((pt) => ({
             year: Number((pt.month / 12).toFixed(1)),
             month: pt.month,
             median_value: Math.round(pt.median || 0),
             upper_95_ci: Math.round(pt.upper_95 || 0),
             lower_5_ci: Math.round(pt.lower_5 || 0),
-            expected_return_pct: result?.expected_return?.toFixed(2) ?? "8.5",
-            volatility_pct: result?.expected_volatility?.toFixed(2) ?? "12.4",
-            sharpe_ratio: result?.sharpe_ratio?.toFixed(2) ?? "1.84",
+            expected_return_pct: result?.expected_return?.toFixed(2) ?? "",
+            volatility_pct: result?.expected_volatility?.toFixed(2) ?? "",
+            sharpe_ratio: result?.sharpe_ratio?.toFixed(2) ?? "",
         }))
 
-        exportToCsv("quantara_monte_carlo_trajectory.csv", rows)
+        exportToCsv("quantara_portfolio_projection.csv", rows)
     }
 
     return (
@@ -344,7 +431,7 @@ export default function Simulation() {
 
                                 {/* Quick Chips */}
                                 <div className="flex flex-wrap gap-1 mt-2">
-                                    {QUICK_CHIPS.map(chip => (
+                                    {quickTickers.filter(t => !holdings.some(h => h.ticker === t)).map(chip => (
                                         <button
                                             key={chip}
                                             onClick={() => handleAddTicker(chip)}
@@ -363,33 +450,21 @@ export default function Simulation() {
                                 Volatility Scenario
                             </h3>
                             <div className="grid grid-cols-3 border border-border overflow-hidden rounded-sm">
-                                <button 
-                                    onClick={() => setVolatilityAssumption("conservative")}
-                                    className={cn(
-                                        "py-2 text-[9px] font-bold uppercase transition-colors", 
-                                        volatilityAssumption === "conservative" ? "bg-primary text-white" : "hover:bg-muted"
-                                    )}
-                                >
-                                    Cons.
-                                </button>
-                                <button 
-                                    onClick={() => setVolatilityAssumption("base")}
-                                    className={cn(
-                                        "py-2 text-[9px] font-bold uppercase transition-colors border-x border-border", 
-                                        volatilityAssumption === "base" ? "bg-primary text-white" : "hover:bg-muted"
-                                    )}
-                                >
-                                    Base
-                                </button>
-                                <button 
-                                    onClick={() => setVolatilityAssumption("aggressive")}
-                                    className={cn(
-                                        "py-2 text-[9px] font-bold uppercase transition-colors", 
-                                        volatilityAssumption === "aggressive" ? "bg-primary text-white" : "hover:bg-muted"
-                                    )}
-                                >
-                                    Aggr.
-                                </button>
+                                {SCENARIOS.map((sc, idx) => (
+                                    <button
+                                        key={sc.value}
+                                        onClick={() => setVolatilityAssumption(sc.value)}
+                                        title={sc.title}
+                                        aria-pressed={volatilityAssumption === sc.value}
+                                        className={cn(
+                                            "py-2 text-[9px] font-bold uppercase transition-colors",
+                                            idx === 1 && "border-x border-border",
+                                            volatilityAssumption === sc.value ? "bg-primary text-white" : "hover:bg-muted"
+                                        )}
+                                    >
+                                        {sc.label}
+                                    </button>
+                                ))}
                             </div>
                         </section>
 
@@ -405,11 +480,12 @@ export default function Simulation() {
                                     onChange={(e) => setInitialInvestment(Number(e.target.value))}
                                     className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
                                 >
-                                    <option value={100000}>{currSym}100,000</option>
-                                    <option value={500000}>{currSym}500,000</option>
-                                    <option value={1000000}>{currSym}1,000,000</option>
-                                    <option value={2500000}>{currSym}2,500,000</option>
-                                    <option value={5000000}>{currSym}5,000,000</option>
+                                    {(INVESTMENT_OPTIONS.includes(initialInvestment)
+                                        ? INVESTMENT_OPTIONS
+                                        : [...INVESTMENT_OPTIONS, initialInvestment].sort((a, b) => a - b)
+                                    ).map(v => (
+                                        <option key={v} value={v}>{currSym}{v.toLocaleString()}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="flex items-center justify-between">
@@ -439,6 +515,62 @@ export default function Simulation() {
                             <Play className="size-3.5 fill-current" />
                             {isLoading ? "Simulating..." : "Recalculate Simulation"}
                         </button>
+
+                        {/* Save to portfolios */}
+                        <section className="space-y-2 pt-2 border-t border-border">
+                            {loaded && (
+                                <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider truncate">
+                                    Loaded: <span className="text-foreground font-bold">{loaded.name}</span>
+                                </p>
+                            )}
+                            {saveName === null ? (
+                                <div className="flex gap-2">
+                                    {loaded && (
+                                        <button
+                                            onClick={() => handleSavePortfolio(false)}
+                                            disabled={savePortfolio.isPending}
+                                            className="flex-1 border border-border hover:bg-muted text-[10px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1 disabled:opacity-50"
+                                        >
+                                            <Save className="size-3" /> Update
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setSaveName(loaded ? `${loaded.name} (copy)` : "")}
+                                        className="flex-1 border border-border hover:bg-muted text-[10px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1"
+                                    >
+                                        <Save className="size-3" /> {loaded ? "Save as new" : "Save as portfolio"}
+                                    </button>
+                                </div>
+                            ) : (
+                                <form
+                                    className="flex gap-2"
+                                    onSubmit={(e) => { e.preventDefault(); handleSavePortfolio(true) }}
+                                >
+                                    <input
+                                        autoFocus
+                                        value={saveName}
+                                        maxLength={100}
+                                        onChange={(e) => setSaveName(e.target.value)}
+                                        placeholder="Portfolio name"
+                                        aria-label="Portfolio name"
+                                        className="flex-1 min-w-0 bg-background border border-border text-[11px] px-2 py-1.5 rounded-sm text-foreground outline-none focus:border-primary"
+                                    />
+                                    <button type="submit" disabled={!saveName.trim() || savePortfolio.isPending}
+                                        className="bg-primary text-white text-[10px] font-bold uppercase px-3 rounded-sm disabled:opacity-40">
+                                        Save
+                                    </button>
+                                    <button type="button" onClick={() => setSaveName(null)}
+                                        className="text-[10px] text-muted-foreground hover:text-foreground px-1">
+                                        Cancel
+                                    </button>
+                                </form>
+                            )}
+                            {saveMessage && (
+                                <p role="status" className={cn("text-[10px] font-mono", saveMessage.ok ? "text-emerald-400" : "text-q-risk-high")}>
+                                    {saveMessage.text}
+                                </p>
+                            )}
+                        </section>
                     </div>
                 </aside>
 
@@ -447,10 +579,15 @@ export default function Simulation() {
                     <div className="flex-1 p-6 flex flex-col">
                         <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Monte Carlo Simulation</h2>
+                                <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Portfolio Projection</h2>
                                 <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-                                    Projected Portfolio Trajectory | {volatilityAssumption.toUpperCase()} SCENARIO
+                                    Lognormal 5th–95th Percentile Bands | {scenarioLabel(volatilityAssumption).toUpperCase()} SCENARIO
                                 </p>
+                                {result && result.estimated_tickers.length > 0 && (
+                                    <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest mt-1">
+                                        No price history for {result.estimated_tickers.join(", ")}: using asset-class estimates
+                                    </p>
+                                )}
                             </div>
                             <div className="flex items-center gap-2">
                                 {/* View Toggle */}
@@ -482,7 +619,7 @@ export default function Simulation() {
                                     <Download className="size-3" /> Export CSV
                                 </button>
 
-                                {result?.diversification_benefit_pct > 0 && (
+                                {result && result.diversification_benefit_pct > 0 && (
                                     <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[9px] font-bold uppercase tracking-widest text-emerald-400 font-mono">
                                         <ShieldCheck className="size-3" />
                                         +{result.diversification_benefit_pct.toFixed(1)}% MPT Gain
@@ -495,7 +632,7 @@ export default function Simulation() {
                         <div className="flex-1 relative border border-border bg-card/30 overflow-hidden shadow-inner flex flex-col">
                             {isLoading && chartData.length === 0 ? (
                                 <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
-                                    RUNNING_MONTE_CARLO_SIMULATION_PASS...
+                                    RUNNING_PORTFOLIO_PROJECTION...
                                 </div>
                             ) : activeView === "chart" ? (
                                 <div className="flex-1 p-4">
@@ -523,7 +660,7 @@ export default function Simulation() {
                                                     fontSize: '10px',
                                                     fontFamily: 'monospace'
                                                 }}
-                                                formatter={(val: any) => [`${currSym}${parseFloat(val).toLocaleString()}`, ""]}
+                                                formatter={(val) => [`${currSym}${Number(val).toLocaleString()}`, ""]}
                                                 labelFormatter={(label) => `Month: ${label}`}
                                             />
                                             <Area type="monotone" dataKey="upper_95" stroke="none" fill="rgba(30, 93, 241, 0.05)" />
@@ -595,7 +732,7 @@ export default function Simulation() {
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
                                 <span className="text-[10px] text-destructive font-black tracking-tighter uppercase">
-                                    {result ? `${result.max_drawdown.toFixed(1)}% MAX DD` : "-24.2% MAX DD"}
+                                    {result ? `${result.max_drawdown.toFixed(1)}% MAX DD` : "— MAX DD"}
                                 </span>
                             </div>
                             <div className="flex-1 h-32 bg-card/20 border border-border/50 relative p-3 overflow-hidden group">

@@ -257,7 +257,7 @@ See `.env.example` for all required variables:
 
 The Docker setup includes:
 - **PostgreSQL 15** - Main database
-- **Redis 7** - Caching and Celery broker
+- **Redis 7** - Rate limiting
 - **Backend** - FastAPI application
 
 All services include health checks and automatic restarts.
