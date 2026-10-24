@@ -24,6 +24,12 @@ Database-backed auth and profiles, audit logging, live Yahoo/SEC data wiring, de
 ### Follow-up (Oct 2026)
 Change password, httpOnly cookie sessions, disclosed risk assumptions and correct D/E, verified portfolio tickers, data-freshness labels, watchlist alerts, account activity, Explorer pagination, stock comparison, and a route error boundary.
 
+### Core features (Oct 2026)
+Prices that refresh every 15 minutes, holdings with live P&L and sector allocation, and a price-history chart on Stock Detail.
+
+### Compliance & reach (Oct 2026)
+Daily fundamentals refresh, price alerts, personal-data export and account deletion, an investment-advice notice, and a phone layout.
+
 ---
 
 ## 🔜 Next
@@ -32,3 +38,5 @@ Change password, httpOnly cookie sessions, disclosed risk assumptions and correc
 | :--- | :--- | :--- |
 | Accounts | Email-based password reset (needs an email provider) | QTR-AUTH-05 |
 | Research | Real earnings-transcript source (only AAPL/NVDA/MSFT excerpts exist) | QTR-RAG-03 |
+| Data | Licensed market-data vendor (Yahoo/yfinance is unofficial; not for commercial use) | — |
+| Ops | Error monitoring (e.g. Sentry) and scheduled database backups | — |

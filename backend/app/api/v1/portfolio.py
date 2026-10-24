@@ -1,6 +1,6 @@
 """Portfolio simulation and management API endpoints."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, status
@@ -20,9 +20,11 @@ class PositionBase(BaseModel):
     """Position request schema."""
 
     ticker: str = Field(..., pattern=r"^[A-Za-z0-9.\-^]{1,20}$")
-    weight: float = Field(..., ge=0, le=1, description="Portfolio weight (0.0 - 1.0)")
+    weight: float = Field(
+        0.0, ge=0, le=1, description="Portfolio weight (0.0 - 1.0); derived from shares when all are 0"
+    )
     shares: float = Field(0.0, ge=0)
-    cost_basis: float = Field(0.0, ge=0)
+    cost_basis: float = Field(0.0, ge=0, description="Average cost per share")
 
 
 class PositionResponse(PositionBase):
@@ -63,20 +65,50 @@ class PortfolioResponse(BaseModel):
     updated_at: datetime
 
 
+def _is_indian(ticker: str) -> bool:
+    return ticker.upper().endswith((".NS", ".BO"))
+
+
 async def _verify_positions(db: DBSession, positions: list[PositionBase]) -> None:
-    """Reject duplicate or unknown tickers before anything is written."""
+    """Reject duplicate or unknown tickers before anything is written.
+
+    When no weights are given but every position has shares, weights are set from market value.
+    """
     tickers = [p.ticker.upper() for p in positions]
     if len(set(tickers)) != len(tickers):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Each ticker can appear only once in a portfolio",
         )
-    unknown = [t for t in tickers if await get_or_track_stock(db, t) is None]
+    stocks = {t: await get_or_track_stock(db, t) for t in tickers}
+    unknown = [t for t, s in stocks.items() if s is None]
+    known = {t: s for t, s in stocks.items() if s is not None}
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"No market data found for: {', '.join(unknown)}",
         )
+
+    if positions and all(p.weight == 0 for p in positions):
+        if not all(p.shares > 0 for p in positions):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Give each holding either a weight or a share count",
+            )
+        if len({_is_indian(t) for t in tickers}) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Mixed USD/INR portfolios need explicit weights",
+            )
+        values = [p.shares * (known[p.ticker.upper()].price or 0.0) for p in positions]
+        total = sum(values)
+        if total <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No current prices to derive weights from; enter weights instead",
+            )
+        for p, v in zip(positions, values, strict=True):
+            p.weight = v / total
 
 
 class PortfoliosListResponse(BaseModel):
@@ -323,6 +355,150 @@ async def delete_portfolio(
     await db.delete(portfolio)
     await db.commit()
     return None
+
+
+class HoldingPerformance(BaseModel):
+    """Live valuation of one position (amounts in the listing currency)."""
+
+    ticker: str
+    name: str
+    sector: str | None
+    currency: str
+    shares: float
+    avg_cost: float
+    price: float | None
+    market_value: float | None
+    cost_value: float
+    unrealized_pnl: float | None
+    unrealized_pnl_pct: float | None
+    day_change: float | None
+    weight_by_value: float | None = Field(None, description="Share of its currency's market value")
+
+
+class CurrencyTotals(BaseModel):
+    """Portfolio totals for holdings in one currency (USD and INR are never summed)."""
+
+    currency: str
+    market_value: float
+    cost_value: float
+    unrealized_pnl: float
+    unrealized_pnl_pct: float | None
+    day_change: float
+    sector_allocation: dict[str, float] = Field(
+        default_factory=dict, description="Sector -> % of this currency's market value"
+    )
+
+
+class PortfolioPerformance(BaseModel):
+    """Holdings valuation and P&L for a portfolio."""
+
+    portfolio_id: int
+    holdings: list[HoldingPerformance]
+    totals: list[CurrencyTotals]
+    prices_as_of: datetime | None = Field(None, description="Oldest price timestamp used")
+    weight_only_tickers: list[str] = Field(
+        default_factory=list, description="Positions without a share count (not valued)"
+    )
+
+
+PRICE_MAX_AGE = timedelta(minutes=15)
+
+
+@router.get("/{portfolio_id}/performance", response_model=PortfolioPerformance)
+async def get_portfolio_performance(
+    portfolio_id: int,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PortfolioPerformance:
+    """Value each position at the latest price, refreshing quotes older than 15 minutes."""
+    from app.services.price_service import refresh_prices
+
+    portfolio = (
+        await db.execute(
+            select(Portfolio).where(
+                Portfolio.id == portfolio_id, Portfolio.user_id == int(current_user["id"])
+            )
+        )
+    ).scalar_one_or_none()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    positions = [p for p in portfolio.positions if p.shares > 0]
+    weight_only = [p.ticker for p in portfolio.positions if p.shares <= 0]
+    tickers = [p.ticker for p in positions]
+
+    stocks = {
+        s.ticker: s
+        for s in (await db.execute(select(Stock).where(Stock.ticker.in_(tickers)))).scalars()
+    }
+    cutoff = datetime.utcnow() - PRICE_MAX_AGE
+
+    def _is_stale(t: str) -> bool:
+        updated = stocks[t].price_updated_at if t in stocks else None
+        return updated is None or updated < cutoff
+
+    stale = [t for t in tickers if _is_stale(t)]
+    if stale:
+        await refresh_prices(db, stale)
+
+    holdings: list[HoldingPerformance] = []
+    for pos in positions:
+        stock = stocks.get(pos.ticker)
+        price = stock.price if stock else None
+        prev = stock.previous_close if stock else None
+        cost_value = pos.shares * pos.cost_basis
+        market_value = pos.shares * price if price is not None else None
+        pnl = market_value - cost_value if market_value is not None and pos.cost_basis > 0 else None
+        holdings.append(
+            HoldingPerformance(
+                ticker=pos.ticker,
+                name=(stock.name if stock and stock.name else pos.ticker),
+                sector=stock.sector if stock else None,
+                currency="INR" if _is_indian(pos.ticker) else "USD",
+                shares=pos.shares,
+                avg_cost=pos.cost_basis,
+                price=price,
+                market_value=market_value,
+                cost_value=cost_value,
+                unrealized_pnl=pnl,
+                unrealized_pnl_pct=(pnl / cost_value * 100) if pnl is not None and cost_value else None,
+                day_change=pos.shares * (price - prev) if price is not None and prev else None,
+            )
+        )
+
+    totals: list[CurrencyTotals] = []
+    for currency in sorted({h.currency for h in holdings}):
+        group = [h for h in holdings if h.currency == currency]
+        mv = sum(h.market_value or 0.0 for h in group)
+        costed = [h for h in group if h.unrealized_pnl is not None]
+        cost = sum(h.cost_value for h in costed)
+        pnl = sum(h.unrealized_pnl or 0.0 for h in costed)
+        sectors: dict[str, float] = {}
+        for h in group:
+            if h.market_value:
+                h.weight_by_value = round(h.market_value / mv * 100, 2) if mv else None
+                key = h.sector or "Unclassified"
+                sectors[key] = sectors.get(key, 0.0) + h.market_value
+        totals.append(
+            CurrencyTotals(
+                currency=currency,
+                market_value=round(mv, 2),
+                cost_value=round(cost, 2),
+                unrealized_pnl=round(pnl, 2),
+                unrealized_pnl_pct=round(pnl / cost * 100, 2) if cost else None,
+                day_change=round(sum(h.day_change or 0.0 for h in group), 2),
+                sector_allocation={k: round(v / mv * 100, 2) for k, v in sectors.items()} if mv else {},
+            )
+        )
+
+    times = [s.price_updated_at for t in tickers if (s := stocks.get(t)) and s.price_updated_at]
+    return PortfolioPerformance(
+        portfolio_id=portfolio.id,
+        holdings=holdings,
+        totals=totals,
+        prices_as_of=min(times) if times else None,
+        weight_only_tickers=weight_only,
+    )
 
 
 class PortfolioStock(BaseModel):

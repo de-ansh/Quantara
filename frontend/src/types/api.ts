@@ -9,7 +9,8 @@ export interface StockSearchItem {
     signal: string
     alpha: string
     status: string
-    updated_at: string | null
+    change_pct: number | null
+    price_updated_at: string | null
     sector: string | null
     pe: number | null
     beta: number | null

@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { Briefcase, Pencil, Play, Plus, RefreshCw, Trash2, X } from "lucide-react"
+import { Link, useNavigate } from "react-router-dom"
+import { Briefcase, Pencil, Play, Plus, RefreshCw, Trash2, Wallet, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn, timeAgo } from "@/lib/utils"
@@ -17,6 +17,8 @@ interface DraftRow {
     key: string
     ticker: string
     weight: string // percent, as typed
+    shares: string
+    cost: string // average cost per share
 }
 
 interface Draft {
@@ -30,7 +32,7 @@ interface Draft {
 const SEGMENT_COLORS = ["bg-primary", "bg-emerald-500", "bg-amber-500", "bg-sky-500", "bg-rose-500", "bg-violet-500"]
 
 let rowSeq = 0
-const newRow = (ticker = "", weight = ""): DraftRow => ({ key: `row-${rowSeq++}`, ticker, weight })
+const newRow = (ticker = "", weight = "", shares = "", cost = ""): DraftRow => ({ key: `row-${rowSeq++}`, ticker, weight, shares, cost })
 
 const emptyDraft = (): Draft => ({ name: "", description: "", initialInvestment: "100000", rows: [newRow()] })
 
@@ -39,7 +41,12 @@ const toDraft = (p: Portfolio): Draft => ({
     name: p.name,
     description: p.description ?? "",
     initialInvestment: String(p.initial_investment),
-    rows: p.positions.map(pos => newRow(pos.ticker, String(Math.round(pos.weight * 1000) / 10))),
+    rows: p.positions.map(pos => newRow(
+        pos.ticker,
+        String(Math.round(pos.weight * 1000) / 10),
+        pos.shares ? String(pos.shares) : "",
+        pos.cost_basis ? String(pos.cost_basis) : "",
+    )),
 })
 
 const portfolioCurrency = (p: Portfolio) => getCurrencySymbol(p.positions.find(pos => /\.(NS|BO)$/i.test(pos.ticker))?.ticker)
@@ -52,6 +59,11 @@ function validate(draft: Draft): string | null {
     if (rows.length === 0) return "Add at least one holding."
     const tickers = rows.map(r => r.ticker.trim().toUpperCase())
     if (new Set(tickers).size !== tickers.length) return "Each ticker can appear only once."
+    if (rows.some(r => Number(r.shares) < 0 || Number(r.cost) < 0)) return "Shares and cost can't be negative."
+    if (!rows.some(r => r.weight.trim())) {
+        // No weights: the server weights by market value, which needs a share count everywhere
+        return rows.every(r => Number(r.shares) > 0) ? null : "Enter weights, or a share count for every holding."
+    }
     if (rows.some(r => !(Number(r.weight) > 0))) return "Every holding needs a weight above 0%."
     const total = rows.reduce((sum, r) => sum + Number(r.weight), 0)
     if (Math.abs(total - 100) > 0.5) return `Weights add up to ${total.toFixed(1)}%; they must total 100%.`
@@ -83,7 +95,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
         }
         setError(null)
         const rows = draft.rows.filter(r => r.ticker.trim())
-        const sum = rows.reduce((s, r) => s + Number(r.weight), 0)
+        const sum = rows.reduce((s, r) => s + (Number(r.weight) || 0), 0)
         try {
             await save.mutateAsync({
                 id: draft.id,
@@ -91,7 +103,12 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                 description: draft.description.trim() || null,
                 initial_investment: Number(draft.initialInvestment),
                 // Rescale so rounding in the inputs still sums to exactly 1
-                positions: rows.map(r => ({ ticker: r.ticker.trim().toUpperCase(), weight: Number(r.weight) / sum })),
+                positions: rows.map(r => ({
+                    ticker: r.ticker.trim().toUpperCase(),
+                    weight: sum > 0 ? Number(r.weight) / sum : 0,
+                    shares: Number(r.shares) || 0,
+                    cost_basis: Number(r.cost) || 0,
+                })),
             })
             onClose()
         } catch (err) {
@@ -144,6 +161,10 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                             </button>
                         </div>
                     </div>
+                    <p className="text-[10px] text-muted-foreground">
+                        Weights drive the simulator. Add shares and average cost to track value and P&amp;L, or leave
+                        weights blank to weight by market value.
+                    </p>
                     {draft.rows.map(row => (
                         <div key={row.key} className="flex items-center gap-2">
                             <input className={cn(inputClass, "font-mono uppercase flex-1")} placeholder="Ticker (e.g. AAPL, TCS.NS)"
@@ -155,6 +176,12 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                                     onChange={e => updateRow(row.key, { weight: e.target.value })} />
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
                             </div>
+                            <input className={cn(inputClass, "font-mono w-24")} type="number" min={0} step="any" placeholder="Shares"
+                                aria-label={`Shares of ${row.ticker || "holding"}`} value={row.shares}
+                                onChange={e => updateRow(row.key, { shares: e.target.value })} />
+                            <input className={cn(inputClass, "font-mono w-28")} type="number" min={0} step="any" placeholder="Avg cost"
+                                aria-label={`Average cost of ${row.ticker || "holding"}`} value={row.cost}
+                                onChange={e => updateRow(row.key, { cost: e.target.value })} />
                             <button type="button" aria-label="Remove holding" disabled={draft.rows.length <= 1}
                                 onClick={() => setDraft(d => ({ ...d, rows: d.rows.filter(r => r.key !== row.key) }))}
                                 className="p-2 text-muted-foreground hover:text-q-risk-high disabled:opacity-30">
@@ -191,7 +218,9 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
         <Card className="bg-q-surface border-q-border shadow-none flex flex-col">
             <CardHeader className="p-4 pb-2 space-y-1">
                 <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-sm font-bold text-foreground">{portfolio.name}</CardTitle>
+                    <CardTitle className="text-sm font-bold text-foreground">
+                        <Link to={`/portfolios/${portfolio.id}`} className="hover:text-primary">{portfolio.name}</Link>
+                    </CardTitle>
                     <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                         Updated {timeAgo(portfolio.updated_at)}
                     </span>
@@ -223,6 +252,9 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
                 <div className="flex items-center gap-2 pt-2 mt-auto border-t border-q-border/50">
                     <Button size="sm" onClick={() => navigate(`/simulation?portfolio=${portfolio.id}`)} className="gap-1">
                         <Play className="size-3" /> Simulate
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/portfolios/${portfolio.id}`)} className="gap-1">
+                        <Wallet className="size-3" /> Holdings
                     </Button>
                     <Button size="sm" variant="ghost" onClick={onEdit} className="gap-1">
                         <Pencil className="size-3" /> Edit

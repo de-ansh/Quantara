@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.api.v1.research import StockSearchItem, to_search_item
 from app.core.dependencies import CurrentUser, DBSession
+from app.models.price_alert import PriceAlert
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
@@ -33,14 +34,16 @@ class WatchlistResponse(BaseModel):
 
 
 class WatchlistAlert(BaseModel):
-    """A signal detected for a watched ticker."""
+    """A signal on a watched ticker, or a triggered price alert."""
 
     id: int
+    kind: str = "signal"  # signal | price
     ticker: str
     signal_type: str
     strength: float
     detected_at: datetime
     unread: bool
+    message: str | None = None
 
 
 class WatchlistAlertsResponse(BaseModel):
@@ -130,6 +133,36 @@ async def get_watchlist_alerts(current_user: CurrentUser, db: DBSession) -> Watc
         )
         for s in rows
     ]
+
+    # Price alerts that fired in the same window (any ticker, watched or not)
+    fired = (
+        await db.execute(
+            select(PriceAlert)
+            .where(
+                PriceAlert.user_id == user_id,
+                PriceAlert.triggered_at >= datetime.utcnow() - ALERT_WINDOW,
+            )
+            .limit(50)
+        )
+    ).scalars().all()
+    for a in fired:
+        assert a.triggered_at is not None  # filtered above
+        alerts.append(
+            WatchlistAlert(
+                id=a.id,
+                kind="price",
+                ticker=a.ticker,
+                signal_type=f"price_{a.direction}",
+                strength=0.0,
+                detected_at=a.triggered_at,
+                unread=seen_at is None or a.triggered_at > seen_at,
+                message=(
+                    f"Price {a.direction} {a.target_price:,.2f} "
+                    f"(now {a.triggered_price:,.2f})" if a.triggered_price else None
+                ),
+            )
+        )
+    alerts.sort(key=lambda a: a.detected_at, reverse=True)
     return WatchlistAlertsResponse(alerts=alerts, unread_count=sum(a.unread for a in alerts))
 
 

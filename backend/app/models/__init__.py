@@ -3,6 +3,7 @@
 from app.models.audit import AuditLog
 from app.models.document_chunk import DocumentChunk
 from app.models.portfolio import Portfolio, PortfolioPosition
+from app.models.price_alert import PriceAlert
 from app.models.recommendation import Recommendation
 from app.models.research import ResearchReport
 from app.models.signal import Signal
@@ -21,4 +22,5 @@ __all__ = [
     "PortfolioPosition",
     "DocumentChunk",
     "WatchlistItem",
+    "PriceAlert",
 ]

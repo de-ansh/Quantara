@@ -130,3 +130,31 @@ async def test_search_pagination(client, db_session):
     assert [s["ticker"] for s in page["stocks"]] == ["BBB", "CCC"]
     assert page["total_count"] == 4
     assert (await client.get("/api/v1/stocks/search?limit=500", headers=headers)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_price_history_endpoint(client, monkeypatch):
+    from app.api.v1 import research
+
+    calls = []
+
+    def _fake(ticker, range_):
+        calls.append((ticker, range_))
+        return [research.PricePoint(date="2026-01-01", close=100.0),
+                research.PricePoint(date="2026-02-01", close=125.0)]
+
+    monkeypatch.setattr(research, "_download_history", _fake)
+    monkeypatch.setattr(research, "_history_cache", {})
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "test@quantara.com", "password": "password"}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    resp = (await client.get("/api/v1/stocks/aapl/history?range=6M", headers=headers)).json()
+    assert resp["ticker"] == "AAPL" and resp["change_pct"] == 25.0 and len(resp["points"]) == 2
+    await client.get("/api/v1/stocks/AAPL/history?range=6M", headers=headers)
+    assert calls == [("AAPL", "6M")]  # second call served from cache
+
+    assert (await client.get("/api/v1/stocks/AAPL/history?range=2D", headers=headers)).status_code == 422
+    monkeypatch.setattr(research, "_download_history", lambda t, r: [])
+    assert (await client.get("/api/v1/stocks/NOPE/history", headers=headers)).status_code == 404

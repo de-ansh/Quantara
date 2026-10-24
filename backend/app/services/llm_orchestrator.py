@@ -672,6 +672,7 @@ Generate a structured analysis based on this data.
                     beta=beta,
                     market_cap=market_cap_val,
                     price=price_val,
+                    price_updated_at=datetime.utcnow() if price_val is not None else None,
                     alpha_projection=alpha_str,
                     status=status,
                 )
@@ -684,7 +685,10 @@ Generate a structured analysis based on this data.
                 stock.pe_ratio = pe_ratio
                 stock.beta = beta
                 stock.market_cap = market_cap_val
-                stock.price = price_val
+                # Keep the last known quote rather than blanking it when this run had none
+                if price_val is not None:
+                    stock.price = price_val
+                    stock.price_updated_at = datetime.utcnow()
                 stock.alpha_projection = alpha_str
                 stock.status = status
 

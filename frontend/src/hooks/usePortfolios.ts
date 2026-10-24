@@ -55,3 +55,45 @@ export const useDeletePortfolio = () => {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
     });
 };
+
+export interface HoldingPerformance {
+    ticker: string;
+    name: string;
+    sector: string | null;
+    currency: 'USD' | 'INR';
+    shares: number;
+    avg_cost: number;
+    price: number | null;
+    market_value: number | null;
+    cost_value: number;
+    unrealized_pnl: number | null;
+    unrealized_pnl_pct: number | null;
+    day_change: number | null;
+    weight_by_value: number | null;
+}
+
+export interface CurrencyTotals {
+    currency: 'USD' | 'INR';
+    market_value: number;
+    cost_value: number;
+    unrealized_pnl: number;
+    unrealized_pnl_pct: number | null;
+    day_change: number;
+    sector_allocation: Record<string, number>;
+}
+
+export interface PortfolioPerformance {
+    portfolio_id: number;
+    holdings: HoldingPerformance[];
+    totals: CurrencyTotals[];
+    prices_as_of: string | null;
+    weight_only_tickers: string[];
+}
+
+export const usePortfolioPerformance = (id: number) => {
+    return useQuery({
+        queryKey: ['portfolioPerformance', id],
+        queryFn: async () => (await apiClient.get<PortfolioPerformance>(`/portfolio/${id}/performance`)).data,
+        refetchInterval: 5 * 60 * 1000,
+    });
+};

@@ -66,6 +66,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
     const location = useLocation()
     const navigate = useNavigate()
     const [sidebarOpen, setSidebarOpen] = useState(true)
+    // Phones get an off-canvas drawer instead; it closes whenever the route changes
+    const [mobileNavOpen, setMobileNavOpen] = useState(false)
+    const showLabels = sidebarOpen || mobileNavOpen
+    const [navPath, setNavPath] = useState(location.pathname)
+    if (navPath !== location.pathname) {
+        setNavPath(location.pathname)
+        setMobileNavOpen(false)
+    }
     const [commandOpen, setCommandOpen] = useState(false)
 
     useEffect(() => {
@@ -106,16 +114,21 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
     return (
         <div className="min-h-screen bg-background text-foreground flex overflow-hidden">
-            {/* Sidebar */}
+            {mobileNavOpen && (
+                <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+            )}
+            {/* Sidebar: drawer on phones, collapsible column from md up */}
             <aside
                 className={cn(
                     "bg-card border-r border-border transition-all duration-300 flex flex-col shrink-0",
-                    sidebarOpen ? "w-64" : "w-16"
+                    "fixed inset-y-0 left-0 z-40 w-64 md:static md:z-auto md:translate-x-0",
+                    mobileNavOpen ? "translate-x-0" : "-translate-x-full",
+                    sidebarOpen ? "md:w-64" : "md:w-16"
                 )}
             >
                 <div className="h-16 flex items-center px-4 border-b border-border shrink-0">
                     <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
-                    {sidebarOpen && <span className="ml-3 font-bold text-lg tracking-tight">QUANTARA</span>}
+                    {showLabels && <span className="ml-3 font-bold text-lg tracking-tight">QUANTARA</span>}
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 custom-scrollbar">
@@ -131,14 +144,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                 )}
                             >
-                                <item.icon className={cn("h-5 w-5 shrink-0", sidebarOpen ? "mr-3" : "mx-auto")} />
-                                {sidebarOpen && item.name}
+                                <item.icon className={cn("h-5 w-5 shrink-0", showLabels ? "mr-3" : "mx-auto")} />
+                                {showLabels && item.name}
                             </Link>
                         ))}
                     </div>
 
                     <div className="mt-8 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        {sidebarOpen ? "System" : "—"}
+                        {showLabels ? "System" : "—"}
                     </div>
 
                     <div className="px-2 space-y-1 mt-2">
@@ -153,8 +166,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                 )}
                             >
-                                <item.icon className={cn("h-5 w-5 shrink-0", sidebarOpen ? "mr-3" : "mx-auto")} />
-                                {sidebarOpen && item.name}
+                                <item.icon className={cn("h-5 w-5 shrink-0", showLabels ? "mr-3" : "mx-auto")} />
+                                {showLabels && item.name}
                             </Link>
                         ))}
                     </div>
@@ -164,11 +177,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        onClick={() => (mobileNavOpen ? setMobileNavOpen(false) : setSidebarOpen(!sidebarOpen))}
                         className="w-full justify-start text-muted-foreground hover:text-foreground px-2"
                     >
-                        {sidebarOpen ? <X className="h-5 w-5 mr-3" /> : <Menu className="h-5 w-5 mx-auto" />}
-                        {sidebarOpen && "Collapse Sidebar"}
+                        {showLabels ? <X className="h-5 w-5 mr-3" /> : <Menu className="h-5 w-5 mx-auto" />}
+                        {showLabels && (mobileNavOpen ? "Close Menu" : "Collapse Sidebar")}
                     </Button>
                 </div>
             </aside>
@@ -176,8 +189,17 @@ export default function MainLayout({ children }: MainLayoutProps) {
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {/* Header */}
-                <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 shrink-0 z-10 transition-colors">
-                    <div className="flex-1 flex items-center">
+                <header className="h-16 bg-card border-b border-border flex items-center justify-between gap-2 px-3 md:px-6 shrink-0 z-10 transition-colors">
+                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setMobileNavOpen(true)}
+                            className="md:hidden shrink-0 text-muted-foreground"
+                            aria-label="Open navigation"
+                        >
+                            <Menu className="h-5 w-5" />
+                        </Button>
                         <button
                             type="button"
                             onClick={() => setCommandOpen(true)}
@@ -193,7 +215,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                         </button>
                     </div>
 
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center gap-1 md:gap-4 shrink-0">
                         {marketData?.india_market && (
                             <div className="hidden xl:flex items-center gap-3 text-xs font-mono bg-muted/40 border border-border px-3 py-1.5 rounded-full shadow-inner">
                                 <div className="flex items-center gap-1.5">
@@ -235,7 +257,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                             variant="ghost"
                             size="icon"
                             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                            className="text-muted-foreground hover:text-foreground transition-transform active:scale-95"
+                            className="hidden sm:inline-flex text-muted-foreground hover:text-foreground transition-transform active:scale-95"
                             title="Toggle Theme"
                         >
                             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -245,7 +267,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <div className="flex items-center space-x-3 group cursor-pointer outline-none select-none">
-                                    <div className="flex flex-col items-end mr-1">
+                                    <div className="hidden sm:flex flex-col items-end mr-1">
                                         <span className="text-sm font-bold tracking-tight text-foreground">{user?.email?.split('@')[0] || "Trader"}</span>
                                         <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Institutional Node</span>
                                     </div>

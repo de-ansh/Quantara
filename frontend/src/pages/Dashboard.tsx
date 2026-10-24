@@ -18,6 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useRecommendations } from "@/hooks/useRecommendations"
 import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
+import DayChange from "@/components/DayChange"
+import AdviceNotice from "@/components/AdviceNotice"
 
 interface StatItem {
     label: string
@@ -200,9 +202,7 @@ export default function Dashboard() {
                                 >
                                     <span className="flex items-center justify-between gap-2 font-mono">
                                         <span className="text-xs font-black text-foreground">{w.ticker}</span>
-                                        <span className={cn("text-[9px] font-bold", w.status === "up" ? "text-q-risk-low" : w.status === "down" ? "text-q-risk-high" : "text-muted-foreground")}>
-                                            {w.alpha}
-                                        </span>
+                                        <DayChange pct={w.change_pct} className="text-[9px]" />
                                     </span>
                                     <span className="text-sm font-bold font-mono text-foreground">{w.price}</span>
                                     <span className="text-[9px] uppercase text-muted-foreground font-bold">Risk {w.risk.toFixed(0)} · {w.signal}</span>
@@ -223,6 +223,7 @@ export default function Dashboard() {
                             <Filter className="size-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors" />
                         </div>
                     </div>
+                    <AdviceNotice className="px-4 py-2 border-b border-q-border/50 shrink-0" />
                     <div className="flex-1 overflow-auto custom-scrollbar relative">
                         {isLoadingOpportunities && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">

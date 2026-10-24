@@ -303,16 +303,27 @@ export default function Simulation() {
                         </span>
                     </nav>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="hidden sm:flex items-center gap-4">
                     {marketData?.vix?.value && (
                         <div className="flex items-center gap-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono font-bold uppercase tracking-widest">
                             VIX: {marketData.vix.value} ({marketData.vix.change_percent >= 0 ? "+" : ""}{marketData.vix.change_percent}%)
                         </div>
                     )}
-                    <div className="flex items-center gap-2 px-2 py-1 bg-green-500/10 border border-green-500/20 text-green-400 text-[9px] font-bold uppercase tracking-widest">
-                        <div className="size-1.5 bg-green-500 rounded-full animate-pulse" />
-                        Market Open
-                    </div>
+                    {(() => {
+                        // Real session state for the portfolio's market (from /market/status)
+                        const session = isIndianPortfolio ? marketData?.india_market?.status : marketData?.us_market?.status
+                        if (!session) return null
+                        const open = session === "OPEN"
+                        return (
+                            <div className={cn(
+                                "flex items-center gap-2 px-2 py-1 border text-[9px] font-bold uppercase tracking-widest",
+                                open ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-muted/40 border-border text-muted-foreground"
+                            )}>
+                                <div className={cn("size-1.5 rounded-full", open ? "bg-green-500 animate-pulse" : "bg-zinc-500")} />
+                                {isIndianPortfolio ? "NSE" : "US"} market {open ? "open" : session.toLowerCase()}
+                            </div>
+                        )
+                    })()}
                 </div>
             </div>
 
@@ -328,9 +339,9 @@ export default function Simulation() {
                 </div>
             )}
 
-            <main className="flex flex-1 overflow-hidden">
-                {/* Controls Sidebar */}
-                <aside className="w-80 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+            <main className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
+                {/* Controls Sidebar (stacks above the projection on phones) */}
+                <aside className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-card flex flex-col shrink-0 md:overflow-y-auto custom-scrollbar">
                     <div className="p-3 border-b border-border bg-muted/20 flex items-center justify-between">
                         <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             <SlidersHorizontal className="size-3.5" />
@@ -576,8 +587,8 @@ export default function Simulation() {
 
                 {/* Workspace Panel */}
                 <div className="flex-1 flex flex-col min-w-0">
-                    <div className="flex-1 p-6 flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
+                    <div className="flex-1 p-3 md:p-6 flex flex-col min-h-[420px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Portfolio Projection</h2>
                                 <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">

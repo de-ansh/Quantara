@@ -619,31 +619,12 @@ SIGNAL_PASS_LOCK_ID = 7_301_001
 
 async def run_signal_pass_if_leader(sec: Any, yahoo: Any, engine: "SignalEngine") -> bool:
     """Run one signal pass unless another worker holds the lock; returns whether it ran."""
-    from sqlalchemy import text
+    from app.core.database import run_exclusive
 
-    from app.core.database import AsyncSessionLocal
-
-    # Session-level lock on a dedicated connection; Postgres frees it if the worker dies.
-    async with AsyncSessionLocal() as lock_session:
-        acquired = (
-            await lock_session.execute(
-                text("SELECT pg_try_advisory_lock(:k)"), {"k": SIGNAL_PASS_LOCK_ID}
-            )
-        ).scalar()
-        # Session-level locks outlive the transaction; end it so the connection isn't
-        # left "idle in transaction" for the whole pass.
-        await lock_session.commit()
-        if not acquired:
-            logger.info("Signal pass already running in another worker; skipping")
-            return False
-        try:
-            await _run_signal_pass(sec, yahoo, engine)
-        finally:
-            await lock_session.execute(
-                text("SELECT pg_advisory_unlock(:k)"), {"k": SIGNAL_PASS_LOCK_ID}
-            )
-            await lock_session.commit()
-    return True
+    ran = await run_exclusive(SIGNAL_PASS_LOCK_ID, lambda: _run_signal_pass(sec, yahoo, engine))
+    if not ran:
+        logger.info("Signal pass already running in another worker; skipping")
+    return ran
 
 
 async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None:
