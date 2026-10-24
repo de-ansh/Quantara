@@ -193,15 +193,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     alpha_projection="+16.4%",
                 ),
                 Stock(
-                    ticker="TATAMOTORS.NS",
+                    # Post-demerger listing (TATAMOTORS.NS is delisted); quotes and
+                    # fundamentals are filled in by the price refresh job.
+                    ticker="TMCV.NS",
                     name="Tata Motors Ltd",
                     sector="Consumer Discretionary",
                     risk_score=48.0,
                     research_score=86.0,
-                    price=940.0,
-                    market_cap=3.4e12,
-                    pe_ratio=16.0,
-                    beta=1.45,
                     status="neutral",
                     alpha_projection="+9.8%",
                 ),
@@ -269,30 +267,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.error(f"Error seeding database: {seed_err}")
             await session.rollback()
 
-    # Start periodic background task for signal processing
+    # Background jobs. Every worker schedules them; Postgres advisory locks let one run each pass.
     import asyncio
 
+    from app.services.price_service import run_periodic_price_refresh
     from app.services.signal_engine import run_periodic_signal_processing
 
-    # Every worker schedules the hourly pass; a Postgres advisory lock lets only one run it.
-    bg_task = None
+    bg_tasks: list[asyncio.Task] = []
     if settings.enable_background_tasks:
-        bg_task = asyncio.create_task(run_periodic_signal_processing(interval_seconds=3600))
-        logger.info("Background signal processing task started")
-    app.state.bg_task = bg_task
+        bg_tasks = [
+            asyncio.create_task(run_periodic_signal_processing(interval_seconds=3600)),
+            asyncio.create_task(run_periodic_price_refresh()),
+        ]
+        logger.info("Background signal processing and price refresh tasks started")
+    app.state.bg_tasks = bg_tasks
 
     yield
 
     # Shutdown
     logger.info("Shutting down application")
-    if bg_task is not None:
-        bg_task.cancel()
-        try:
-            await bg_task
-        except asyncio.CancelledError:
-            logger.info("Background signal processing task stopped")
-        except Exception as e:
-            logger.error(f"Error stopping background task: {e}")
+    for task in bg_tasks:
+        task.cancel()
+    results = await asyncio.gather(*bg_tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+            logger.error(f"Error stopping background task: {result}")
 
     await engine.dispose()
 
@@ -344,6 +343,7 @@ from app.api.v1 import (
     auth,
     market,
     portfolio,
+    price_alerts,
     recommendations,
     research,
     risk,
@@ -364,6 +364,7 @@ app.include_router(risk.router, prefix="/api/v1", tags=["risk"])
 app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
 app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
 app.include_router(watchlist.router, prefix="/api/v1/watchlist", tags=["watchlist"])
+app.include_router(price_alerts.router, prefix="/api/v1/alerts/price", tags=["alerts"])
 
 
 @app.exception_handler(Exception)

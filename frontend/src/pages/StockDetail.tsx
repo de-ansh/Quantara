@@ -25,6 +25,10 @@ import { Badge } from "@/components/ui/badge"
 import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
 import WatchlistButton from "@/components/WatchlistButton"
 import type { ApiSignal, StockSearchItem } from "@/types/api"
+import DayChange from "@/components/DayChange"
+import PriceChart from "@/components/PriceChart"
+import PriceAlertForm from "@/components/PriceAlertForm"
+import AdviceNotice from "@/components/AdviceNotice"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -159,13 +163,13 @@ export default function StockDetail() {
                         <div className="size-1 rounded-full bg-border" />
                         <span>{sector}</span>
                         <div className="size-1 rounded-full bg-border" />
-                        <span>Price: <strong className="text-foreground">{price}</strong></span>
+                        <span>Price: <strong className="text-foreground">{price}</strong> <DayChange pct={searchData?.change_pct} className="text-xs" /></span>
                         <div className="size-1 rounded-full bg-border" />
                         <span>MCap: <strong className="text-foreground">{marketCap}</strong></span>
-                        {searchData?.updated_at && (
+                        {searchData?.price_updated_at && (
                             <>
                                 <div className="size-1 rounded-full bg-border" />
-                                <span className="text-xs">Data as of {timeAgo(searchData.updated_at)}</span>
+                                <span className="text-xs">Price as of {timeAgo(searchData.price_updated_at)}</span>
                             </>
                         )}
                     </div>
@@ -207,6 +211,11 @@ export default function StockDetail() {
                 </div>
             </section>
 
+            <div className="mb-4">
+                <PriceAlertForm ticker={activeTicker} />
+            </div>
+            <PriceChart ticker={activeTicker} />
+
             {/* Navigation Tabs */}
             <section className="mb-6 flex gap-1 border-b border-border overflow-x-auto no-scrollbar">
                 {TABS.map((tab) => (
@@ -224,6 +233,8 @@ export default function StockDetail() {
                     </button>
                 ))}
             </section>
+
+            <AdviceNotice className="mb-4" />
 
             {/* Main Content Layout */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

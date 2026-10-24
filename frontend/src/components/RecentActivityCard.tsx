@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<string, string> = {
     change_password: "Password change",
     update_credentials: "API credentials updated",
     update_profile: "Risk profile updated",
+    export_data: "Data exported",
 }
 
 export default function RecentActivityCard() {

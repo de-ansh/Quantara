@@ -36,6 +36,15 @@ class Stock(Base):
     price: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Last price in listing currency"
     )
+    previous_close: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Prior session close, for day change"
+    )
+    price_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="When price was last fetched from the market"
+    )
+    fundamentals_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="When market cap / P/E / beta were last fetched"
+    )
     alpha_projection: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Alpha projection percentage formatted"
     )

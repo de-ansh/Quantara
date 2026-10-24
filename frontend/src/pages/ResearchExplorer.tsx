@@ -24,6 +24,7 @@ import { exportToCsv } from "@/lib/export"
 import { isIndianAsset, getMarketLabel } from "@/lib/currency"
 import WatchlistButton from "@/components/WatchlistButton"
 import type { StockSearchItem } from "@/types/api"
+import DayChange from "@/components/DayChange"
 
 const PAGE_SIZE = 25
 
@@ -37,6 +38,7 @@ export default function ResearchExplorer() {
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
+    const [filtersOpen, setFiltersOpen] = useState(false)
     // Page resets whenever the filters change (derived during render, no effect needed)
     const filterKey = JSON.stringify([query, selectedMarket, peLimit, betaLimit, selectedSignals])
     const [pageState, setPageState] = useState({ key: filterKey, page: 0 })
@@ -125,9 +127,12 @@ export default function ResearchExplorer() {
 
     return (
         <div className="flex flex-col h-full overflow-hidden bg-background transition-colors">
-            <div className="flex flex-1 overflow-hidden">
-                {/* Sidebar: Filters */}
-                <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto no-scrollbar">
+            <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
+                {/* Sidebar: Filters (collapsible panel on phones) */}
+                <aside className={cn(
+                    "w-full md:w-72 border-b md:border-b-0 md:border-r border-border bg-card flex-col shrink-0 md:overflow-y-auto no-scrollbar",
+                    filtersOpen ? "flex" : "hidden md:flex"
+                )}>
                     <div className="p-4 border-b border-border flex items-center justify-between">
                         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Institutional Filters</h2>
                         <button 
@@ -248,10 +253,18 @@ export default function ResearchExplorer() {
                 </aside>
 
                 {/* Main Workspace */}
-                <main className="flex-1 flex flex-col">
+                <main className="flex-1 flex flex-col min-w-0">
                     {/* Results Top Bar */}
-                    <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card/50 transition-colors">
-                        <div className="flex items-center gap-4 flex-grow max-w-lg">
+                    <div className="min-h-14 py-2 border-b border-border px-3 md:px-6 flex flex-wrap items-center justify-between gap-2 bg-card/50 transition-colors">
+                        <div className="flex items-center gap-2 md:gap-4 flex-grow max-w-lg min-w-0">
+                            <button
+                                type="button"
+                                onClick={() => setFiltersOpen(o => !o)}
+                                aria-expanded={filtersOpen}
+                                className="md:hidden text-xs font-bold border border-border rounded-sm px-2 py-1 shrink-0"
+                            >
+                                Filters
+                            </button>
                             <h2 className="text-sm font-semibold text-foreground select-none">
                                 {isLoading ? "Syncing..." : `${totalCount} Results Discovery`}
                             </h2>
@@ -409,7 +422,7 @@ export default function ResearchExplorer() {
                                             <div className="grid grid-cols-2 gap-2 text-[10px] font-mono py-2 border-y border-border/40">
                                                 <div>
                                                     <div className="text-muted-foreground text-[9px]">Price</div>
-                                                    <div className="font-bold text-foreground text-xs">{row.price}</div>
+                                                    <div className="font-bold text-foreground text-xs">{row.price} <DayChange pct={row.change_pct} className="text-[10px]" /></div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-muted-foreground text-[9px]">Market Cap</div>
@@ -502,7 +515,9 @@ export default function ResearchExplorer() {
                                                     <WatchlistButton ticker={row.ticker} />
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 text-foreground/90 font-bold">{row.price}</td>
+                                            <td className="px-6 py-4 text-foreground/90 font-bold">
+                                                {row.price} <DayChange pct={row.change_pct} className="text-[10px] ml-1" />
+                                            </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
                                             <td className="px-6 py-4">
                                                 <span className={cn(

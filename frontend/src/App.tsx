@@ -23,6 +23,7 @@ const Signals = lazy(() => import("@/pages/Signals"))
 const Risk = lazy(() => import("@/pages/Risk"))
 const Simulation = lazy(() => import("@/pages/Simulation"))
 const Portfolios = lazy(() => import("@/pages/Portfolios"))
+const PortfolioDetail = lazy(() => import("@/pages/PortfolioDetail"))
 const Compare = lazy(() => import("@/pages/Compare"))
 const Login = lazy(() => import("@/pages/Login"))
 const Register = lazy(() => import("@/pages/Register"))
@@ -49,6 +50,7 @@ function App() {
                   <Route path="/risk/:ticker" element={<ProtectedRoute><Risk /></ProtectedRoute>} />
                   <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
                   <Route path="/portfolios" element={<ProtectedRoute><Portfolios /></ProtectedRoute>} />
+                  <Route path="/portfolios/:id" element={<ProtectedRoute><PortfolioDetail /></ProtectedRoute>} />
                   <Route path="/compare" element={<ProtectedRoute><Compare /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />

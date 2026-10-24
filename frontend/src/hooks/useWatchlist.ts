@@ -11,6 +11,7 @@ export interface WatchlistEntry {
     signal: string;
     alpha: string;
     status: string;
+    change_pct: number | null;
 }
 
 const KEY = ['watchlist'];

@@ -293,6 +293,30 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 ---
 
+## ✅ Core Features Pass (Oct 2026) — Completed
+
+| ID | Summary |
+| :--- | :--- |
+| QTR-STK-05 ✅ | Prices refresh every 15 min (batched Yahoo download, single worker through an advisory lock); `previous_close`/`price_updated_at` columns; day change shown in Explorer, Dashboard watchlist and Stock Detail; research runs no longer blank a known price |
+| QTR-PORT-07 ✅ | Holdings: shares and average cost per position, `GET /portfolio/{id}/performance` (value, unrealized and day P&L, sector allocation, totals per currency, stale quotes refreshed on view), `/portfolios/:id` page; weights derived from shares when omitted |
+| QTR-STK-06 ✅ | Price history chart on Stock Detail (`GET /stocks/{ticker}/history`, 1M/6M/1Y/5Y, 15-min cache) |
+
+---
+
+## ✅ Compliance & Reach Pass (Oct 2026) — Completed
+
+| ID | Summary |
+| :--- | :--- |
+| QTR-STK-07 ✅ | Daily fundamentals refresh (market cap, P/E, beta, name, sector) inside the 15-min job; Yahoo sectors mapped to app names; missing fields never erase known ones |
+| QTR-STK-08 ✅ | Seed uses `TMCV.NS`; migration 0007 removes unreferenced delisted `TATAMOTORS.NS` |
+| QTR-UX-05 ✅ | One-shot price alerts (`/alerts/price`), checked after every price refresh, delivered through the header bell; form on Stock Detail |
+| QTR-SEC-05 ✅ | `GET /users/me/export` (JSON, no secrets) and `DELETE /users/me` (password-confirmed, removes all owned rows, anonymous erasure record); "Your Data" card on Account |
+| QTR-UX-06 ✅ | "Not investment advice" notice on Dashboard recommendations and Stock Detail analysis |
+| QTR-UX-07 ✅ | Phone layout: off-canvas navigation drawer, stacked Explorer filters and Simulation controls, compact header; no clipping on any page at 390px |
+| QTR-UX-08 ✅ | Simulation's hardcoded "Market Open" badge now shows the real US/NSE session |
+
+---
+
 ## 📋 Open Tickets
 
 ### [QTR-AUTH-05] Email Password Reset (P2)

@@ -78,7 +78,7 @@ test.describe('Portfolios', () => {
     await expect(page.getByText('Retirement')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Simulate' })).toBeVisible();
     expect(state.posted).toEqual([
-      { name: 'Retirement', description: null, initial_investment: 100000, positions: [{ ticker: 'AAPL', weight: 1 }] },
+      { name: 'Retirement', description: null, initial_investment: 100000, positions: [{ ticker: 'AAPL', weight: 1, shares: 0, cost_basis: 0 }] },
     ]);
   });
 

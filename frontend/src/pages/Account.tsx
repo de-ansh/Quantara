@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import ChangePasswordCard from "@/components/ChangePasswordCard"
 import RecentActivityCard from "@/components/RecentActivityCard"
+import YourDataCard from "@/components/YourDataCard"
 import { User, ShieldCheck, AlertTriangle, Save, Loader2, Sliders, CheckCircle2 } from "lucide-react"
 
 const AVAILABLE_SECTORS = ["Technology", "Consumer Discretionary", "Financials", "Healthcare", "Energy"]
@@ -289,6 +290,7 @@ export default function Account() {
 
             <ChangePasswordCard />
             <RecentActivityCard />
+            <YourDataCard />
         </div>
     )
 }

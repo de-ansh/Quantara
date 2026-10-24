@@ -2,7 +2,7 @@
 
 
 from datetime import datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
@@ -40,7 +40,8 @@ class StockSearchItem(BaseModel):
     signal: str
     alpha: str
     status: str
-    updated_at: datetime | None = None
+    change_pct: float | None = None
+    price_updated_at: datetime | None = None
     sector: str | None = None
     pe: float | None = None
     beta: float | None = None
@@ -85,7 +86,12 @@ def to_search_item(stock: Any) -> StockSearchItem:
         signal=sig_str,
         alpha=stock.alpha_projection or "+0.0%",
         status=stock.status or "neutral",
-        updated_at=stock.last_updated,
+        change_pct=(
+            round((stock.price / stock.previous_close - 1) * 100, 2)
+            if stock.price and stock.previous_close
+            else None
+        ),
+        price_updated_at=stock.price_updated_at,
         sector=stock.sector,
         pe=stock.pe_ratio,
         beta=stock.beta,
@@ -242,3 +248,76 @@ async def get_stock_research(
         )
 
     return ResearchReportResponse(**{**report_data, "generated_at": datetime.utcnow()})
+
+
+class PricePoint(BaseModel):
+    """One close in a price history series."""
+
+    date: str
+    close: float
+
+
+class PriceHistoryResponse(BaseModel):
+    """Closing prices for a ticker over a range."""
+
+    ticker: str
+    range: str
+    points: list[PricePoint]
+    change_pct: float
+
+
+# range -> (yfinance period, interval); weekly bars keep 5Y responses small
+_HISTORY_RANGES: dict[str, tuple[str, str]] = {
+    "1M": ("1mo", "1d"),
+    "6M": ("6mo", "1d"),
+    "1Y": ("1y", "1d"),
+    "5Y": ("5y", "1wk"),
+}
+_HISTORY_TTL_SECONDS = 15 * 60
+_history_cache: dict[tuple[str, str], tuple[float, list[PricePoint]]] = {}
+
+
+def _download_history(ticker: str, range_: str) -> list[PricePoint]:
+    import yfinance as yf
+
+    period, interval = _HISTORY_RANGES[range_]
+    frame = yf.Ticker(ticker).history(period=period, interval=interval)
+    if "Close" not in frame:
+        return []
+    return [
+        PricePoint(date=ts.strftime("%Y-%m-%d"), close=round(float(v), 4))
+        for ts, v in frame["Close"].dropna().items()
+    ]
+
+
+@router.get("/stocks/{ticker}/history", response_model=PriceHistoryResponse)
+async def get_price_history(
+    ticker: str,
+    current_user: CurrentUser,
+    range: Annotated[Literal["1M", "6M", "1Y", "5Y"], Query()] = "1Y",
+) -> PriceHistoryResponse:
+    """Closing price history for charts (cached for 15 minutes per ticker and range)."""
+    import asyncio
+    import time
+
+    key = (ticker.upper(), range)
+    cached = _history_cache.get(key)
+    if cached and time.monotonic() - cached[0] < _HISTORY_TTL_SECONDS:
+        points = cached[1]
+    else:
+        try:
+            points = await asyncio.to_thread(_download_history, key[0], range)
+        except Exception:
+            points = []
+        if points:  # don't cache failures
+            _history_cache[key] = (time.monotonic(), points)
+
+    if not points:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No price history found for {key[0]}",
+        )
+    change = (points[-1].close / points[0].close - 1) * 100 if points[0].close else 0.0
+    return PriceHistoryResponse(
+        ticker=key[0], range=range, points=points, change_pct=round(change, 2)
+    )
