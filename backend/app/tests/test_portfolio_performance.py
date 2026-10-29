@@ -1,10 +1,10 @@
 """Tests for holdings valuation / P&L and share-derived weights."""
 
-from datetime import datetime
 
 import pytest
 from httpx import AsyncClient
 
+from app.core.clock import utcnow
 from app.models.stock import Stock
 from app.services import price_service, stock_lookup
 
@@ -32,7 +32,7 @@ def market(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_performance_values_holdings_per_currency(client: AsyncClient, db_session, market):
-    now = datetime.utcnow()
+    now = utcnow()
     db_session.add_all([
         Stock(ticker="AAPL", name="Apple", sector="Technology", price=200.0,
               previous_close=190.0, price_updated_at=now),

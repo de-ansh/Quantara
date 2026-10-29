@@ -51,11 +51,13 @@ def sample_stocks():
 async def test_get_recommendations_with_db_stocks(mock_current_user, sample_stocks):
     """Test get_recommendations dynamically ranks DB stocks and persists to recommendations table."""
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()  # Session.add is synchronous
 
     # Setup mock executes
     # 1st execute: select(Stock)
     mock_stock_result = MagicMock()
-    mock_stock_result.scalars().all.return_value = sample_stocks
+    unrated = Stock(ticker="NEW", name="Unscored", sector="Technology")
+    mock_stock_result.scalars().all.return_value = [*sample_stocks, unrated]
 
     # 2nd execute: select(Signal.ticker, func.avg(Signal.strength)).group_by(Signal.ticker)
     mock_sig_result = MagicMock()
@@ -80,6 +82,8 @@ async def test_get_recommendations_with_db_stocks(mock_current_user, sample_stoc
     assert response.total_count > 0
     assert response.user_risk_level == "Moderate"
     assert len(response.recommendations) > 0
+    assert "NEW" not in {r.ticker for r in response.recommendations}  # no invented scores
+    assert all(r.reasoning_metadata["risk_score"] is not None for r in response.recommendations)
 
     # Ensure recommendations were added to DB
     assert mock_db.add.called
@@ -98,6 +102,7 @@ async def test_get_recommendations_with_db_stocks(mock_current_user, sample_stoc
 async def test_get_recommendations_empty_db(mock_current_user):
     """Test get_recommendations handles empty stock database gracefully."""
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()  # Session.add is synchronous
 
     mock_stock_result = MagicMock()
     mock_stock_result.scalars().all.return_value = []
@@ -118,6 +123,7 @@ async def test_get_recommendations_empty_db(mock_current_user):
 async def test_get_recommendations_deactivates_stale_records(mock_current_user, sample_stocks):
     """Test that previous active recommendations for the user are marked inactive."""
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()  # Session.add is synchronous
 
     mock_stock_result = MagicMock()
     mock_stock_result.scalars().all.return_value = sample_stocks

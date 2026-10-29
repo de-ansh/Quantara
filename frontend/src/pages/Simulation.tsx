@@ -776,17 +776,6 @@ export default function Simulation() {
                     </div>
                 </div>
             </main>
-
-            <footer className="h-10 border-t border-border bg-background flex items-center justify-between px-6 shrink-0 z-20 transition-colors">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-6">
-                    <span className="flex items-center gap-2"><div className="size-2 bg-green-500 rounded-full" /> Engine: V4.2.1-STABLE</span>
-                    <span>LATENCY: 14ms</span>
-                    <span>SIM ID: #MC-2024-X891</span>
-                </div>
-                <p className="text-[9px] text-muted-foreground/60 uppercase font-bold tracking-widest italic">
-                    © 2024 Quantara Financial Intelligence Platforms. Institutional Grade.
-                </p>
-            </footer>
         </div>
     )
 }

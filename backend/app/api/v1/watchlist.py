@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.v1.research import StockSearchItem, to_search_item
+from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.models.price_alert import PriceAlert
 from app.models.signal import Signal
@@ -116,7 +117,7 @@ async def get_watchlist_alerts(current_user: CurrentUser, db: DBSession) -> Watc
             .join(WatchlistItem, WatchlistItem.ticker == Signal.ticker)
             .where(
                 WatchlistItem.user_id == user_id,
-                Signal.created_at >= datetime.utcnow() - ALERT_WINDOW,
+                Signal.created_at >= utcnow() - ALERT_WINDOW,
             )
             .order_by(Signal.created_at.desc())
             .limit(50)
@@ -140,7 +141,7 @@ async def get_watchlist_alerts(current_user: CurrentUser, db: DBSession) -> Watc
             select(PriceAlert)
             .where(
                 PriceAlert.user_id == user_id,
-                PriceAlert.triggered_at >= datetime.utcnow() - ALERT_WINDOW,
+                PriceAlert.triggered_at >= utcnow() - ALERT_WINDOW,
             )
             .limit(50)
         )
@@ -170,7 +171,7 @@ async def get_watchlist_alerts(current_user: CurrentUser, db: DBSession) -> Watc
 async def mark_alerts_seen(current_user: CurrentUser, db: DBSession) -> None:
     """Mark every current alert as read."""
     user = (await db.execute(select(User).where(User.id == int(current_user["id"])))).scalar_one()
-    user.alerts_seen_at = datetime.utcnow()
+    user.alerts_seen_at = utcnow()
     await db.commit()
 
 

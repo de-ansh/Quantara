@@ -30,13 +30,22 @@ Prices that refresh every 15 minutes, holdings with live P&L and sector allocati
 ### Compliance & reach (Oct 2026)
 Daily fundamentals refresh, price alerts, personal-data export and account deletion, an investment-advice notice, and a phone layout.
 
+### Honest data & operations (Oct 2026)
+- Removed the made-up "Alpha Projection" and the hand-typed seed scores. Risk scores now come from the risk engine on real price history; stocks without one show as unrated.
+- Removed leftover hardcoded UI: fake filters, status labels, latency numbers and session IDs, and fixed BULLISH/BEARISH badges.
+- Research reports use the company's latest SEC earnings press release as qualitative context.
+- Optional Sentry error monitoring (`SENTRY_DSN`) and a daily database-backup service.
+- Backend tests run fully offline.
+
+### Notifications (Oct 2026)
+Triggered price alerts and new signals on watchlisted tickers are posted to Slack through an optional `SLACK_WEBHOOK_URL`.
+
 ---
 
 ## 🔜 Next
 
 | Area | Item | Ticket |
 | :--- | :--- | :--- |
-| Accounts | Email-based password reset (needs an email provider) | QTR-AUTH-05 |
-| Research | Real earnings-transcript source (only AAPL/NVDA/MSFT excerpts exist) | QTR-RAG-03 |
-| Data | Licensed market-data vendor (Yahoo/yfinance is unofficial; not for commercial use) | — |
-| Ops | Error monitoring (e.g. Sentry) and scheduled database backups | — |
+| Accounts | Email-based password reset. Deferred: the app is for personal use, and notifications go to Slack | QTR-AUTH-05 |
+| Data | Licensed market-data vendor. Only needed before commercial use: Yahoo's terms cover personal use | — |
+| Research | Earnings context for Indian listings (SEC releases cover US companies only) | — |

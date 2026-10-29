@@ -186,3 +186,43 @@ async def test_load_company_tickers_network_error_fallback(sec_provider, monkeyp
     assert tickers["AAPL"] == "0000320193"
     assert await sec_provider.get_cik_async("UNKNOWN_TICKER") is None
 
+
+
+@pytest.mark.asyncio
+async def test_latest_earnings_release_reads_exhibit_99_1(monkeypatch):
+    import httpx
+
+    from app.providers.transcript import TranscriptProvider
+
+    release_html = "<html><style>p{}</style><body><p>Revenue of $96.2 billion, up 106%.</p>" + (
+        "<p>Data center demand remained strong.</p>" * 30
+    ) + "</body></html>"
+    pages = {
+        "/submissions/CIK0001045810.json": {"filings": {"recent": {
+            "form": ["4", "8-K", "8-K"],
+            "items": ["", "5.02", "2.02,9.01"],
+            "accessionNumber": ["x", "0001045810-26-000070", "0001045810-26-000073"],
+            "filingDate": ["2026-09-01", "2026-08-30", "2026-08-26"],
+        }}},
+        "/Archives/edgar/data/1045810/000104581026000073/0001045810-26-000073-index.htm": (
+            '<tr><td>2</td><td>EX-99.1</td><td><a href="/Archives/edgar/data/1045810/'
+            '000104581026000073/q2fy27pr.htm">q2fy27pr.htm</a></td>\n<td scope="row">EX-99.1</td></tr>'
+        ),
+        "/Archives/edgar/data/1045810/000104581026000073/q2fy27pr.htm": release_html,
+    }
+
+    async def edgar(self, request: httpx.Request) -> httpx.Response:
+        body = pages.get(request.url.path)
+        if body is None:
+            return httpx.Response(404, request=request)
+        if isinstance(body, dict):
+            return httpx.Response(200, json=body, request=request)
+        return httpx.Response(200, text=body, request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", edgar)
+
+    transcript = await TranscriptProvider().fetch_transcript("NVDA")
+    assert transcript["source"] == "SEC 8-K earnings release (Exhibit 99.1)"
+    assert transcript["date"] == "2026-08-26"  # the 2.02 filing, not the 5.02 one
+    assert transcript["full_text"].startswith("Revenue of $96.2 billion")
+    assert "p{}" not in transcript["full_text"]  # styles stripped

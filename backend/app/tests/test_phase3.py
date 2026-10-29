@@ -19,8 +19,6 @@ async def test_stocks_search_endpoint(client: AsyncClient, db_session):
             market_cap=2.94e12,
             pe_ratio=25.0,
             beta=1.1,
-            status="up",
-            alpha_projection="+12.4%",
         )
     )
     db_session.add(
@@ -34,8 +32,6 @@ async def test_stocks_search_endpoint(client: AsyncClient, db_session):
             market_cap=5.582e11,
             pe_ratio=60.0,
             beta=1.5,
-            status="down",
-            alpha_projection="-4.2%",
         )
     )
     await db_session.commit()

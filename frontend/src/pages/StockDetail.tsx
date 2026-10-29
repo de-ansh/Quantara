@@ -1,7 +1,6 @@
 import { useState } from "react"
 import {
     TrendingUp,
-    TrendingDown,
     CheckCircle2,
     AlertTriangle,
     ShieldCheck,
@@ -91,8 +90,6 @@ export default function StockDetail() {
     const marketCap = searchData?.cap || "N/A"
     const peRatio = searchData?.pe ? `${searchData.pe.toFixed(1)}x` : "—"
     const betaVal = searchData?.beta ? Number(searchData.beta).toFixed(2) : "—"
-    const alphaStr = searchData?.alpha || "—"
-    const statusTrend = searchData?.status || "neutral"
 
     // Risk Classification
     const riskScoreRaw = riskData?.overall_risk_score ?? searchData?.risk
@@ -124,7 +121,6 @@ export default function StockDetail() {
         { label: "Volatility Score", value: `${score(components?.volatility_score)}/100` },
         { label: "Leverage Index", value: components ? `${(100 - components.leverage_score).toFixed(0)}/100` : "—/100" },
         { label: "Earnings Stability", value: `${score(components?.earnings_stability_score)}/100` },
-        { label: "Alpha Projection", value: alphaStr },
     ]
 
     return (
@@ -145,17 +141,6 @@ export default function StockDetail() {
                                     🇺🇸 US
                                 </Badge>
                             )}
-                        </div>
-                        <div className={cn(
-                            "flex items-center gap-2 px-3 py-1 text-sm font-bold border uppercase tracking-widest shadow-sm",
-                            statusTrend === "up"
-                                ? "bg-q-risk-low/10 text-q-risk-low border-q-risk-low/20"
-                                : statusTrend === "down"
-                                    ? "bg-q-risk-high/10 text-q-risk-high border-q-risk-high/20"
-                                    : "bg-muted text-muted-foreground border-border"
-                        )}>
-                            {statusTrend === "up" ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
-                            <span>{alphaStr}</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 text-muted-foreground text-sm font-medium">
@@ -261,7 +246,11 @@ export default function StockDetail() {
                                 <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
                                     <Zap className="text-primary size-4" />
                                     <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Investment Thesis</h3>
-                                    <span className="ml-auto flex items-center gap-1 rounded bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary border border-primary/20">BULLISH</span>
+                                    {report && (
+                                        <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary border border-primary/20">
+                                            {Math.round(report.confidence_score)}% CONFIDENCE
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="p-6 relative min-h-[220px]">
                                     {isLoading && (
@@ -288,7 +277,6 @@ export default function StockDetail() {
                                 <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
                                     <AlertTriangle className="text-q-warning size-4" />
                                     <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Anti-Thesis & Risks</h3>
-                                    <span className="ml-auto flex items-center gap-1 rounded bg-q-warning/20 px-2 py-0.5 text-[10px] font-bold text-q-warning border border-q-warning/20">BEARISH</span>
                                 </div>
                                 <div className="p-6">
                                     <p className="text-sm leading-relaxed text-muted-foreground mb-4 font-medium">
@@ -461,11 +449,11 @@ export default function StockDetail() {
                                 <div className="absolute inset-0 rounded-full border-[10px] border-border" />
                                 <div
                                     className="absolute inset-0 rounded-full border-[10px] border-primary transition-all duration-700"
-                                    style={{ clipPath: `polygon(50% 50%, 0 0, 100% 0, 100% ${alignmentScore}%)` }}
+                                    style={{ clipPath: `polygon(50% 50%, 0 0, 100% 0, 100% ${hasRiskScore ? alignmentScore : 0}%)` }}
                                 />
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Alignment</span>
-                                    <span className="text-4xl font-black text-foreground">{alignmentScore}%</span>
+                                    <span className="text-4xl font-black text-foreground">{hasRiskScore ? `${alignmentScore}%` : "—"}</span>
                                 </div>
                             </div>
                             <div className="mt-6 grid flex-1 grid-cols-1 gap-4 md:mt-0 md:grid-cols-2">
@@ -484,7 +472,7 @@ export default function StockDetail() {
                                         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Asset Risk Profile</span>
                                         <TrendingUp className="size-3.5 text-amber-400" />
                                     </div>
-                                    <span className="text-base font-bold text-foreground uppercase tracking-tight">{riskLevel} ({overallRiskScore}/100)</span>
+                                    <span className="text-base font-bold text-foreground uppercase tracking-tight">{riskLevel}{hasRiskScore && ` (${overallRiskScore}/100)`}</span>
                                     <div className="h-1.5 w-full bg-border">
                                         <div className="h-full bg-amber-400" style={{ width: `${overallRiskScore}%` }} />
                                     </div>
@@ -518,18 +506,12 @@ export default function StockDetail() {
                         </div>
                         <div className="p-4 space-y-6">
                             {[
-                                { label: "Projected Alpha", valColor: alphaStr.startsWith("+") ? "text-q-risk-low" : alphaStr === "—" ? "text-muted-foreground" : "text-q-risk-high", val: alphaStr, fill: "h-2/3" },
-                                { label: "Systemic Beta", valColor: Number(betaVal) > 1.2 ? "text-amber-400" : "text-q-risk-low", val: betaVal === "—" ? "—" : `${betaVal}x`, fill: "h-1/2" },
-                                { label: "Risk Classification", valColor: "text-primary", val: riskLevel.toUpperCase(), fill: "h-full" },
+                                { label: "Systemic Beta", valColor: Number(betaVal) > 1.2 ? "text-amber-400" : "text-q-risk-low", val: betaVal === "—" ? "—" : `${betaVal}x` },
+                                { label: "Risk Classification", valColor: "text-primary", val: riskLevel.toUpperCase() },
                             ].map((item) => (
-                                <div key={item.label} className="flex items-center justify-between group cursor-help">
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{item.label}</span>
-                                        <span className={cn("text-lg font-bold tracking-tighter", item.valColor)}>{item.val}</span>
-                                    </div>
-                                    <div className="h-10 w-32 bg-q-risk-low/5 border-l border-q-risk-low/30 relative overflow-hidden group-hover:bg-q-risk-low/10 transition-colors">
-                                        <div className={cn("absolute bottom-0 left-0 w-full bg-gradient-to-t from-q-risk-low/20 to-transparent transition-all duration-500", item.fill)} />
-                                    </div>
+                                <div key={item.label} className="flex flex-col">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{item.label}</span>
+                                    <span className={cn("text-lg font-bold tracking-tighter", item.valColor)}>{item.val}</span>
                                 </div>
                             ))}
                         </div>

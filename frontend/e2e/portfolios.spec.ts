@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const STOCK = {
   ticker: 'AAPL', name: 'Apple Inc.', price: '$189.42', cap: '$2.94T',
-  risk: 14, signal: 'High', alpha: '+12.4%', status: 'up',
+  risk: 14, signal: 'High', status: 'up',
 };
 
 /** In-memory fake of the portfolio and watchlist APIs. */

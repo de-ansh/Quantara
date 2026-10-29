@@ -140,7 +140,11 @@ class TranscriptProvider:
         self.openai_api_key = openai_api_key or settings.openai_api_key
 
     async def fetch_transcript(
-        self, ticker: str, quarter: str | None = None, year: int | None = None
+        self,
+        ticker: str,
+        quarter: str | None = None,
+        year: int | None = None,
+        sec_user_agent: str | None = None,
     ) -> dict[str, Any] | None:
         """
         Fetch qualitative earnings call transcript or management discussion disclosures.
@@ -153,8 +157,25 @@ class TranscriptProvider:
         Returns:
             Dictionary containing metadata, full transcript text, and categorized sections,
             or None when no transcript is available for the ticker.
+
+        The latest SEC earnings press release is preferred; the bundled call excerpts
+        are a fallback when EDGAR is unreachable.
         """
         t = ticker.upper()
+
+        from app.providers.sec import SECProvider
+
+        release = await SECProvider(user_agent=sec_user_agent).fetch_latest_earnings_release(t)
+        if release is not None:
+            return {
+                "ticker": t,
+                "date": release["date"],
+                "title": f"{t} earnings press release ({release['date']})",
+                "source": "SEC 8-K earnings release (Exhibit 99.1)",
+                "url": release["url"],
+                "sections": {"earnings_release": release["text"]},
+                "full_text": release["text"],
+            }
 
         if t in PRIMARY_TRANSCRIPTS:
             data = PRIMARY_TRANSCRIPTS[t]
@@ -453,10 +474,7 @@ class TranscriptProvider:
             db.add(
                 Stock(
                     ticker=ticker.upper(),
-                    name=f"{ticker.upper()} Inc.",
-                    sector="Technology",
-                    risk_score=50.0,
-                    research_score=75.0,
+                    name=ticker.upper(),
                 )
             )
             await db.flush()

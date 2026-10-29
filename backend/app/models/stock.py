@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Float, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.clock import utcnow
 from app.core.database import Base
 
 
@@ -45,18 +46,12 @@ class Stock(Base):
     fundamentals_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="When market cap / P/E / beta were last fetched"
     )
-    alpha_projection: Mapped[str | None] = mapped_column(
-        String(50), nullable=True, comment="Alpha projection percentage formatted"
-    )
-    status: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, comment="Signal trend status (up/down/neutral)"
-    )
 
     # Metadata
     last_updated: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_sector_risk", "sector", "risk_score"),

@@ -269,7 +269,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                 <div className="flex items-center space-x-3 group cursor-pointer outline-none select-none">
                                     <div className="hidden sm:flex flex-col items-end mr-1">
                                         <span className="text-sm font-bold tracking-tight text-foreground">{user?.email?.split('@')[0] || "Trader"}</span>
-                                        <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-none">Institutional Node</span>
                                     </div>
                                     <Avatar className="h-9 w-9 border border-primary/20 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
                                         <AvatarFallback className="bg-primary/10 text-primary font-bold uppercase">

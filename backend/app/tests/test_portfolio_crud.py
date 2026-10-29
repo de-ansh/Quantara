@@ -1,6 +1,5 @@
 """Tests for Portfolio and Position CRUD API endpoints."""
 
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +15,7 @@ from app.api.v1.portfolio import (
     list_portfolios,
     update_portfolio,
 )
+from app.core.clock import utcnow
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.stock import Stock
 
@@ -40,7 +40,7 @@ def mock_db():
 
 @pytest.fixture
 def sample_portfolio(mock_current_user):
-    now = datetime.utcnow()
+    now = utcnow()
     p = Portfolio(
         id=10,
         user_id=int(mock_current_user["id"]),

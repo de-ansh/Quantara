@@ -5,7 +5,6 @@ import {
     Mail,
     KeyRound,
     User,
-    Lock,
     Globe,
     Monitor
 } from "lucide-react"
@@ -94,10 +93,6 @@ export default function Register() {
                                 <h2 className="text-xl font-bold text-white tracking-tight">Institutional Registration</h2>
                                 <p className="text-[#9ca5ba] text-xs mt-1">Request access to Quantara's high-density financial intelligence platform.</p>
                             </div>
-                            <div className="flex flex-col items-end gap-1">
-                                <span className="text-[9px] font-bold text-[#1e5df1] uppercase tracking-widest border border-[#1e5df1] px-1.5 py-0.5">Level 3 Security</span>
-                                <span className="text-[9px] text-[#9ca5ba] uppercase">Verified Node</span>
-                            </div>
                         </div>
                     </div>
 
@@ -181,11 +176,7 @@ export default function Register() {
                             {isLoading ? "Processing Request..." : "Request Access"}
                         </button>
 
-                        <div className="flex items-center justify-between text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
-                            <div className="flex items-center gap-1">
-                                <Lock className="size-3 text-green-500" />
-                                Secure Registration
-                            </div>
+                        <div className="flex items-center justify-end text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
                             <Link to="/login" className="text-[#1e5df1] hover:underline font-bold">Back to Login</Link>
                         </div>
                     </form>
@@ -206,15 +197,9 @@ export default function Register() {
 
             <footer className="fixed bottom-0 w-full border-t border-[#282d39] bg-[#151B23] px-6 py-2.5 flex flex-col md:flex-row items-center justify-between text-[10px] uppercase tracking-wider font-medium text-[#9ca5ba] z-50">
                 <div className="flex items-center gap-4">
-                    <span className="text-white font-bold">Quantara Terminal v4.12.0</span>
+                    <span className="text-white font-bold">Quantara</span>
                     <span className="hidden md:inline text-[#282d39]">|</span>
                     <p>Institutional-grade financial intelligence. Not financial advice.</p>
-                </div>
-                <div className="flex items-center gap-6 mt-2 md:mt-0">
-                    <a className="hover:text-[#1e5df1] transition-colors" href="#">Security Policy</a>
-                    <a className="hover:text-[#1e5df1] transition-colors" href="#">Terms of Service</a>
-                    <a className="hover:text-[#1e5df1] transition-colors" href="#">Compliance Hub</a>
-                    <span className="text-white/50">© 2024 Quantara Systems</span>
                 </div>
             </footer>
 

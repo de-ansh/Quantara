@@ -4,7 +4,6 @@ import {
     ArrowUp,
     ArrowDown,
     MoveRight,
-    Filter,
     AlertTriangle,
     Star,
 } from "lucide-react"
@@ -138,7 +137,6 @@ export default function Dashboard() {
                                 <>
                                     <div className="text-lg font-bold text-foreground leading-tight mb-2">{stat.value}</div>
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="bg-q-risk-low/10 text-q-risk-low border-q-risk-low/20 text-[9px] font-black tracking-widest py-0">LOCKED</Badge>
                                         <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-tighter">{stat.subtext}</span>
                                     </div>
                                 </>
@@ -205,7 +203,7 @@ export default function Dashboard() {
                                         <DayChange pct={w.change_pct} className="text-[9px]" />
                                     </span>
                                     <span className="text-sm font-bold font-mono text-foreground">{w.price}</span>
-                                    <span className="text-[9px] uppercase text-muted-foreground font-bold">Risk {w.risk.toFixed(0)} · {w.signal}</span>
+                                    <span className="text-[9px] uppercase text-muted-foreground font-bold">Risk {w.risk?.toFixed(0) ?? "—"} · {w.signal}</span>
                                 </Link>
                             </li>
                         ))}
@@ -218,10 +216,9 @@ export default function Dashboard() {
                 <section className="flex-1 min-w-0 bg-q-surface border border-q-border flex flex-col overflow-hidden">
                     <div className="px-4 py-3 border-b border-q-border flex items-center justify-between bg-q-surface shrink-0">
                         <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Top Risk-Aligned Opportunities</h2>
-                        <div className="flex items-center gap-4 text-xs">
-                            <span className="text-muted-foreground hidden sm:inline font-medium text-[10px] uppercase tracking-widest">Filters: Active</span>
-                            <Filter className="size-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors" />
-                        </div>
+                        <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-widest">
+                            Matched to your {profile?.risk_level ?? "Moderate"} profile
+                        </span>
                     </div>
                     <AdviceNotice className="px-4 py-2 border-b border-q-border/50 shrink-0" />
                     <div className="flex-1 overflow-auto custom-scrollbar relative">
@@ -237,17 +234,24 @@ export default function Dashboard() {
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-right">Risk Score</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest h-10">Research Score</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-center">Signal</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-right">Exp. Return</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-right">Score</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-center">Alignment</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-xs">
-                                {opportunities.map((row) => (
-                                    <TableRow key={row.ticker} className="border-q-border hover:bg-primary/5 cursor-pointer group transition-colors">
-                                        <TableCell className="px-4 py-3 font-bold text-foreground">
-                                            {row.ticker} <span className="text-[10px] font-normal text-muted-foreground ml-1 hidden lg:inline">{row.name}</span>
+                                {!isLoadingOpportunities && opportunities.length === 0 && (
+                                    <TableRow className="border-q-border hover:bg-transparent">
+                                        <TableCell colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                                            No stock is rated yet. Open a stock and generate its research report to rate it.
                                         </TableCell>
-                                        <TableCell className="px-4 py-3 text-right font-mono text-foreground font-bold">{row.risk}</TableCell>
+                                    </TableRow>
+                                )}
+                                {opportunities.map((row) => (
+                                    <TableRow key={row.ticker} className="border-q-border hover:bg-primary/5 group transition-colors">
+                                        <TableCell className="px-4 py-3 font-bold text-foreground">
+                                            <Link to={`/research/${row.ticker}`} className="hover:text-primary">{row.ticker}</Link>
+                                        </TableCell>
+                                        <TableCell className="px-4 py-3 text-right font-mono text-foreground font-bold">{row.risk.toFixed(1)}</TableCell>
                                         <TableCell className="px-4 py-3 min-w-[120px]">
                                             <div className="flex items-center gap-2">
                                                 <div className="flex-1 h-1.5 bg-q-border rounded-full overflow-hidden">
@@ -264,9 +268,7 @@ export default function Dashboard() {
                                                 {row.signal === "down" && <ArrowDown className="text-q-risk-high size-4" />}
                                             </div>
                                         </TableCell>
-                                        <TableCell className={cn("px-4 py-3 text-right font-mono font-bold", row.return.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high")}>
-                                            {row.return}
-                                        </TableCell>
+                                        <TableCell className="px-4 py-3 text-right font-mono font-bold text-foreground">{row.score}</TableCell>
                                         <TableCell className="px-4 py-3 text-center">
                                             <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-black text-[10px] tracking-tight">{row.alignment}</Badge>
                                         </TableCell>
@@ -305,14 +307,6 @@ export default function Dashboard() {
                                 <p className="text-foreground uppercase tracking-tight leading-tight font-medium">{item.text}</p>
                             </div>
                         ))}
-                    </div>
-                    <div className="p-4 bg-background border-t border-q-border shrink-0">
-                        <div className="flex items-center gap-3">
-                            <span className="text-primary text-[10px] font-black uppercase tracking-widest">Engine Ready</span>
-                            <div className="h-1 flex-1 bg-q-border overflow-hidden rounded-full">
-                                <div className="h-full bg-primary w-2/3 animate-pulse" />
-                            </div>
-                        </div>
                     </div>
                 </aside>
             </div>

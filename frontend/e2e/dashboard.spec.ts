@@ -44,7 +44,7 @@ test.describe('Dashboard E2E Tests', () => {
                 final_score: 88,
               },
               explanation: 'Top stock pick.',
-              reasoning_metadata: {},
+              reasoning_metadata: { risk_score: 31.5 },
             },
           ],
           total_count: 1,
@@ -87,7 +87,9 @@ test.describe('Dashboard E2E Tests', () => {
 
     // Verify Opportunities Table
     await expect(page.locator('table')).toBeVisible();
-    await expect(page.locator('table').locator('text=AAPL').first()).toBeVisible();
+    const aaplRow = page.getByRole('row', { name: /AAPL/ });
+    await expect(aaplRow).toContainText('31.5'); // the stock's real risk score
+    await expect(aaplRow).toContainText('88.0'); // final score, not a fake % return
 
     // Verify Signals
     await expect(page.locator('text=AAPL: BULLISH TREND Detected')).toBeVisible();

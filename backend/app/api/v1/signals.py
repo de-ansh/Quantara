@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 
 router = APIRouter()
@@ -134,7 +135,7 @@ async def get_sentiment_curve(
 
     engine = SignalEngine()
 
-    cutoff = datetime.utcnow() - timedelta(hours=max(hours, 24))
+    cutoff = utcnow() - timedelta(hours=max(hours, 24))
     stmt = select(DBSignal).where(
         DBSignal.timestamp >= cutoff,
         DBSignal.signal_type.in_(["sentiment_spike", "news_sentiment", "social_sentiment"])

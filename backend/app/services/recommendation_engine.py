@@ -299,6 +299,7 @@ class RecommendationEngine:
                     scores=scores,
                     explanation=explanation,
                     reasoning_metadata={
+                        "risk_score": stock.get("risk_score"),
                         "research_score": scores.research_score,
                         "signal_score": scores.signal_score,
                         "risk_alignment_score": scores.risk_alignment_score,

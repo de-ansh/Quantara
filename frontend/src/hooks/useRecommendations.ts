@@ -28,11 +28,10 @@ export const useRecommendations = (options = {}) => {
             // Transform backend recommendations to frontend Opportunity format
             return data.recommendations.map(r => ({
                 ticker: r.ticker,
-                name: r.ticker, // Backend doesn't provide name yet
-                risk: (100 - r.scores.risk_alignment_score).toFixed(1),
+                risk: Number(r.reasoning_metadata.risk_score),
                 research: Math.round(r.scores.research_score),
                 signal: r.scores.signal_score > 70 ? 'up' : 'right' as "up" | "up-right" | "right" | "down",
-                return: `+${(r.scores.final_score / 10).toFixed(2)}%`,
+                score: r.scores.final_score.toFixed(1),
                 alignment: `${r.scores.risk_alignment_score.toFixed(1)}%`,
             }));
         },

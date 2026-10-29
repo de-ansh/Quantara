@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.api.v1.research import to_search_item
+from app.core.clock import utcnow
 from app.models.stock import Stock
 from app.services import price_service
 
@@ -55,11 +56,10 @@ def test_fetch_quotes_parses_batched_download(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_refresh_fundamentals_maps_sector_and_keeps_known_values(db_session, monkeypatch):
-    from datetime import datetime
 
     db_session.add_all([
         Stock(ticker="TMCV.NS", name="TMCV.NS", pe_ratio=16.0),
-        Stock(ticker="AAPL", name="Apple", fundamentals_updated_at=datetime.utcnow()),  # fresh
+        Stock(ticker="AAPL", name="Apple", fundamentals_updated_at=utcnow()),  # fresh
     ])
     await db_session.commit()
     calls: list[str] = []
@@ -85,3 +85,26 @@ def test_fetch_fundamentals_maps_yahoo_sector(monkeypatch):
 
     monkeypatch.setattr(price_service.yf, "Ticker", lambda t: _T())
     assert price_service.fetch_fundamentals("TMCV.NS")["sector"] == "Consumer Discretionary"
+
+
+@pytest.mark.asyncio
+async def test_unrated_stocks_get_a_real_risk_score(db_session, monkeypatch):
+    db_session.add_all([Stock(ticker="AAPL", name="Apple"), Stock(ticker="NOHIST", name="No history")])
+    await db_session.commit()
+    assert to_search_item(await db_session.get(Stock, "AAPL")).risk is None
+    assert to_search_item(await db_session.get(Stock, "AAPL")).signal == "Unrated"
+
+    from app.providers.yahoo import YahooFinanceProvider
+
+    real = YahooFinanceProvider.get_historical_data
+
+    async def history(self, ticker, **kw):
+        return pd.DataFrame() if ticker == "NOHIST" else await real(self, ticker, **kw)
+
+    monkeypatch.setattr(YahooFinanceProvider, "get_historical_data", history)
+    assert await price_service.score_unrated_stocks(db_session) == 1
+
+    aapl = await db_session.get(Stock, "AAPL")
+    nohist = await db_session.get(Stock, "NOHIST")
+    assert aapl.risk_score is not None and 0 <= aapl.risk_score <= 100
+    assert nohist.risk_score is None  # defaults alone never become a score

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.api.v1.audit import create_audit_log
+from app.core.clock import utcnow
 from app.core.config import settings
 from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_rate_limit
 from app.core.security import verify_password
@@ -299,7 +300,7 @@ async def export_my_data(current_user: CurrentUser, db: DBSession) -> JSONRespon
     logs = (await db.execute(select(AuditLog).where(AuditLog.user_id == user_id))).scalars().all()
 
     payload = {
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": utcnow().isoformat(),
         "profile": {
             "id": user.id,
             "email": user.email,

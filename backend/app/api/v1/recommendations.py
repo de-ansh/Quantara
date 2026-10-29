@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.models.recommendation import Recommendation
 from app.models.signal import Signal
@@ -81,16 +82,17 @@ async def get_recommendations(
     sig_result = await db.execute(sig_stmt)
     signal_averages: dict[str, float] = {t: float(avg) for t, avg in sig_result.all()}
 
-    # Build candidate stock dictionaries
+    # Only stocks with computed risk and research scores can be ranked
     candidate_stocks = [
         {
             "ticker": s.ticker,
-            "sector": s.sector or "Technology",
-            "risk_score": s.risk_score if s.risk_score is not None else 50.0,
-            "research_score": s.research_score if s.research_score is not None else 50.0,
+            "sector": s.sector or "Unknown",
+            "risk_score": s.risk_score,
+            "research_score": s.research_score,
             "signal_score": float(signal_averages.get(s.ticker) or 50.0),
         }
         for s in stocks_db
+        if s.risk_score is not None and s.research_score is not None
     ]
 
     # 4. Filter by risk band
@@ -121,7 +123,7 @@ async def get_recommendations(
     for prev in prev_active:
         prev.is_active = False
 
-    now = datetime.utcnow()
+    now = utcnow()
     expires = now + timedelta(days=1)
 
     for rec in recommendations:

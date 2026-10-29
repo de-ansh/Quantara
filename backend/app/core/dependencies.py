@@ -25,7 +25,7 @@ async def get_redis() -> AsyncGenerator[Redis, None]:
     try:
         yield redis
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 async def get_current_user(

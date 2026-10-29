@@ -1,6 +1,8 @@
 """SEC EDGAR data provider using Company Facts API."""
 
+import re
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from typing import Any
 
 import httpx
@@ -9,6 +11,37 @@ from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Row of an EDGAR filing index whose document type is the press-release exhibit
+_EX99_ROW = re.compile(r'<a href="([^"]+\.html?)">[^<]*</a></td>\s*<td[^>]*>\s*EX-99\.1\s*</td>', re.I)
+EARNINGS_RELEASE_MAX_CHARS = 30_000
+
+
+class _TextExtractor(HTMLParser):
+    """Visible text of an HTML document (scripts and styles dropped)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in ("script", "style"):
+            self._skip += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style") and self._skip:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
+
+
+def html_to_text(html: str) -> str:
+    extractor = _TextExtractor()
+    extractor.feed(html)
+    return re.sub(r"\s+", " ", " ".join(extractor.parts)).strip()
 
 
 class SECProvider:
@@ -67,7 +100,6 @@ class SECProvider:
         self.headers = {
             "User-Agent": self.user_agent,
             "Accept-Encoding": "gzip, deflate",
-            "Host": "data.sec.gov",
         }
         self._cik_cache: dict[str, str] = dict(self.CIK_MAPPING)
         self._cache_timestamp: float = 0.0
@@ -386,6 +418,48 @@ class SECProvider:
             logger.error(f"Error parsing Form 4 XML: {e}")
 
         return transactions
+
+    async def fetch_latest_earnings_release(self, ticker: str) -> dict[str, Any] | None:
+        """Latest earnings press release (8-K Item 2.02, Exhibit 99.1) as text; None if unavailable."""
+        cik = await self.get_cik_async(ticker)
+        if not cik:
+            return None
+        async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
+            try:
+                resp = await client.get(f"https://data.sec.gov/submissions/CIK{cik}.json")
+                resp.raise_for_status()
+                recent = resp.json().get("filings", {}).get("recent", {})
+                filing = next(
+                    (
+                        (accn, filed)
+                        for form, items, accn, filed in zip(
+                            recent.get("form", []), recent.get("items", []),
+                            recent.get("accessionNumber", []), recent.get("filingDate", []),
+                            strict=False,
+                        )
+                        if form == "8-K" and "2.02" in (items or "")
+                    ),
+                    None,
+                )
+                if filing is None:
+                    return None
+                accn, filed = filing
+                base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accn.replace('-', '')}"
+                index = await client.get(f"{base}/{accn}-index.htm")
+                index.raise_for_status()
+                match = _EX99_ROW.search(index.text)
+                if not match:
+                    return None
+                url = f"https://www.sec.gov{match.group(1)}"
+                page = await client.get(url)
+                page.raise_for_status()
+            except (httpx.HTTPError, ValueError) as e:
+                logger.warning(f"Earnings release lookup failed for {ticker}: {e}")
+                return None
+        text = html_to_text(page.text)
+        if len(text) < 500:  # an exhibit this short is a cover page, not the release
+            return None
+        return {"date": filed, "url": url, "text": text[:EARNINGS_RELEASE_MAX_CHARS]}
 
     async def fetch_insider_transactions(self, ticker: str, limit: int = 5) -> list[dict[str, Any]]:
         """

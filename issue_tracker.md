@@ -319,12 +319,14 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 ## 📋 Open Tickets
 
-### [QTR-AUTH-05] Email Password Reset (P2)
+### [QTR-AUTH-05] Email Password Reset (P3, deferred: personal use; notifications use Slack)
 - **Description**: Users who are signed in can change their password; a forgotten password still can't be recovered.
 - **Acceptance Criteria**:
   - [ ] Choose an email provider; single-use, time-limited reset tokens; bump `token_version` on reset.
 
-### [QTR-RAG-03] Real Earnings Transcript Source (P2)
-- **Description**: Only hardcoded AAPL/NVDA/MSFT excerpts exist; other tickers get no qualitative RAG context.
+### [QTR-RAG-03] Real Earnings Transcript Source (P2, done for US listings)
+- **Description**: Only hardcoded AAPL/NVDA/MSFT excerpts existed; other tickers got no qualitative RAG context.
 - **Acceptance Criteria**:
-  - [ ] Integrate a transcript provider and persist chunks with `store_chunks`.
+  - [x] Use the latest SEC 8-K earnings press release (Exhibit 99.1) for any US ticker, falling back to the bundled excerpts.
+  - [ ] NSE/BSE listings: no free equivalent wired in yet.
+  - [ ] Full call transcripts would need a paid provider.
