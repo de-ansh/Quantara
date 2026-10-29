@@ -9,12 +9,14 @@ Framework for detecting market signals:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import utcnow
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -89,7 +91,7 @@ class SignalEngine:
             signal_type=SignalType.EARNINGS_SURPRISE,
             strength=strength,
             confidence=confidence,
-            timestamp=timestamp or datetime.utcnow(),
+            timestamp=timestamp or utcnow(),
             metadata={
                 "actual_eps": actual_eps,
                 "estimated_eps": estimated_eps,
@@ -139,7 +141,7 @@ class SignalEngine:
             signal_type=SignalType.INSTITUTIONAL_BUYING,
             strength=strength,
             confidence=confidence,
-            timestamp=timestamp or datetime.utcnow(),
+            timestamp=timestamp or utcnow(),
             metadata={
                 "ownership_change_pct": institutional_ownership_change,
                 "num_institutions": num_institutions_buying,
@@ -198,7 +200,7 @@ class SignalEngine:
             signal_type=SignalType.INSIDER_BUYING,
             strength=strength,
             confidence=confidence,
-            timestamp=timestamp or datetime.utcnow(),
+            timestamp=timestamp or utcnow(),
             metadata={
                 "buy_volume": insider_buy_volume,
                 "sell_volume": insider_sell_volume,
@@ -254,7 +256,7 @@ class SignalEngine:
             signal_type=SignalType.SENTIMENT_SPIKE,
             strength=strength,
             confidence=confidence,
-            timestamp=timestamp or datetime.utcnow(),
+            timestamp=timestamp or utcnow(),
             metadata={
                 "current_sentiment": current_sentiment,
                 "baseline_sentiment": baseline_sentiment,
@@ -373,14 +375,14 @@ class SignalEngine:
             db_signals: List of Signal DB records or dicts
             ticker: Optional ticker symbol
             hours: Number of hourly buckets (default: 8, covering US market session 09:30-16:00)
-            reference_time: Base reference datetime (defaults to datetime.utcnow())
+            reference_time: Base reference datetime (defaults to utcnow())
 
         Returns:
             Dictionary containing points, current_social_score, current_news_score, sentiment_trend.
         """
         import math
 
-        ref_time = reference_time or datetime.utcnow()
+        ref_time = reference_time or utcnow()
         signals = db_signals or []
         num_buckets = max(4, min(hours, 24))
 
@@ -600,6 +602,27 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
         db.add(db_signal)
         await db.commit()
         logger.info(f"Saved signal {signal.signal_type.value} for {signal.ticker} to database")
+        await _notify_watchers(db, signal)
+
+
+async def _notify_watchers(db: AsyncSession, signal: Signal) -> None:
+    """Slack a new signal if someone watches the ticker and it is recent (skips backfill)."""
+    from sqlalchemy import select
+
+    from app.api.v1.watchlist import ALERT_WINDOW
+    from app.models.watchlist import WatchlistItem
+    from app.services.notify import notify_slack
+
+    ts = signal.timestamp
+    now = datetime.now(UTC) if ts.tzinfo else utcnow()
+    if now - ts > ALERT_WINDOW:
+        return
+    watched = await db.scalar(select(WatchlistItem.id).where(WatchlistItem.ticker == signal.ticker).limit(1))
+    if watched is not None:
+        await notify_slack(
+            f":chart_with_upwards_trend: {signal.ticker}: {signal.signal_type.value} signal "
+            f"(strength {signal.strength:.0f}, confidence {signal.confidence:.0f})"
+        )
 
 
 def _signal_time(s: Any) -> datetime | None:
@@ -761,6 +784,7 @@ async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
             raise
         except Exception as e:
             logger.error(f"Error in background signal processing: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
 
         await asyncio.sleep(interval_seconds)
 

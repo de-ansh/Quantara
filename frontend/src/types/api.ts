@@ -5,9 +5,8 @@ export interface StockSearchItem {
     name: string
     price: string
     cap: string
-    risk: number
+    risk: number | null
     signal: string
-    alpha: string
     status: string
     change_pct: number | null
     price_updated_at: string | null

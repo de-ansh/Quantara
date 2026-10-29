@@ -11,13 +11,11 @@ import {
     TrendingUp,
     TrendingDown,
     Minus,
-    MoreHorizontal,
     Clock,
-    CheckCircle2,
     X,
     Globe,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, timeAgo } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { exportToCsv } from "@/lib/export"
@@ -27,6 +25,12 @@ import type { StockSearchItem } from "@/types/api"
 import DayChange from "@/components/DayChange"
 
 const PAGE_SIZE = 25
+
+const riskTone = (risk: number | null) =>
+    risk == null ? "bg-muted/40 text-muted-foreground border-border" :
+        risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
+            risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
+                "bg-red-500/10 text-red-400 border-red-500/20"
 
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
@@ -63,6 +67,7 @@ export default function ResearchExplorer() {
     })
 
     const results = data?.stocks || []
+    const latestPriceAt = results.map(r => r.price_updated_at).filter((t): t is string => !!t).sort().at(-1)
     const totalCount = data?.total_count || 0
 
     const handleSignalToggle = (signal: string) => {
@@ -110,9 +115,8 @@ export default function ResearchExplorer() {
             name: r.name || "",
             price: r.price,
             market_cap: r.cap,
-            risk_score: r.risk,
+            risk_score: r.risk ?? "",
             signal: r.signal,
-            alpha: r.alpha,
             sector: r.sector || "",
             pe_ratio: r.pe ?? "",
             beta: r.beta ?? "",
@@ -410,12 +414,10 @@ export default function ResearchExplorer() {
                                                     variant="outline"
                                                     className={cn(
                                                         "text-[9px] font-mono font-bold px-1.5 py-0.5",
-                                                        row.risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
-                                                            row.risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
-                                                                "bg-red-500/10 text-red-400 border-red-500/20"
+                                                        riskTone(row.risk)
                                                     )}
                                                 >
-                                                    RISK {Math.round(row.risk)}
+                                                    RISK {row.risk == null ? "—" : Math.round(row.risk)}
                                                 </Badge>
                                             </div>
 
@@ -435,10 +437,8 @@ export default function ResearchExplorer() {
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-muted-foreground text-[9px]">Alpha</div>
-                                                    <div className={cn("font-bold text-xs", row.alpha?.startsWith("+") ? "text-green-400" : "text-rose-400")}>
-                                                        {row.alpha}
-                                                    </div>
+                                                    <div className="text-muted-foreground text-[9px]">Sector</div>
+                                                    <div className="font-bold text-foreground text-xs truncate">{row.sector ?? "—"}</div>
                                                 </div>
                                             </div>
 
@@ -481,8 +481,7 @@ export default function ResearchExplorer() {
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
                                         <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alpha Projection</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
+                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border font-mono text-xs">
@@ -522,11 +521,9 @@ export default function ResearchExplorer() {
                                             <td className="px-6 py-4">
                                                 <span className={cn(
                                                     "px-2 py-0.5 rounded border",
-                                                    row.risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
-                                                        row.risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
-                                                            "bg-red-500/10 text-red-400 border-red-500/20"
+                                                    riskTone(row.risk)
                                                 )}>
-                                                    {Math.round(row.risk)}
+                                                    {row.risk == null ? "—" : Math.round(row.risk)}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4">
@@ -538,10 +535,7 @@ export default function ResearchExplorer() {
                                                     <span>{row.signal}</span>
                                                 </div>
                                             </td>
-                                            <td className={cn("px-6 py-4 font-bold", row.alpha.startsWith("+") ? "text-q-risk-low" : "text-q-risk-high")}>{row.alpha}</td>
-                                            <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                                <button className="text-muted-foreground hover:text-foreground transition-colors"><MoreHorizontal className="size-4" /></button>
-                                            </td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.sector ?? "—"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -570,21 +564,11 @@ export default function ResearchExplorer() {
             </div>
 
             <footer className="h-8 flex items-center border-t border-border bg-card px-6 shrink-0 z-20 transition-colors">
-                <div className="flex-1 flex items-center justify-between text-[10px] text-muted-foreground/60 font-bold uppercase tracking-tight">
-                    <div className="flex items-center gap-4">
-                        <span className="flex items-center gap-1.5"><Clock className="size-3" /> Data as of: Mar 22, 2024 16:45:01 EST</span>
-                        <span className="h-2 w-[px] bg-border" />
-                        <span>Market Status: <span className="text-q-risk-low">Open</span></span>
-                    </div>
-                    <p className="max-w-2xl truncate hidden lg:block text-center px-4">
-                        Quantara Research Platform is for institutional use only. Not investment advice. Alpha projections are modeled outcomes.
-                    </p>
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1 text-q-risk-low">
-                            <CheckCircle2 className="size-3" />
-                            <span>Systems Operational</span>
-                        </div>
-                    </div>
+                <div className="flex-1 flex items-center justify-between gap-4 text-[10px] text-muted-foreground/60 font-bold uppercase tracking-tight">
+                    <span className="flex items-center gap-1.5">
+                        <Clock className="size-3" /> Prices updated: {latestPriceAt ? timeAgo(latestPriceAt) : "—"}
+                    </span>
+                    <p className="truncate hidden lg:block">Research insights only. Not investment advice.</p>
                 </div>
             </footer>
         </div>

@@ -29,9 +29,8 @@ interface StockItem {
     name: string
     price: string
     cap: string
-    risk: number
+    risk: number | null
     signal: string
-    alpha: string
     status: string
 }
 
@@ -149,7 +148,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                 id: `stock-res-${s.ticker}`,
                 type: "stock-research",
                 title: `${s.ticker} — ${s.name}`,
-                subtitle: `Price: ${s.price} | Cap: ${s.cap} | Risk: ${s.risk.toFixed(1)}/100`,
+                subtitle: `Price: ${s.price} | Cap: ${s.cap} | Risk: ${s.risk == null ? "unrated" : `${s.risk.toFixed(1)}/100`}`,
                 badge: s.signal,
                 href: `/research/${s.ticker}`,
                 icon: BarChart3
@@ -175,7 +174,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                 id: `watch-${w.ticker}`,
                 type: "core",
                 title: `${w.ticker} — ${w.name}`,
-                subtitle: `${w.price} · Risk ${w.risk.toFixed(0)}`,
+                subtitle: `${w.price} · Risk ${w.risk?.toFixed(0) ?? "—"}`,
                 badge: "WATCHLIST",
                 href: `/research/${w.ticker}`,
                 icon: BarChart3

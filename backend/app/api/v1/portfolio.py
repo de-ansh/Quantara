@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 
+from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.stock import Stock
@@ -77,7 +78,7 @@ async def _verify_positions(db: DBSession, positions: list[PositionBase]) -> Non
     tickers = [p.ticker.upper() for p in positions]
     if len(set(tickers)) != len(tickers):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Each ticker can appear only once in a portfolio",
         )
     stocks = {t: await get_or_track_stock(db, t) for t in tickers}
@@ -85,26 +86,26 @@ async def _verify_positions(db: DBSession, positions: list[PositionBase]) -> Non
     known = {t: s for t, s in stocks.items() if s is not None}
     if unknown:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"No market data found for: {', '.join(unknown)}",
         )
 
     if positions and all(p.weight == 0 for p in positions):
         if not all(p.shares > 0 for p in positions):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Give each holding either a weight or a share count",
             )
         if len({_is_indian(t) for t in tickers}) > 1:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Mixed USD/INR portfolios need explicit weights",
             )
         values = [p.shares * (known[p.ticker.upper()].price or 0.0) for p in positions]
         total = sum(values)
         if total <= 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="No current prices to derive weights from; enter weights instead",
             )
         for p, v in zip(positions, values, strict=True):
@@ -169,7 +170,7 @@ async def create_portfolio(
     """Create a new portfolio with initial positions."""
     user_id = int(current_user["id"])
     await _verify_positions(db, request.positions)
-    now = datetime.utcnow()
+    now = utcnow()
     new_portfolio = Portfolio(
         user_id=user_id,
         name=request.name,
@@ -308,7 +309,7 @@ async def update_portfolio(
             )
             db.add(p_pos)
 
-    portfolio.updated_at = datetime.utcnow()
+    portfolio.updated_at = utcnow()
     await db.commit()
     await db.refresh(portfolio)
 
@@ -329,8 +330,8 @@ async def update_portfolio(
             )
             for pos in portfolio.positions
         ],
-        created_at=portfolio.created_at or datetime.utcnow(),
-        updated_at=portfolio.updated_at or datetime.utcnow(),
+        created_at=portfolio.created_at or utcnow(),
+        updated_at=portfolio.updated_at or utcnow(),
     )
 
 
@@ -431,7 +432,7 @@ async def get_portfolio_performance(
         s.ticker: s
         for s in (await db.execute(select(Stock).where(Stock.ticker.in_(tickers)))).scalars()
     }
-    cutoff = datetime.utcnow() - PRICE_MAX_AGE
+    cutoff = utcnow() - PRICE_MAX_AGE
 
     def _is_stale(t: str) -> bool:
         updated = stocks[t].price_updated_at if t in stocks else None
@@ -584,7 +585,7 @@ async def simulate_portfolio(
     total_weight = sum(item.weight for item in request.stocks)
     if abs(total_weight - 1.0) > 0.01:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Portfolio weights must sum to 1.0 (got {total_weight:.3f})",
         )
 

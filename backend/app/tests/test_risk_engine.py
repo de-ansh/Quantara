@@ -344,36 +344,6 @@ def test_run_scenario_stress_test():
 
 
 @pytest.mark.asyncio
-async def test_get_stock_scenarios_endpoint():
-    """Test dedicated GET /stocks/{ticker}/scenarios endpoint."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    from app.api.v1.risk import get_stock_scenarios
-    from app.models.stock import Stock
-
-    mock_db = AsyncMock()
-    mock_res = MagicMock()
-    mock_res.scalar_one_or_none.return_value = Stock(
-        ticker="MSFT",
-        name="Microsoft Corp",
-        sector="Technology",
-        beta=1.25,
-        pe_ratio=32.0,
-    )
-    mock_db.execute.return_value = mock_res
-    current_user = {"id": "1", "email": "analyst@quantara.com"}
-
-    scenarios = await get_stock_scenarios(ticker="MSFT", current_user=current_user, db=mock_db)
-
-    assert len(scenarios) == 6
-    for s in scenarios:
-        assert s.name
-        assert s.type
-        assert s.status in ["danger", "warning", "success"]
-        assert s.impact_pct is not None
-
-
-@pytest.mark.asyncio
 async def test_risk_endpoint_reports_assumed_inputs_when_data_unavailable(monkeypatch):
     """With no market data, defaults are disclosed and dependent factors are omitted."""
     from unittest.mock import AsyncMock

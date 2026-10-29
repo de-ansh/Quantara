@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
+from app.models.stock import Stock
 from app.services.risk_engine import RiskEngine
 
 logger = get_logger(__name__)
@@ -87,32 +88,17 @@ async def get_stock_risk_analysis(
         Risk analysis
     """
     # Fetch actual financial data and execute deterministic risk engine
-    from app.services.llm_orchestrator import AnalysisState, LLMOrchestrator
-
-    orchestrator = LLMOrchestrator()
-
-    # Initialize transient state
-    initial_state: AnalysisState = {
-        "ticker": ticker.upper(),
-        "raw_data": {},
-        "computed_metrics": {},
-        "risk_classification": {},
-        "structured_analysis": {},
-        "validation_errors": [],
-        "retry_count": 0,
-        "final_output": None,
-        "db": db,
-        "openai_api_key": None,
-        "sec_user_agent": current_user["sec_user_agent"],
-    }
+    from app.services.llm_orchestrator import AnalysisState, has_price_history, run_risk_pipeline
 
     state: AnalysisState | None = None
     try:
-        # Run nodes sequentially to compute metrics and execute risk engine
-        state = await orchestrator._retrieve_data(initial_state)
-        state = await orchestrator._compute_metrics(state)
-        state = await orchestrator._risk_classification(state)
+        state = await run_risk_pipeline(db, ticker, current_user["sec_user_agent"])
         risk_data = state.get("risk_classification", {})
+        # Keep the explorer/recommendation score in step with what was just computed
+        stock = await db.get(Stock, ticker.upper())
+        if stock is not None and has_price_history(state) and risk_data.get("risk_score") is not None:
+            stock.risk_score = risk_data["risk_score"]
+            await db.commit()
     except Exception:
         state = None
         # Graceful fallback if external APIs or calculations fail
@@ -172,7 +158,7 @@ async def get_stock_risk_analysis(
         "sector": "Technology",
     }
     assumed = [k for k, v in actual.items() if v is None]
-    if state is None:
+    if state is None or not has_price_history(state):
         assumed.insert(0, "price_history")
     stock_beta = actual["beta"] if actual["beta"] is not None else defaults["beta"]
     stock_pe = actual["pe_ratio"] if actual["pe_ratio"] is not None else defaults["pe_ratio"]
@@ -229,45 +215,6 @@ async def get_stock_risk_analysis(
         factor_sensitivities=factor_sens,
         assumed_inputs=assumed,
     )
-
-
-@router.get("/stocks/{ticker}/scenarios", response_model=list[ScenarioStressResult])
-async def get_stock_scenarios(
-    ticker: str,
-    current_user: CurrentUser,
-    db: DBSession,
-) -> list[ScenarioStressResult]:
-    """
-    Get multi-factor macroeconomic stress test scenarios for a stock.
-
-    Args:
-        ticker: Stock ticker symbol
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of macro scenario stress test results with factor breakdown.
-    """
-    from sqlalchemy import select
-
-    from app.models.stock import Stock
-
-    stmt = select(Stock).where(Stock.ticker == ticker.upper())
-    res = await db.execute(stmt)
-    stock = res.scalar_one_or_none()
-
-    beta = stock.beta if stock and stock.beta is not None else 1.1
-    pe_ratio = stock.pe_ratio if stock and stock.pe_ratio is not None else 25.0
-    sector = stock.sector if stock and stock.sector else "Technology"
-
-    scenarios = risk_engine.run_scenario_stress_test(
-        ticker=ticker.upper(),
-        beta=beta,
-        pe_ratio=pe_ratio,
-        debt_to_equity=0.5,
-        sector=sector,
-    )
-    return [ScenarioStressResult(**s) for s in scenarios]
 
 
 class PeerCorrelation(BaseModel):

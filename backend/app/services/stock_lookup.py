@@ -1,12 +1,12 @@
 """Find a tracked stock, or verify an untracked ticker against Yahoo and start tracking it."""
 
 import asyncio
-from datetime import datetime
 
 import yfinance as yf
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import utcnow
 from app.core.logging import get_logger
 from app.models.stock import Stock
 
@@ -32,7 +32,7 @@ async def get_or_track_stock(db: AsyncSession, ticker: str) -> Stock | None:
     price = await asyncio.to_thread(last_close, ticker)
     if price is None:
         return None
-    stock = Stock(ticker=ticker, name=ticker, price=price, price_updated_at=datetime.utcnow())
+    stock = Stock(ticker=ticker, name=ticker, price=price, price_updated_at=utcnow())
     db.add(stock)
     await db.flush()
     return stock

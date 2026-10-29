@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,6 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.api.v1.research import research_engine
+from app.core.clock import utcnow
 from app.models.research import ResearchReport
 from app.models.signal import Signal as DBSignal
 from app.models.stock import Stock
@@ -130,7 +130,7 @@ async def test_end_to_end_flow(
             strength=85.0,
             confidence=95.0,
             data={"insiders": ["Tim Cook"]},
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
         )
         db_session.add(db_signal)
         await db_session.commit()

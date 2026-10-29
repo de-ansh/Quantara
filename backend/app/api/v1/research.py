@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
+from app.core.clock import utcnow
 from app.core.config import settings
 from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_rate_limit
 from app.services.research_engine import ResearchEngine
@@ -36,9 +37,8 @@ class StockSearchItem(BaseModel):
     name: str
     price: str
     cap: str
-    risk: float
+    risk: float | None
     signal: str
-    alpha: str
     status: str
     change_pct: float | None = None
     price_updated_at: datetime | None = None
@@ -68,8 +68,9 @@ def format_market_cap(value: float | None, ticker: str) -> str:
 
 def to_search_item(stock: Any) -> StockSearchItem:
     """Explorer row for a Stock record."""
-    sig_str = "Neutral"
+    sig_str = "Unrated"
     if stock.research_score is not None:
+        sig_str = "Neutral"
         if stock.research_score >= 88:
             sig_str = "Strong"
         elif stock.research_score >= 70:
@@ -77,20 +78,20 @@ def to_search_item(stock: Any) -> StockSearchItem:
         elif stock.research_score < 40:
             sig_str = "Weak"
 
+    change_pct = (
+        round((stock.price / stock.previous_close - 1) * 100, 2)
+        if stock.price and stock.previous_close
+        else None
+    )
     return StockSearchItem(
         ticker=stock.ticker,
         name=stock.name or stock.ticker,
         price=format_price(stock.price, stock.ticker),
         cap=format_market_cap(stock.market_cap, stock.ticker),
-        risk=stock.risk_score or 50.0,
+        risk=stock.risk_score,
         signal=sig_str,
-        alpha=stock.alpha_projection or "+0.0%",
-        status=stock.status or "neutral",
-        change_pct=(
-            round((stock.price / stock.previous_close - 1) * 100, 2)
-            if stock.price and stock.previous_close
-            else None
-        ),
+        status="neutral" if not change_pct else "up" if change_pct > 0 else "down",
+        change_pct=change_pct,
         price_updated_at=stock.price_updated_at,
         sector=stock.sector,
         pe=stock.pe_ratio,
@@ -220,7 +221,7 @@ async def get_stock_research(
         not refresh
         and report
         and report.structured_json
-        and datetime.utcnow() - report.updated_at < max_age
+        and utcnow() - report.updated_at < max_age
     ):
         return ResearchReportResponse(**{**report.structured_json, "generated_at": report.updated_at})
 
@@ -247,7 +248,7 @@ async def get_stock_research(
             detail=f"Failed to generate research report for {ticker}",
         )
 
-    return ResearchReportResponse(**{**report_data, "generated_at": datetime.utcnow()})
+    return ResearchReportResponse(**{**report_data, "generated_at": utcnow()})
 
 
 class PricePoint(BaseModel):

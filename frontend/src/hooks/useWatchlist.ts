@@ -7,9 +7,8 @@ export interface WatchlistEntry {
     name: string;
     price: string;
     cap: string;
-    risk: number;
+    risk: number | null;
     signal: string;
-    alpha: string;
     status: string;
     change_pct: number | null;
 }

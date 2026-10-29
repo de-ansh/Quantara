@@ -3,6 +3,7 @@
 import pytest
 from httpx import AsyncClient
 
+from app.core.clock import utcnow
 from app.models.stock import Stock
 from app.services import stock_lookup
 
@@ -120,7 +121,6 @@ async def test_portfolio_rejects_unknown_and_duplicate_tickers(client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_watchlist_alerts_unread_then_seen(client: AsyncClient, db_session, yahoo):
-    from datetime import datetime
 
     from app.models.signal import Signal
 
@@ -129,7 +129,7 @@ async def test_watchlist_alerts_unread_then_seen(client: AsyncClient, db_session
     headers = await _headers(client)
     await client.post("/api/v1/watchlist/", json={"ticker": "AAPL"}, headers=headers)
 
-    now = datetime.utcnow()
+    now = utcnow()
     db_session.add_all([
         Signal(ticker="AAPL", signal_type="insider_buying", strength=70, confidence=0.8, timestamp=now),
         Signal(ticker="MSFT", signal_type="insider_buying", strength=70, confidence=0.8, timestamp=now),

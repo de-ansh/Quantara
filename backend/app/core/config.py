@@ -50,6 +50,12 @@ class Settings(BaseSettings):
         "Quantara admin@example.com", description="SEC EDGAR User-Agent string"
     )
 
+    # Slack incoming webhook for price-alert and watchlist-signal notifications (unset: off)
+    slack_webhook_url: str | None = None
+
+    # Sentry DSN for error monitoring (unset: off)
+    sentry_dsn: str | None = None
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

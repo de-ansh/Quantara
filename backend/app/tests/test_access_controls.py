@@ -1,12 +1,13 @@
 """Tests for stored credentials, rate limiting, research cache freshness and inactive users."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.api.v1 import research
+from app.core.clock import utcnow
 from app.core.config import settings
 from app.models.research import ResearchReport
 from app.models.stock import Stock
@@ -77,7 +78,7 @@ async def test_fresh_report_is_cached_and_stale_report_regenerates(
     assert resp.json()["summary"] == "cached"
     assert fake_generate == []
 
-    report.updated_at = datetime.utcnow() - timedelta(
+    report.updated_at = utcnow() - timedelta(
         hours=settings.research_cache_max_age_hours + 1
     )
     await db_session.commit()
@@ -208,7 +209,7 @@ async def test_report_age_is_returned_and_refresh_bypasses_cache(
     headers = await _auth_headers(client)
     db_session.add(Stock(ticker="AAPL", name="Apple Inc."))
     await db_session.commit()
-    generated = datetime.utcnow() - timedelta(hours=2)
+    generated = utcnow() - timedelta(hours=2)
     db_session.add(
         ResearchReport(
             ticker="AAPL",

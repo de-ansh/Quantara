@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg15  # pgvector required by document_chunks.embedding
@@ -30,6 +28,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  db-backup:
+    image: pgvector/pgvector:pg15  # same major version as the server, so pg_dump matches
+    container_name: quantara-db-backup
+    environment:
+      PGHOST: postgres
+      PGUSER: quantara
+      PGPASSWORD: quantara
+      PGDATABASE: quantara
+      BACKUP_KEEP_DAYS: 14
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Daily custom-format dump; written as .partial first so a failed dump never looks complete
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/quantara-$$(date -u +%Y%m%d-%H%M%S).dump
+          if pg_dump -Fc -f "$$f.partial"; then mv "$$f.partial" "$$f"; echo "backup written: $$f"; else rm -f "$$f.partial"; echo "backup FAILED" >&2; fi
+          find /backups -name 'quantara-*.dump' -mtime +$$BACKUP_KEEP_DAYS -delete
+          sleep 86400
+        done
 
   backend:
     build: .

@@ -186,6 +186,7 @@ Structured financial analysis pipeline:
 - LLM-powered insights
 - Schema validation
 - Vector embeddings
+- Qualitative context from the company's latest earnings press release (SEC 8-K, Exhibit 99.1); US listings only
 
 ### Recommendation Engine
 Multi-component scoring system:
@@ -221,6 +222,10 @@ REDIS_URL=redis://localhost:6379/0
 
 For production, also set `ENVIRONMENT=production` (which marks the session cookie `Secure`, so HTTPS is required) and a stable `CREDENTIAL_ENCRYPTION_KEY`.
 
+To get triggered price alerts and new signals on watchlisted tickers in Slack, create an [incoming webhook](https://api.slack.com/messaging/webhooks) and set `SLACK_WEBHOOK_URL`. Leave it unset to turn notifications off.
+
+To report backend errors to [Sentry](https://sentry.io), set `SENTRY_DSN`. Nothing is sent while it's unset, and requests are reported without personal data.
+
 ### Sessions & deployment
 
 Sign-in keeps the access token in memory and the refresh token in an `HttpOnly; SameSite=Strict` cookie scoped to `/api/v1/auth`. The browser only sends that cookie when the UI and API are on the **same site** (the same registrable domain; ports may differ). Examples:
@@ -239,6 +244,8 @@ cd backend
 make test
 make test-cov
 ```
+
+Tests run offline: `app/tests/conftest.py` replaces Yahoo with deterministic synthetic prices, makes SEC look unavailable, and fails any test that tries to reach a public host.
 
 ## 🛠️ Development
 
@@ -273,6 +280,16 @@ Services:
 - PostgreSQL (port 5432)
 - Redis (port 6379)
 - Backend API (port 8000)
+- `db-backup`: a daily `pg_dump` into `backend/backups/`, keeping 14 days
+
+Restore a backup (this replaces the current data):
+
+```bash
+cd backend
+docker compose exec -T postgres pg_restore -U quantara -d quantara --clean --if-exists < backups/quantara-YYYYMMDD-HHMMSS.dump
+```
+
+Backups sit on the same machine as the database, so copy `backend/backups/` somewhere else (another disk or cloud storage) to survive a disk failure.
 
 ## 🔧 Common Commands
 

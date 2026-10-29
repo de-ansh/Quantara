@@ -124,3 +124,6 @@ dump.rdb
 
 # Local development
 local_settings.py
+
+# Database backups (db-backup service)
+backups/

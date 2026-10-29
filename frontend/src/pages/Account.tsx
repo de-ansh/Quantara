@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import ChangePasswordCard from "@/components/ChangePasswordCard"
 import RecentActivityCard from "@/components/RecentActivityCard"
 import YourDataCard from "@/components/YourDataCard"
-import { User, ShieldCheck, AlertTriangle, Save, Loader2, Sliders, CheckCircle2 } from "lucide-react"
+import { User, AlertTriangle, Save, Loader2, Sliders, CheckCircle2 } from "lucide-react"
 
 const AVAILABLE_SECTORS = ["Technology", "Consumer Discretionary", "Financials", "Healthcare", "Energy"]
 
@@ -110,7 +110,7 @@ export default function Account() {
                         Account & Risk Control
                     </h1>
                     <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
-                        Manage institutional Node Access and database-backed Risk Limits
+                        Profile, password and risk preferences
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -139,7 +139,7 @@ export default function Account() {
                 <div className="space-y-6">
                     <Card className="bg-card border-border shadow-none">
                         <CardHeader className="p-4 pb-2 border-b border-border/55">
-                            <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Node Metadata</CardTitle>
+                            <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Profile</CardTitle>
                             <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
                                 Authenticated Trader Details
                             </CardDescription>
@@ -149,19 +149,9 @@ export default function Account() {
                                 <span className="text-muted-foreground">Access ID:</span>
                                 <span className="text-foreground font-bold">{user?.id}</span>
                             </div>
-                            <div className="flex justify-between py-1 border-b border-border/30">
+                            <div className="flex justify-between py-1">
                                 <span className="text-muted-foreground">Registered Email:</span>
                                 <span className="text-foreground font-bold font-sans normal-case">{user?.email}</span>
-                            </div>
-                            <div className="flex justify-between py-1 border-b border-border/30">
-                                <span className="text-muted-foreground">Access Clearance:</span>
-                                <span className="text-primary font-black tracking-wider">Institutional Node</span>
-                            </div>
-                            <div className="flex justify-between py-1">
-                                <span className="text-muted-foreground">Security State:</span>
-                                <span className="text-green-400 font-bold flex items-center gap-1">
-                                    <ShieldCheck className="size-3.5" /> SECURE_CONN
-                                </span>
                             </div>
                         </CardContent>
                     </Card>

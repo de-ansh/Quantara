@@ -11,7 +11,6 @@ This module implements a structured LLM orchestration layer with:
 """
 
 import asyncio
-from datetime import datetime
 from typing import Any, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -20,6 +19,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import utcnow
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.providers.transcript import TranscriptChunk
@@ -58,19 +58,35 @@ class StructuredAnalysisSchema(BaseModel):
     threats: list[str] = Field(..., description="Market threats")
     confidence_score: float = Field(..., ge=0, le=100, description="Confidence in analysis")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "ticker": "AAPL",
-                "summary": "Strong fundamentals with premium valuation",
-                "key_insights": ["Market leader in consumer electronics"],
-                "strengths": ["Brand loyalty", "Ecosystem lock-in"],
-                "weaknesses": ["High valuation", "China dependency"],
-                "opportunities": ["Services growth", "AR/VR expansion"],
-                "threats": ["Regulatory scrutiny", "Competition"],
-                "confidence_score": 85.0,
-            }
-        }
+
+async def run_risk_pipeline(db: AsyncSession, ticker: str, sec_user_agent: str | None) -> AnalysisState:
+    """Retrieve data, compute metrics and run the deterministic risk engine (no LLM call).
+
+    Never raises for missing data: check `has_price_history` before trusting the score.
+    """
+    orchestrator = LLMOrchestrator()
+    state: AnalysisState = {
+        "ticker": ticker.upper(),
+        "raw_data": {},
+        "computed_metrics": {},
+        "risk_classification": {},
+        "structured_analysis": {},
+        "validation_errors": [],
+        "retry_count": 0,
+        "final_output": None,
+        "db": db,
+        "openai_api_key": None,
+        "sec_user_agent": sec_user_agent,
+    }
+    state = await orchestrator._retrieve_data(state)
+    state = await orchestrator._compute_metrics(state)
+    return await orchestrator._risk_classification(state)
+
+
+def has_price_history(state: AnalysisState) -> bool:
+    """True when the risk score was computed from real price history, not volatility defaults."""
+    df = state.get("raw_data", {}).get("price_df")
+    return df is not None and not df.empty
 
 
 class LLMOrchestrator:
@@ -201,9 +217,9 @@ class LLMOrchestrator:
 
         yahoo = YahooFinanceProvider()
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
-        end_dt = datetime.utcnow()
+        end_dt = utcnow()
         start_dt = end_dt - timedelta(days=365)
         start_date_str = start_dt.strftime("%Y-%m-%d")
         end_date_str = end_dt.strftime("%Y-%m-%d")
@@ -431,7 +447,9 @@ class LLMOrchestrator:
 
         try:
             # 1. Ingest transcript
-            transcript_data = await provider.fetch_transcript(ticker)
+            transcript_data = await provider.fetch_transcript(
+                ticker, sec_user_agent=state.get("sec_user_agent")
+            )
             if transcript_data is None:
                 logger.info(f"No earnings transcript available for {ticker}; skipping RAG")
                 state["transcripts"] = []
@@ -649,18 +667,6 @@ Generate a structured analysis based on this data.
             market_cap_val = to_float(raw_mcap)
             price_val = to_float(raw_price)
 
-            # Deterministic Alpha Projection
-            research_val = research_score or 50.0
-            risk_val = risk_score or 50.0
-            alpha_val = (research_val * 0.2) - (risk_val * 0.05)
-            alpha_str = f"{'+' if alpha_val >= 0 else ''}{alpha_val:.1f}%"
-
-            status = "neutral"
-            if alpha_val > 5.0:
-                status = "up"
-            elif alpha_val < -2.0:
-                status = "down"
-
             if not stock:
                 stock = Stock(
                     ticker=ticker,
@@ -672,9 +678,7 @@ Generate a structured analysis based on this data.
                     beta=beta,
                     market_cap=market_cap_val,
                     price=price_val,
-                    price_updated_at=datetime.utcnow() if price_val is not None else None,
-                    alpha_projection=alpha_str,
-                    status=status,
+                    price_updated_at=utcnow() if price_val is not None else None,
                 )
                 db.add(stock)
             else:
@@ -688,9 +692,7 @@ Generate a structured analysis based on this data.
                 # Keep the last known quote rather than blanking it when this run had none
                 if price_val is not None:
                     stock.price = price_val
-                    stock.price_updated_at = datetime.utcnow()
-                stock.alpha_projection = alpha_str
-                stock.status = status
+                    stock.price_updated_at = utcnow()
 
             await db.commit()
 
@@ -704,7 +706,7 @@ Generate a structured analysis based on this data.
                     report_output["qualitative_excerpts"] = state["qualitative_excerpts"]
 
                 vector_id = (
-                    f"emb_{ticker}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                    f"emb_{ticker}_{utcnow().strftime('%Y%m%d%H%M%S')}"
                     if state.get("qualitative_excerpts")
                     else None
                 )
@@ -720,7 +722,7 @@ Generate a structured analysis based on this data.
                     if vector_id:
                         report.vector_embedding_id = vector_id
                     report.version += 1
-                    report.updated_at = datetime.utcnow()
+                    report.updated_at = utcnow()
                 else:
                     report = ResearchReport(
                         ticker=ticker,

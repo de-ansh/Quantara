@@ -1,10 +1,10 @@
 import asyncio
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import select
 
+from app.core.clock import utcnow
 from app.models.signal import Signal as DBSignal
 from app.models.stock import Stock
 from app.services.signal_engine import (
@@ -23,7 +23,7 @@ def sample_signal():
         signal_type=SignalType.INSIDER_BUYING,
         strength=80.0,
         confidence=90.0,
-        timestamp=datetime.utcnow(),
+        timestamp=utcnow(),
         metadata={"num_insiders": 3, "net_buying": 1000000.0},
     )
 
@@ -236,7 +236,7 @@ def test_build_intraday_sentiment_curve_empty():
 
 def test_build_intraday_sentiment_curve_with_signals():
     engine = SignalEngine()
-    now = datetime.utcnow()
+    now = utcnow()
     signals = [
         DBSignal(
             id=1,
@@ -308,3 +308,59 @@ async def test_signal_pass_runs_in_only_one_worker(monkeypatch):
 
     assert await signal_engine.run_signal_pass_if_leader(None, None, None) is True
     assert runs == [1]
+
+
+@pytest.mark.asyncio
+async def test_new_signal_on_watched_ticker_notifies_slack(db_session, sample_signal, monkeypatch):
+    from datetime import timedelta
+
+    from app.models.user import User
+    from app.models.watchlist import WatchlistItem
+    from app.services import notify
+
+    sent: list[str] = []
+
+    async def fake_slack(text: str) -> None:
+        sent.append(text)
+
+    monkeypatch.setattr(notify, "notify_slack", fake_slack)
+
+    await save_signal_to_db(db_session, sample_signal)
+    assert sent == []  # nobody watches AAPL yet
+
+    user = (await db_session.execute(select(User))).scalars().first()
+    db_session.add(WatchlistItem(user_id=user.id, ticker="AAPL"))
+    await db_session.commit()
+
+    old = Signal(**{**sample_signal.__dict__, "timestamp": utcnow() - timedelta(days=30)})
+    await save_signal_to_db(db_session, old)
+    assert sent == []  # backfilled history is not pushed
+
+    fresh = Signal(**{**sample_signal.__dict__, "timestamp": utcnow()})
+    await save_signal_to_db(db_session, fresh)
+    await save_signal_to_db(db_session, fresh)  # duplicate: not re-sent
+    assert sent == [":chart_with_upwards_trend: AAPL: insider_buying signal (strength 80, confidence 90)"]
+
+
+@pytest.mark.asyncio
+async def test_notify_slack_is_noop_unset_and_never_raises(monkeypatch):
+    from app.services import notify
+
+    calls = []
+
+    class Boom:
+        def __init__(self, **kw): ...
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): ...
+        async def post(self, url, json):
+            calls.append(json)
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(notify.httpx, "AsyncClient", Boom)
+    monkeypatch.setattr(notify.settings, "slack_webhook_url", None)
+    await notify.notify_slack("hi")
+    assert calls == []
+
+    monkeypatch.setattr(notify.settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    await notify.notify_slack("hi")  # logged, not raised
+    assert calls == [{"text": "hi"}]

@@ -5,12 +5,15 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pandas as pd
+import sentry_sdk
 import yfinance as yf
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import utcnow
 from app.core.logging import get_logger
 from app.models.stock import Stock
+from app.services.notify import notify_slack
 
 logger = get_logger(__name__)
 
@@ -40,12 +43,12 @@ def fetch_quotes(tickers: list[str]) -> dict[str, tuple[float, float | None]]:
     return quotes
 
 
-async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now: datetime) -> None:
-    """Mark untriggered alerts whose condition holds at the fresh price (one-shot)."""
+async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now: datetime) -> list[str]:
+    """Mark untriggered alerts whose condition holds at the fresh price (one-shot); returns messages."""
     from app.models.price_alert import PriceAlert
 
     if not prices:
-        return
+        return []
     pending = (
         await db.execute(
             select(PriceAlert).where(
@@ -53,12 +56,15 @@ async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now:
             )
         )
     ).scalars().all()
+    fired = []
     for alert in pending:
         price = prices[alert.ticker]
         crossed = price >= alert.target_price if alert.direction == "above" else price <= alert.target_price
         if crossed:
             alert.triggered_at = now
             alert.triggered_price = price
+            fired.append(f"{alert.ticker} is {alert.direction} {alert.target_price:g} (now {price:g})")
+    return fired
 
 
 async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> int:
@@ -76,13 +82,15 @@ async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> 
         logger.warning(f"Price refresh download failed: {e}")
         return 0
 
-    now = datetime.utcnow()
+    now = utcnow()
     for stock in stocks:
         if stock.ticker in quotes:
             stock.price, stock.previous_close = quotes[stock.ticker]
             stock.price_updated_at = now
-    await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
+    fired = await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
     await db.commit()
+    for message in fired:
+        await notify_slack(f":bell: Price alert: {message}")
     logger.info(f"Refreshed prices for {len(quotes)}/{len(stocks)} stocks")
     return len(quotes)
 
@@ -122,7 +130,7 @@ async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTA
 
     Only fields Yahoo returns are overwritten, so a missing P/E never erases a known one.
     """
-    cutoff = datetime.utcnow() - max_age
+    cutoff = utcnow() - max_age
     due = (
         await db.execute(
             select(Stock).where(
@@ -138,12 +146,38 @@ async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTA
         for field, value in data.items():
             if value is not None:
                 setattr(stock, field, value)
-        stock.fundamentals_updated_at = datetime.utcnow()
+        stock.fundamentals_updated_at = utcnow()
         updated += 1
     await db.commit()
     if due:
         logger.info(f"Refreshed fundamentals for {updated}/{len(due)} stocks")
     return updated
+
+
+async def score_unrated_stocks(db: AsyncSession, limit: int = 5) -> int:
+    """Compute a real risk score for stocks that have none yet; returns how many were scored.
+
+    Picks a random few per pass so a ticker whose data keeps failing can't starve the rest.
+    """
+    from app.core.config import settings
+    from app.services.llm_orchestrator import has_price_history, run_risk_pipeline
+
+    unrated = (
+        await db.execute(select(Stock).where(Stock.risk_score.is_(None)).order_by(func.random()).limit(limit))
+    ).scalars().all()
+    scored = 0
+    for stock in unrated:
+        try:
+            state = await run_risk_pipeline(db, stock.ticker, settings.sec_user_agent)
+        except Exception as e:
+            logger.warning(f"Risk scoring failed for {stock.ticker}: {e}")
+            continue
+        score = state.get("risk_classification", {}).get("risk_score")
+        if score is not None and has_price_history(state):
+            stock.risk_score = score
+            scored += 1
+    await db.commit()
+    return scored
 
 
 async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTERVAL_SECONDS) -> None:
@@ -154,6 +188,7 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
         async with AsyncSessionLocal() as db:
             await refresh_prices(db)
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
+            await score_unrated_stocks(db)
 
     while True:
         try:
@@ -162,4 +197,5 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
             raise
         except Exception as e:
             logger.error(f"Error in price refresh: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
         await asyncio.sleep(interval_seconds)

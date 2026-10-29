@@ -21,8 +21,6 @@ async def test_search_stocks_with_query():
         market_cap=3e12,
         risk_score=72.0,
         research_score=85.0,
-        alpha_projection="+14.2%",
-        status="bullish",
     )
     mock_result.scalars.return_value.all.return_value = [nvda]
     mock_result.scalar_one.return_value = 1
