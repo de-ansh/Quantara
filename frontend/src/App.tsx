@@ -27,6 +27,7 @@ const PortfolioDetail = lazy(() => import("@/pages/PortfolioDetail"))
 const Compare = lazy(() => import("@/pages/Compare"))
 const Login = lazy(() => import("@/pages/Login"))
 const Register = lazy(() => import("@/pages/Register"))
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"))
 
 const Settings = lazy(() => import("@/pages/Settings"))
 const Account = lazy(() => import("@/pages/Account"))
@@ -56,6 +57,7 @@ function App() {
                   <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
                 </Routes>
               </Suspense>
               </RouteErrorBoundary>

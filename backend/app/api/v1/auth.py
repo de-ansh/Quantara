@@ -1,7 +1,9 @@
 """Authentication API endpoints."""
 
+from datetime import timedelta
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 
@@ -16,6 +18,7 @@ from app.core.security import (
     verify_token,
 )
 from app.models.user import User
+from app.services.notify import notify_slack
 
 router = APIRouter()
 
@@ -39,6 +42,22 @@ class ChangePasswordRequest(BaseModel):
 
     current_password: str
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Forgot-password request schema."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Reset-password request schema."""
+
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+RESET_TOKEN_MINUTES = 15
 
 
 class TokenResponse(BaseModel):
@@ -245,6 +264,71 @@ async def change_password(
         db, user_id=user.id, action="change_password", entity="user", entity_id=str(user.id)
     )
     return _issue_tokens(user, response)
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: DBSession,
+    redis: RedisClient,
+    http_request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
+    """Post a reset link to Slack. Same reply whether or not the email exists."""
+    if not settings.slack_webhook_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Password reset is not configured (set SLACK_WEBHOOK_URL)",
+        )
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    await enforce_rate_limit(
+        redis, f"forgot-password:{client_ip}", settings.login_rate_limit_per_minute, 60
+    )
+
+    user = (
+        await db.execute(select(User).where(User.email == request.email))
+    ).scalar_one_or_none()
+    if user and user.is_active:
+        # Single use: the reset bumps token_version, which this token is pinned to
+        token = create_access_token(
+            {"sub": str(user.id), "ver": user.token_version},
+            expires_delta=timedelta(minutes=RESET_TOKEN_MINUTES),
+            token_type="reset",
+        )
+        link = f"{settings.frontend_url.rstrip('/')}/reset-password?token={quote(token)}"
+        # In the background so response time doesn't reveal whether the account exists
+        background_tasks.add_task(
+            notify_slack,
+            f"Quantara password reset requested for {user.email}. "
+            f"Link valid for {RESET_TOKEN_MINUTES} minutes: {link}",
+        )
+        await create_audit_log(
+            db, user_id=user.id, action="forgot_password", entity="user", entity_id=str(user.id)
+        )
+    return {"detail": "If that account exists, a reset link has been posted to Slack."}
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(request: ResetPasswordRequest, db: DBSession) -> None:
+    """Set a new password from a reset link and sign out every session."""
+    payload = verify_token(request.token, token_type="reset")
+    user = None
+    if payload and payload.get("sub"):
+        user = (
+            await db.execute(select(User).where(User.id == int(payload["sub"])))
+        ).scalar_one_or_none()
+    if not payload or user is None or not user.is_active or payload.get("ver") != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link is invalid, expired or already used",
+        )
+
+    user.hashed_password = get_password_hash(request.new_password)
+    user.token_version += 1
+    await db.commit()
+    await create_audit_log(
+        db, user_id=user.id, action="reset_password", entity="user", entity_id=str(user.id)
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

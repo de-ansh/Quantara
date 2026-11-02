@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, String
+from sqlalchemy import DateTime, Float, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.clock import utcnow
@@ -46,6 +46,11 @@ class Stock(Base):
     fundamentals_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="When market cap / P/E / beta were last fetched"
     )
+
+    # Earnings filing (transcript / results PDF) the user linked, used as research context
+    filing_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    filing_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filing_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Metadata
     last_updated: Mapped[datetime] = mapped_column(
