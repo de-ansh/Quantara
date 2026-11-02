@@ -8,7 +8,7 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 
 | Category | Open Issues | P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Low) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Authentication & Routing (AUTH)** | 1 | 0 | 0 | 1 | 0 |
+| **Authentication & Routing (AUTH)** | 0 | 0 | 0 | 0 | 0 |
 | **Recommendations Engine (REC)** | 0 | 0 | 0 | 0 | 0 |
 | **Stock Research & Detail (STK)** | 0 | 0 | 0 | 0 | 0 |
 | **Portfolio & Simulation (PORT)** | 0 | 0 | 0 | 0 | 0 |
@@ -17,7 +17,7 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | **Navigation & Explorer UX (NAV)** | 0 | 0 | 0 | 0 | 0 |
 | **Qualitative Analysis / RAG (RAG)**| 1 | 0 | 0 | 1 | 0 |
 | **Product Usability (UX)** | 0 | 0 | 0 | 0 | 0 |
-| **Total** | **2** | **0** | **0** | **2** | **0** |
+| **Total** | **1** | **0** | **0** | **1** | **0** |
 
 ---
 
@@ -313,20 +313,17 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | QTR-SEC-05 ✅ | `GET /users/me/export` (JSON, no secrets) and `DELETE /users/me` (password-confirmed, removes all owned rows, anonymous erasure record); "Your Data" card on Account |
 | QTR-UX-06 ✅ | "Not investment advice" notice on Dashboard recommendations and Stock Detail analysis |
 | QTR-UX-07 ✅ | Phone layout: off-canvas navigation drawer, stacked Explorer filters and Simulation controls, compact header; no clipping on any page at 390px |
+| QTR-AUTH-05 ✅ | Forgotten-password reset: 15-minute single-use link posted to the Slack webhook (`/reset-password`); a reset signs out every session |
 | QTR-UX-08 ✅ | Simulation's hardcoded "Market Open" badge now shows the real US/NSE session |
 
 ---
 
 ## 📋 Open Tickets
 
-### [QTR-AUTH-05] Email Password Reset (P3, deferred: personal use; notifications use Slack)
-- **Description**: Users who are signed in can change their password; a forgotten password still can't be recovered.
-- **Acceptance Criteria**:
-  - [ ] Choose an email provider; single-use, time-limited reset tokens; bump `token_version` on reset.
-
-### [QTR-RAG-03] Real Earnings Transcript Source (P2, done for US listings)
+### [QTR-RAG-03] Real Earnings Transcript Source (P2, done for US and NSE/BSE listings)
 - **Description**: Only hardcoded AAPL/NVDA/MSFT excerpts existed; other tickers got no qualitative RAG context.
 - **Acceptance Criteria**:
   - [x] Use the latest SEC 8-K earnings press release (Exhibit 99.1) for any US ticker, falling back to the bundled excerpts.
-  - [ ] NSE/BSE listings: no free equivalent wired in yet.
-  - [ ] Full call transcripts would need a paid provider.
+  - [x] NSE/BSE listings: paste a filing PDF link (exchange announcement or company IR page) on the stock page; its text is the research context.
+  - [x] Automatic NSE/BSE transcript discovery: a background job polls NSE's official announcements RSS every 30 minutes, matches transcripts to tracked stocks by NSE symbol / BSE code from the filing's XBRL, and falls back to BSE's announcements RSS for the PDF.
+  - [ ] US listings: full call transcripts (not just the press release) would need a paid provider.

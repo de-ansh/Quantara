@@ -171,6 +171,57 @@ def test_credential_encryption_key_overrides_secret_derivation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_password_reset_via_slack(client: AsyncClient, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    from app.api.v1 import auth
+
+    posted: list[str] = []
+
+    async def fake_slack(text: str) -> None:
+        posted.append(text)
+
+    monkeypatch.setattr(auth, "notify_slack", fake_slack)
+    monkeypatch.setattr(settings, "slack_webhook_url", None)
+    off = await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
+    assert off.status_code == 503
+
+    monkeypatch.setattr(settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    old_headers = await _auth_headers(client)
+    # Unknown emails get the same reply and post nothing
+    unknown = await client.post("/api/v1/auth/forgot-password", json={"email": "nobody@x.com"})
+    assert unknown.status_code == 202 and posted == []
+
+    sent = await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
+    assert sent.status_code == 202 and unknown.json() == sent.json()
+    link = posted[0].split()[-1]
+    token = parse_qs(urlparse(link).query)["token"][0]
+
+    # A reset token is not an access token
+    as_bearer = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert as_bearer.status_code == 401
+    bad = await client.post(
+        "/api/v1/auth/reset-password", json={"token": "junk", "new_password": "reset-pass-123"}
+    )
+    assert bad.status_code == 400
+
+    ok = await client.post(
+        "/api/v1/auth/reset-password", json={"token": token, "new_password": "reset-pass-123"}
+    )
+    assert ok.status_code == 204
+    # Single use, existing sessions revoked, only the new password logs in
+    reused = await client.post(
+        "/api/v1/auth/reset-password", json={"token": token, "new_password": "another-pass-1"}
+    )
+    assert reused.status_code == 400
+    assert (await client.get("/api/v1/users/me", headers=old_headers)).status_code == 401
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "test@quantara.com", "password": "reset-pass-123"}
+    )
+    assert login.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_change_password(client: AsyncClient):
     old_headers = await _auth_headers(client)
 

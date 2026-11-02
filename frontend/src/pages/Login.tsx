@@ -101,7 +101,7 @@ export default function Login() {
                         <div className="space-y-1.5">
                             <div className="flex justify-between items-end">
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-[#9ca5ba]" htmlFor="password">Access Key / Password</label>
-                                <a className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase" href="#">Forgot Key?</a>
+                                <Link className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase" to="/reset-password">Forgot Key?</Link>
                             </div>
                             <div className="relative">
                                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />

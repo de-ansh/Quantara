@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.clock import utcnow
 from app.core.config import settings
@@ -249,6 +249,84 @@ async def get_stock_research(
         )
 
     return ResearchReportResponse(**{**report_data, "generated_at": utcnow()})
+
+
+class FilingRequest(BaseModel):
+    """Link to an earnings filing PDF (call transcript, results or investor presentation)."""
+
+    url: str = Field(..., max_length=1000)
+
+
+class FilingResponse(BaseModel):
+    """The filing currently used as research context for a stock."""
+
+    url: str | None
+    updated_at: datetime | None
+    chars: int
+
+
+def _filing_response(stock: Any) -> FilingResponse:
+    return FilingResponse(
+        url=stock.filing_url if stock else None,
+        updated_at=stock.filing_updated_at if stock else None,
+        chars=len(stock.filing_text or "") if stock else 0,
+    )
+
+
+@router.get("/stocks/{ticker}/filing", response_model=FilingResponse)
+async def get_stock_filing(ticker: str, current_user: CurrentUser, db: DBSession) -> FilingResponse:
+    """The linked earnings filing for a stock, if any."""
+    from sqlalchemy import select
+
+    from app.models.stock import Stock
+
+    stock = (
+        await db.execute(select(Stock).where(Stock.ticker == ticker.upper()))
+    ).scalar_one_or_none()
+    return _filing_response(stock)
+
+
+@router.put("/stocks/{ticker}/filing", response_model=FilingResponse)
+async def set_stock_filing(
+    ticker: str,
+    request: FilingRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+    redis: RedisClient,
+) -> FilingResponse:
+    """Download the PDF now, so a bad link fails here rather than silently at research time."""
+    from app.providers.filing import FilingError, fetch_filing_text
+    from app.services.stock_lookup import get_or_track_stock
+
+    await enforce_rate_limit(redis, f"filing:{current_user['id']}", 10, 60)
+    stock = await get_or_track_stock(db, ticker)
+    if stock is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown ticker {ticker}")
+    try:
+        text = await fetch_filing_text(request.url.strip())
+    except FilingError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+    stock.filing_url = request.url.strip()
+    stock.filing_text = text
+    stock.filing_updated_at = utcnow()
+    await db.commit()
+    return _filing_response(stock)
+
+
+@router.delete("/stocks/{ticker}/filing", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_stock_filing(ticker: str, current_user: CurrentUser, db: DBSession) -> None:
+    """Stop using the linked filing for a stock."""
+    from sqlalchemy import update
+
+    from app.models.stock import Stock
+
+    await db.execute(
+        update(Stock)
+        .where(Stock.ticker == ticker.upper())
+        .values(filing_url=None, filing_text=None, filing_updated_at=None)
+    )
+    await db.commit()
 
 
 class PricePoint(BaseModel):
