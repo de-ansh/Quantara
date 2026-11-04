@@ -171,6 +171,186 @@ def test_credential_encryption_key_overrides_secret_derivation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_password_reset_via_slack(client: AsyncClient, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    from app.api.v1 import auth
+
+    posted: list[str] = []
+
+    async def fake_slack(text: str) -> None:
+        posted.append(text)
+
+    monkeypatch.setattr(auth, "notify_slack", fake_slack)
+    monkeypatch.setattr(settings, "slack_webhook_url", None)
+    off = await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
+    assert off.status_code == 503
+
+    monkeypatch.setattr(settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    old_headers = await _auth_headers(client)
+    # Unknown emails get the same reply and post nothing
+    unknown = await client.post("/api/v1/auth/forgot-password", json={"email": "nobody@x.com"})
+    assert unknown.status_code == 202 and posted == []
+
+    sent = await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
+    assert sent.status_code == 202 and unknown.json() == sent.json()
+    link = posted[0].split()[-1]
+    token = parse_qs(urlparse(link).query)["token"][0]
+
+    # A reset token is not an access token
+    as_bearer = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert as_bearer.status_code == 401
+    bad = await client.post(
+        "/api/v1/auth/reset-password", json={"token": "junk", "new_password": "reset-pass-123"}
+    )
+    assert bad.status_code == 400
+
+    ok = await client.post(
+        "/api/v1/auth/reset-password", json={"token": token, "new_password": "reset-pass-123"}
+    )
+    assert ok.status_code == 204
+    # Single use, existing sessions revoked, only the new password logs in
+    reused = await client.post(
+        "/api/v1/auth/reset-password", json={"token": token, "new_password": "another-pass-1"}
+    )
+    assert reused.status_code == 400
+    assert (await client.get("/api/v1/users/me", headers=old_headers)).status_code == 401
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "test@quantara.com", "password": "reset-pass-123"}
+    )
+    assert login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_two_factor_login(client: AsyncClient):
+    import time
+
+    import pyotp
+
+    creds = {"email": "test@quantara.com", "password": "password"}
+    headers = await _auth_headers(client)
+
+    setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)
+    assert setup.status_code == 200 and setup.json()["otpauth_uri"].startswith("otpauth://totp/")
+    totp = pyotp.TOTP(setup.json()["secret"])
+    # Not on until the app proves it has the secret
+    assert (await client.post("/api/v1/auth/login", json=creds)).status_code == 200
+    wrong = await client.post("/api/v1/auth/2fa/enable", json={"code": "000000"}, headers=headers)
+    assert wrong.status_code == 400
+    enable_code = totp.now()
+    enabled = await client.post("/api/v1/auth/2fa/enable", json={"code": enable_code}, headers=headers)
+    assert enabled.status_code == 200
+    recovery = enabled.json()["recovery_codes"]
+    assert len(recovery) == 8
+    me = (await client.get("/api/v1/users/me", headers=headers)).json()
+    assert me["two_factor_enabled"] is True and me["recovery_codes_left"] == 8
+
+    # Password alone is no longer enough
+    no_code = await client.post("/api/v1/auth/login", json=creds)
+    assert no_code.status_code == 401 and no_code.json()["detail"] == "two_factor_required"
+    bad = await client.post("/api/v1/auth/login", json={**creds, "totp_code": "123456"})
+    assert bad.status_code == 401 and bad.json()["detail"] == "Invalid two-factor code"
+    # A code already used can't be replayed
+    replay = await client.post("/api/v1/auth/login", json={**creds, "totp_code": enable_code})
+    assert replay.status_code == 401
+    next_code = totp.at(time.time() + totp.interval)
+    ok = await client.post("/api/v1/auth/login", json={**creds, "totp_code": next_code})
+    assert ok.status_code == 200
+
+    # Recovery codes work once, with or without the dash
+    rec = await client.post(
+        "/api/v1/auth/login", json={**creds, "totp_code": recovery[0].replace("-", "").upper()}
+    )
+    assert rec.status_code == 200
+    again = await client.post("/api/v1/auth/login", json={**creds, "totp_code": recovery[0]})
+    assert again.status_code == 401
+
+    bad_off = await client.post(
+        "/api/v1/auth/2fa/disable", json={"password": "nope", "code": recovery[1]}, headers=headers
+    )
+    assert bad_off.status_code == 400
+    off = await client.post(
+        "/api/v1/auth/2fa/disable", json={"password": "password", "code": recovery[1]}, headers=headers
+    )
+    assert off.status_code == 204
+    assert (await client.post("/api/v1/auth/login", json=creds)).status_code == 200
+
+
+async def _enable_two_factor(client: AsyncClient, headers: dict):
+    import pyotp
+
+    secret = (await client.post("/api/v1/auth/2fa/setup", headers=headers)).json()["secret"]
+    enabled = await client.post(
+        "/api/v1/auth/2fa/enable", json={"code": pyotp.TOTP(secret).now()}, headers=headers
+    )
+    return enabled.json()["recovery_codes"]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_recovery_codes(client: AsyncClient):
+    creds = {"email": "test@quantara.com", "password": "password"}
+    headers = await _auth_headers(client)
+    old = await _enable_two_factor(client, headers)
+
+    wrong = await client.post(
+        "/api/v1/auth/2fa/recovery-codes", json={"password": "nope", "code": old[0]}, headers=headers
+    )
+    assert wrong.status_code == 400
+    new = await client.post(
+        "/api/v1/auth/2fa/recovery-codes", json={"password": "password", "code": old[0]}, headers=headers
+    )
+    assert new.status_code == 200
+    codes = new.json()["recovery_codes"]
+    assert len(codes) == 8 and not set(codes) & set(old)
+
+    # Old codes are gone, new ones work
+    stale = await client.post("/api/v1/auth/login", json={**creds, "totp_code": old[1]})
+    assert stale.status_code == 401
+    fresh = await client.post("/api/v1/auth/login", json={**creds, "totp_code": codes[0]})
+    assert fresh.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_reset_link_can_turn_off_two_factor(client: AsyncClient, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    from app.api.v1 import auth
+
+    posted: list[str] = []
+
+    async def fake_slack(text: str) -> None:
+        posted.append(text)
+
+    monkeypatch.setattr(auth, "notify_slack", fake_slack)
+    monkeypatch.setattr(settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    await _enable_two_factor(client, await _auth_headers(client))
+
+    async def reset(new_password: str, disable: bool) -> int:
+        await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
+        token = parse_qs(urlparse(posted[-1].split()[-1]).query)["token"][0]
+        resp = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": new_password, "disable_two_factor": disable},
+        )
+        return resp.status_code
+
+    # A plain reset keeps two-factor on
+    assert await reset("reset-pass-123", disable=False) == 204
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "test@quantara.com", "password": "reset-pass-123"}
+    )
+    assert login.json()["detail"] == "two_factor_required"
+
+    # Opting in turns it off and warns the Slack channel
+    assert await reset("reset-pass-456", disable=True) == 204
+    assert "turned off" in posted[-1]
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "test@quantara.com", "password": "reset-pass-456"}
+    )
+    assert login.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_change_password(client: AsyncClient):
     old_headers = await _auth_headers(client)
 

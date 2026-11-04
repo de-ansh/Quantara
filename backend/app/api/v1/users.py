@@ -60,6 +60,8 @@ class UserResponse(BaseModel):
     has_openai_key: bool = False
     openai_key_masked: str | None = None
     sec_user_agent: str | None = None
+    two_factor_enabled: bool = False
+    recovery_codes_left: int = 0
 
 
 @router.get("/me", response_model=UserResponse)
@@ -105,6 +107,8 @@ async def get_current_user_profile(
         has_openai_key=has_key,
         openai_key_masked=masked_key,
         sec_user_agent=user.sec_user_agent,
+        two_factor_enabled=user.totp_enabled,
+        recovery_codes_left=len(user.totp_recovery_codes or []),
     )
 
 
@@ -175,6 +179,8 @@ async def update_risk_profile(
         has_openai_key=has_key,
         openai_key_masked=masked_key,
         sec_user_agent=user.sec_user_agent,
+        two_factor_enabled=user.totp_enabled,
+        recovery_codes_left=len(user.totp_recovery_codes or []),
     )
 
 
@@ -310,6 +316,7 @@ async def export_my_data(current_user: CurrentUser, db: DBSession) -> JSONRespon
             "sector_preferences": user.sector_preferences,
             "sec_user_agent": user.sec_user_agent,
             "has_openai_key": bool(user.openai_api_key),  # the key itself is never exported
+            "two_factor_enabled": user.totp_enabled,  # nor the two-factor secret
             "created_at": _iso(user.created_at),
         },
         "portfolios": [

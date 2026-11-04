@@ -50,8 +50,11 @@ class Settings(BaseSettings):
         "Quantara admin@example.com", description="SEC EDGAR User-Agent string"
     )
 
-    # Slack incoming webhook for price-alert and watchlist-signal notifications (unset: off)
+    # Slack incoming webhook for price alerts, watchlist signals and password-reset links (unset: off).
+    # Every reset link goes to this one channel, so only use it when you own every account.
     slack_webhook_url: str | None = None
+    # Public URL of the web UI, used to build password-reset links
+    frontend_url: str = "http://localhost:5173"
 
     # Sentry DSN for error monitoring (unset: off)
     sentry_dsn: str | None = None

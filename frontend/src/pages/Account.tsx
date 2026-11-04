@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import ChangePasswordCard from "@/components/ChangePasswordCard"
+import TwoFactorCard from "@/components/TwoFactorCard"
 import RecentActivityCard from "@/components/RecentActivityCard"
 import YourDataCard from "@/components/YourDataCard"
 import { User, AlertTriangle, Save, Loader2, Sliders, CheckCircle2 } from "lucide-react"
@@ -279,6 +280,7 @@ export default function Account() {
             </form>
 
             <ChangePasswordCard />
+            <TwoFactorCard />
             <RecentActivityCard />
             <YourDataCard />
         </div>
