@@ -33,12 +33,15 @@ Daily fundamentals refresh, price alerts, personal-data export and account delet
 ### Honest data & operations (Oct 2026)
 - Removed the made-up "Alpha Projection" and the hand-typed seed scores. Risk scores now come from the risk engine on real price history; stocks without one show as unrated.
 - Removed leftover hardcoded UI: fake filters, status labels, latency numbers and session IDs, and fixed BULLISH/BEARISH badges.
-- Research reports use the company's latest SEC earnings press release as qualitative context.
+- Research reports use the company's latest SEC earnings press release as qualitative context, or, for NSE/BSE stocks, the latest earnings-call transcript, picked up automatically from the exchanges' RSS feeds (a pasted PDF link overrides it).
 - Optional Sentry error monitoring (`SENTRY_DSN`) and a daily database-backup service.
 - Backend tests run fully offline.
 
 ### Notifications (Oct 2026)
-Triggered price alerts and new signals on watchlisted tickers are posted to Slack through an optional `SLACK_WEBHOOK_URL`.
+Triggered price alerts, new signals on watchlisted tickers, and password-reset links are posted to Slack through an optional `SLACK_WEBHOOK_URL`.
+
+### Two-factor login (Nov 2026)
+Optional authenticator-app codes at sign-in, with single-use recovery codes you can regenerate, replacing the login page's decorative MFA switch. Someone who loses both their phone and codes can turn it off from a password-reset link (Slack is warned).
 
 ---
 
@@ -46,6 +49,5 @@ Triggered price alerts and new signals on watchlisted tickers are posted to Slac
 
 | Area | Item | Ticket |
 | :--- | :--- | :--- |
-| Accounts | Email-based password reset. Deferred: the app is for personal use, and notifications go to Slack | QTR-AUTH-05 |
+| Accounts | Per-user password reset by email (Slack reset links all go to one channel; fine while you own every account) | — |
 | Data | Licensed market-data vendor. Only needed before commercial use: Yahoo's terms cover personal use | — |
-| Research | Earnings context for Indian listings (SEC releases cover US companies only) | — |

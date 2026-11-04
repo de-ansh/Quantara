@@ -4,11 +4,10 @@ import {
     ShieldCheck,
     Mail,
     KeyRound,
-    ShieldAlert,
+    Smartphone,
     Globe,
     Monitor
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { api, apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import type { User } from "@/types"
@@ -16,9 +15,11 @@ import type { User } from "@/types"
 export default function Login() {
     const navigate = useNavigate()
     const { login } = useAuth()
-    const [mfaEnabled, setMfaEnabled] = useState(true)
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
+    // Shown once the server says this account needs a two-factor code
+    const [needsCode, setNeedsCode] = useState(false)
+    const [totpCode, setTotpCode] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -30,7 +31,8 @@ export default function Login() {
         try {
             const { data } = await api.post<{ access_token: string }>("/auth/login", {
                 email,
-                password
+                password,
+                ...(needsCode ? { totp_code: totpCode } : {}),
             })
 
             // Token isn't stored yet, so pass it explicitly to fetch the real profile
@@ -42,6 +44,10 @@ export default function Login() {
             login(data.access_token, user)
             navigate("/")
         } catch (err) {
+            if (apiErrorDetail(err) === "two_factor_required") {
+                setNeedsCode(true)
+                return
+            }
             setError(apiErrorDetail(err) ?? ((err instanceof Error && err.message) || "Failed to authenticate. Please check your credentials."))
         } finally {
             setIsLoading(false)
@@ -101,7 +107,7 @@ export default function Login() {
                         <div className="space-y-1.5">
                             <div className="flex justify-between items-end">
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-[#9ca5ba]" htmlFor="password">Access Key / Password</label>
-                                <a className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase" href="#">Forgot Key?</a>
+                                <Link className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase" to="/reset-password">Forgot Key?</Link>
                             </div>
                             <div className="relative">
                                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />
@@ -117,32 +123,28 @@ export default function Login() {
                             </div>
                         </div>
 
-                        <div className="pt-2">
-                            <div className="flex items-center justify-between p-3 border border-[#282d39] bg-[#0A0E12]/20">
-                                <div className="flex items-center gap-3">
-                                    <ShieldAlert className="text-[#1e5df1] size-5" />
-                                    <div>
-                                        <p className="text-xs font-bold text-white uppercase tracking-tight">Multi-Factor Auth</p>
-                                        <p className="text-[10px] text-[#9ca5ba]">Hardware token or authenticator app</p>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setMfaEnabled(!mfaEnabled)}
-                                    className={cn(
-                                        "relative inline-flex h-4 w-8 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
-                                        mfaEnabled ? "bg-[#1e5df1]" : "bg-[#282d39]"
-                                    )}
-                                >
-                                    <span
-                                        className={cn(
-                                            "pointer-events-none block h-3 w-3 rounded-full bg-white shadow-lg ring-0 transition-transform",
-                                            mfaEnabled ? "translate-x-4" : "translate-x-0"
-                                        )}
+                        {needsCode && (
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-[#9ca5ba]" htmlFor="totp-code">Two-Factor Code</label>
+                                <div className="relative">
+                                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />
+                                    <input
+                                        className="w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm px-10 py-3 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50 tracking-widest"
+                                        id="totp-code"
+                                        placeholder="123456"
+                                        autoComplete="one-time-code"
+                                        autoFocus
+                                        value={totpCode}
+                                        onChange={(e) => setTotpCode(e.target.value)}
+                                        required
                                     />
-                                </button>
+                                </div>
+                                <p className="text-[10px] text-[#9ca5ba]">
+                                    Enter the 6-digit code from your authenticator app, or a recovery code.{" "}
+                                    <Link to="/reset-password" className="text-[#1e5df1] hover:underline font-bold">Lost both?</Link>
+                                </p>
                             </div>
-                        </div>
+                        )}
 
                         {error && (
                             <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">

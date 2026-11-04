@@ -51,5 +51,14 @@ class User(Base):
     # Watchlist alerts detected after this are unread
     alerts_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Two-factor login (authenticator app). The secret is encrypted; it exists but is
+    # unused until totp_enabled, which is set once the user proves their app has it.
+    totp_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    # Last accepted 30-second step, so a code can't be replayed
+    totp_last_counter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # SHA-256 hashes of the unused single-use recovery codes
+    totp_recovery_codes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, risk_level={self.risk_level})>"

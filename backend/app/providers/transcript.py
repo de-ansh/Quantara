@@ -145,6 +145,7 @@ class TranscriptProvider:
         quarter: str | None = None,
         year: int | None = None,
         sec_user_agent: str | None = None,
+        filing: Any = None,
     ) -> dict[str, Any] | None:
         """
         Fetch qualitative earnings call transcript or management discussion disclosures.
@@ -158,10 +159,23 @@ class TranscriptProvider:
             Dictionary containing metadata, full transcript text, and categorized sections,
             or None when no transcript is available for the ticker.
 
-        The latest SEC earnings press release is preferred; the bundled call excerpts
-        are a fallback when EDGAR is unreachable.
+        A filing the user linked (`filing`: the Stock row) comes first, then the latest
+        SEC earnings press release; the bundled call excerpts are a fallback when EDGAR
+        is unreachable.
         """
         t = ticker.upper()
+
+        if filing is not None and filing.filing_text:
+            date = filing.filing_updated_at.date().isoformat() if filing.filing_updated_at else None
+            return {
+                "ticker": t,
+                "date": date,
+                "title": f"{t} earnings filing",
+                "source": "User-linked earnings filing (PDF)",
+                "url": filing.filing_url,
+                "sections": {"earnings_filing": filing.filing_text},
+                "full_text": filing.filing_text,
+            }
 
         from app.providers.sec import SECProvider
 

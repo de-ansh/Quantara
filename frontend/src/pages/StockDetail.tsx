@@ -28,6 +28,7 @@ import DayChange from "@/components/DayChange"
 import PriceChart from "@/components/PriceChart"
 import PriceAlertForm from "@/components/PriceAlertForm"
 import AdviceNotice from "@/components/AdviceNotice"
+import FilingCard from "@/components/FilingCard"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -484,6 +485,7 @@ export default function StockDetail() {
 
                 {/* Sidebar */}
                 <aside className="lg:col-span-4 space-y-6">
+                    <FilingCard ticker={activeTicker} />
                     {/* Key Stats */}
                     <div className="bg-card border border-border shadow-lg transition-colors">
                         <div className="border-b border-border bg-muted/40 px-4 py-3">

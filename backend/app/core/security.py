@@ -24,8 +24,10 @@ def get_password_hash(password: str) -> str:
     return str(pwd_context.hash(password))
 
 
-def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
-    """Create a JWT access token."""
+def create_access_token(
+    data: dict[str, Any], expires_delta: timedelta | None = None, token_type: str = "access"
+) -> str:
+    """Create a JWT access token (or another short-lived type, e.g. "reset")."""
     to_encode = data.copy()
 
     if expires_delta:
@@ -33,7 +35,7 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     else:
         expire = utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
 
-    to_encode.update({"exp": expire, "iat": utcnow(), "type": "access"})
+    to_encode.update({"exp": expire, "iat": utcnow(), "type": token_type})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return str(encoded_jwt)
 

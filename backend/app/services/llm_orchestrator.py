@@ -447,8 +447,18 @@ class LLMOrchestrator:
 
         try:
             # 1. Ingest transcript
+            filing = None
+            db = state.get("db")
+            if db is not None:
+                from sqlalchemy import select
+
+                from app.models.stock import Stock
+
+                filing = (
+                    await db.execute(select(Stock).where(Stock.ticker == ticker.upper()))
+                ).scalar_one_or_none()
             transcript_data = await provider.fetch_transcript(
-                ticker, sec_user_agent=state.get("sec_user_agent")
+                ticker, sec_user_agent=state.get("sec_user_agent"), filing=filing
             )
             if transcript_data is None:
                 logger.info(f"No earnings transcript available for {ticker}; skipping RAG")
