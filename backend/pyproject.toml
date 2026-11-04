@@ -30,6 +30,7 @@ dependencies = [
     "pgvector>=0.5.1",
     "sentry-sdk[fastapi]>=2.0",
     "pypdf>=5",
+    "pyotp>=2.9",
 ]
 
 [project.optional-dependencies]

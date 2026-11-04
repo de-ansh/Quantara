@@ -313,6 +313,7 @@ Structured issue registry for tracking, prioritizing, and resolving missing feat
 | QTR-SEC-05 ✅ | `GET /users/me/export` (JSON, no secrets) and `DELETE /users/me` (password-confirmed, removes all owned rows, anonymous erasure record); "Your Data" card on Account |
 | QTR-UX-06 ✅ | "Not investment advice" notice on Dashboard recommendations and Stock Detail analysis |
 | QTR-UX-07 ✅ | Phone layout: off-canvas navigation drawer, stacked Explorer filters and Simulation controls, compact header; no clipping on any page at 390px |
+| QTR-AUTH-06 ✅ | Real two-factor login (authenticator-app codes, no replays, 8 single-use recovery codes) replaces the login page's non-functional MFA toggle; set up and turned off on the Account page |
 | QTR-AUTH-05 ✅ | Forgotten-password reset: 15-minute single-use link posted to the Slack webhook (`/reset-password`); a reset signs out every session |
 | QTR-UX-08 ✅ | Simulation's hardcoded "Market Open" badge now shows the real US/NSE session |
 

@@ -40,6 +40,9 @@ Daily fundamentals refresh, price alerts, personal-data export and account delet
 ### Notifications (Oct 2026)
 Triggered price alerts, new signals on watchlisted tickers, and password-reset links are posted to Slack through an optional `SLACK_WEBHOOK_URL`.
 
+### Two-factor login (Nov 2026)
+Optional authenticator-app codes at sign-in, with single-use recovery codes, replacing the login page's decorative MFA switch.
+
 ---
 
 ## 🔜 Next

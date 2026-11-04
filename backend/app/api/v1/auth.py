@@ -13,9 +13,17 @@ from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_r
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    encrypt_credential,
     get_password_hash,
     verify_password,
     verify_token,
+)
+from app.core.two_factor import (
+    new_recovery_codes,
+    new_secret,
+    provisioning_uri,
+    verify_second_factor,
+    verify_totp,
 )
 from app.models.user import User
 from app.services.notify import notify_slack
@@ -28,6 +36,12 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+    # Authenticator-app code or a recovery code; required once two-factor login is on
+    totp_code: str | None = Field(None, max_length=32)
+
+
+# Login reply when the password is right but a two-factor code is still needed
+TWO_FACTOR_REQUIRED = "two_factor_required"
 
 
 class RegisterRequest(BaseModel):
@@ -129,6 +143,24 @@ async def login(
     user = result.scalar_one_or_none()
 
     if user and user.is_active and verify_password(request.password, user.hashed_password):
+        if user.totp_enabled:
+            if not request.totp_code:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=TWO_FACTOR_REQUIRED,
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if not verify_second_factor(user, request.totp_code):
+                await create_audit_log(
+                    db, user_id=user.id, action="login", entity="user", entity_id=str(user.id),
+                    status="failure", error_message="Wrong two-factor code",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid two-factor code",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            await db.commit()  # records the used code step / recovery code
         await create_audit_log(
             db,
             user_id=user.id,
@@ -328,6 +360,101 @@ async def reset_password(request: ResetPasswordRequest, db: DBSession) -> None:
     await db.commit()
     await create_audit_log(
         db, user_id=user.id, action="reset_password", entity="user", entity_id=str(user.id)
+    )
+
+
+class TwoFactorSetupResponse(BaseModel):
+    """Secret to add to an authenticator app, as text and as an otpauth:// link for a QR code."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorCodeRequest(BaseModel):
+    """A 6-digit code from the authenticator app."""
+
+    code: str = Field(..., max_length=32)
+
+
+class TwoFactorEnabledResponse(BaseModel):
+    """Single-use recovery codes, shown once."""
+
+    recovery_codes: list[str]
+
+
+class TwoFactorDisableRequest(BaseModel):
+    """Turning two-factor off needs the password and a current code (or a recovery code)."""
+
+    password: str
+    code: str = Field(..., max_length=32)
+
+
+async def _current_user_row(current_user: dict, db: DBSession) -> User:
+    return (await db.execute(select(User).where(User.id == int(current_user["id"])))).scalar_one()
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+async def setup_two_factor(current_user: CurrentUser, db: DBSession) -> TwoFactorSetupResponse:
+    """Start two-factor setup with a fresh secret; it takes effect only after /2fa/enable."""
+    user = await _current_user_row(current_user, db)
+    if user.totp_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor login is already on")
+    secret = new_secret()
+    user.totp_secret = encrypt_credential(secret)
+    user.totp_last_counter = None
+    await db.commit()
+    return TwoFactorSetupResponse(secret=secret, otpauth_uri=provisioning_uri(secret, user.email))
+
+
+@router.post("/2fa/enable", response_model=TwoFactorEnabledResponse)
+async def enable_two_factor(
+    request: TwoFactorCodeRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> TwoFactorEnabledResponse:
+    """Turn two-factor on once the app's code matches; returns recovery codes (shown once)."""
+    await enforce_rate_limit(
+        redis, f"2fa:{current_user['id']}", settings.login_rate_limit_per_minute, 60
+    )
+    user = await _current_user_row(current_user, db)
+    if user.totp_enabled or not user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Start two-factor setup first")
+    if not verify_totp(user, request.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That code doesn't match; try the newest one")
+    codes, hashes = new_recovery_codes()
+    user.totp_enabled = True
+    user.totp_recovery_codes = hashes
+    await db.commit()
+    await create_audit_log(
+        db, user_id=user.id, action="enable_two_factor", entity="user", entity_id=str(user.id)
+    )
+    return TwoFactorEnabledResponse(recovery_codes=codes)
+
+
+@router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def disable_two_factor(
+    request: TwoFactorDisableRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> None:
+    """Turn two-factor off (needs the password and a code)."""
+    await enforce_rate_limit(
+        redis, f"2fa:{current_user['id']}", settings.login_rate_limit_per_minute, 60
+    )
+    user = await _current_user_row(current_user, db)
+    if not user.totp_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor login is already off")
+    if not verify_password(request.password, user.hashed_password) or not verify_second_factor(
+        user, request.code
+    ):
+        await create_audit_log(
+            db, user_id=user.id, action="disable_two_factor", entity="user", entity_id=str(user.id),
+            status="failure", error_message="Wrong password or code",
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong password or code")
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_last_counter = None
+    user.totp_recovery_codes = None
+    await db.commit()
+    await create_audit_log(
+        db, user_id=user.id, action="disable_two_factor", entity="user", entity_id=str(user.id)
     )
 
 
