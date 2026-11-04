@@ -222,6 +222,61 @@ async def test_password_reset_via_slack(client: AsyncClient, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_two_factor_login(client: AsyncClient):
+    import time
+
+    import pyotp
+
+    creds = {"email": "test@quantara.com", "password": "password"}
+    headers = await _auth_headers(client)
+
+    setup = await client.post("/api/v1/auth/2fa/setup", headers=headers)
+    assert setup.status_code == 200 and setup.json()["otpauth_uri"].startswith("otpauth://totp/")
+    totp = pyotp.TOTP(setup.json()["secret"])
+    # Not on until the app proves it has the secret
+    assert (await client.post("/api/v1/auth/login", json=creds)).status_code == 200
+    wrong = await client.post("/api/v1/auth/2fa/enable", json={"code": "000000"}, headers=headers)
+    assert wrong.status_code == 400
+    enable_code = totp.now()
+    enabled = await client.post("/api/v1/auth/2fa/enable", json={"code": enable_code}, headers=headers)
+    assert enabled.status_code == 200
+    recovery = enabled.json()["recovery_codes"]
+    assert len(recovery) == 8
+    me = (await client.get("/api/v1/users/me", headers=headers)).json()
+    assert me["two_factor_enabled"] is True and me["recovery_codes_left"] == 8
+
+    # Password alone is no longer enough
+    no_code = await client.post("/api/v1/auth/login", json=creds)
+    assert no_code.status_code == 401 and no_code.json()["detail"] == "two_factor_required"
+    bad = await client.post("/api/v1/auth/login", json={**creds, "totp_code": "123456"})
+    assert bad.status_code == 401 and bad.json()["detail"] == "Invalid two-factor code"
+    # A code already used can't be replayed
+    replay = await client.post("/api/v1/auth/login", json={**creds, "totp_code": enable_code})
+    assert replay.status_code == 401
+    next_code = totp.at(time.time() + totp.interval)
+    ok = await client.post("/api/v1/auth/login", json={**creds, "totp_code": next_code})
+    assert ok.status_code == 200
+
+    # Recovery codes work once, with or without the dash
+    rec = await client.post(
+        "/api/v1/auth/login", json={**creds, "totp_code": recovery[0].replace("-", "").upper()}
+    )
+    assert rec.status_code == 200
+    again = await client.post("/api/v1/auth/login", json={**creds, "totp_code": recovery[0]})
+    assert again.status_code == 401
+
+    bad_off = await client.post(
+        "/api/v1/auth/2fa/disable", json={"password": "nope", "code": recovery[1]}, headers=headers
+    )
+    assert bad_off.status_code == 400
+    off = await client.post(
+        "/api/v1/auth/2fa/disable", json={"password": "password", "code": recovery[1]}, headers=headers
+    )
+    assert off.status_code == 204
+    assert (await client.post("/api/v1/auth/login", json=creds)).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_change_password(client: AsyncClient):
     old_headers = await _auth_headers(client)
 
