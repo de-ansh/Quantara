@@ -69,6 +69,8 @@ class ResetPasswordRequest(BaseModel):
 
     token: str
     new_password: str = Field(..., min_length=8, max_length=128)
+    # For someone who lost both their authenticator app and their recovery codes
+    disable_two_factor: bool = False
 
 
 RESET_TOKEN_MINUTES = 15
@@ -357,10 +359,20 @@ async def reset_password(request: ResetPasswordRequest, db: DBSession) -> None:
 
     user.hashed_password = get_password_hash(request.new_password)
     user.token_version += 1
+    turned_off = request.disable_two_factor and user.totp_enabled
+    if turned_off:
+        _clear_two_factor(user)
     await db.commit()
     await create_audit_log(
-        db, user_id=user.id, action="reset_password", entity="user", entity_id=str(user.id)
+        db, user_id=user.id, action="reset_password", entity="user", entity_id=str(user.id),
+        data={"two_factor_disabled": turned_off},
     )
+    if turned_off:
+        # Anyone who can read the reset channel could do this, so make it loud
+        await notify_slack(
+            f"Two-factor login was turned off for {user.email} through a password-reset link. "
+            "If that wasn't you, reset the password again and turn two-factor back on."
+        )
 
 
 class TwoFactorSetupResponse(BaseModel):
@@ -383,10 +395,17 @@ class TwoFactorEnabledResponse(BaseModel):
 
 
 class TwoFactorDisableRequest(BaseModel):
-    """Turning two-factor off needs the password and a current code (or a recovery code)."""
+    """Turning two-factor off or replacing recovery codes needs the password and a code."""
 
     password: str
     code: str = Field(..., max_length=32)
+
+
+def _clear_two_factor(user: User) -> None:
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_last_counter = None
+    user.totp_recovery_codes = None
 
 
 async def _current_user_row(current_user: dict, db: DBSession) -> User:
@@ -448,14 +467,39 @@ async def disable_two_factor(
             status="failure", error_message="Wrong password or code",
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong password or code")
-    user.totp_enabled = False
-    user.totp_secret = None
-    user.totp_last_counter = None
-    user.totp_recovery_codes = None
+    _clear_two_factor(user)
     await db.commit()
     await create_audit_log(
         db, user_id=user.id, action="disable_two_factor", entity="user", entity_id=str(user.id)
     )
+
+
+@router.post("/2fa/recovery-codes", response_model=TwoFactorEnabledResponse)
+async def regenerate_recovery_codes(
+    request: TwoFactorDisableRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> TwoFactorEnabledResponse:
+    """Replace every recovery code (needs the password and a code); returns the new ones, shown once."""
+    await enforce_rate_limit(
+        redis, f"2fa:{current_user['id']}", settings.login_rate_limit_per_minute, 60
+    )
+    user = await _current_user_row(current_user, db)
+    if not user.totp_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor login is off")
+    if not verify_password(request.password, user.hashed_password) or not verify_second_factor(
+        user, request.code
+    ):
+        await create_audit_log(
+            db, user_id=user.id, action="regenerate_recovery_codes", entity="user",
+            entity_id=str(user.id), status="failure", error_message="Wrong password or code",
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong password or code")
+    codes, hashes = new_recovery_codes()
+    user.totp_recovery_codes = hashes
+    await db.commit()
+    await create_audit_log(
+        db, user_id=user.id, action="regenerate_recovery_codes", entity="user", entity_id=str(user.id)
+    )
+    return TwoFactorEnabledResponse(recovery_codes=codes)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

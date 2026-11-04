@@ -139,7 +139,10 @@ export default function Login() {
                                         required
                                     />
                                 </div>
-                                <p className="text-[10px] text-[#9ca5ba]">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+                                <p className="text-[10px] text-[#9ca5ba]">
+                                    Enter the 6-digit code from your authenticator app, or a recovery code.{" "}
+                                    <Link to="/reset-password" className="text-[#1e5df1] hover:underline font-bold">Lost both?</Link>
+                                </p>
                             </div>
                         )}
 

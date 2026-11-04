@@ -50,6 +50,13 @@ export default function TwoFactorCard() {
             await refreshStatus()
         })
     }
+    const regenerate = () => run(async () => {
+        const { data } = await api.post<{ recovery_codes: string[] }>("/auth/2fa/recovery-codes", { password, code })
+        setRecoveryCodes(data.recovery_codes)
+        setPassword("")
+        setCode("")
+        await refreshStatus()
+    })
     const disable = (e: React.FormEvent) => {
         e.preventDefault()
         run(async () => {
@@ -78,9 +85,9 @@ export default function TwoFactorCard() {
             <CardContent className="p-4 space-y-4 text-sm">
                 {recoveryCodes && (
                     <div className="space-y-2" role="status">
-                        <p className="font-bold text-foreground">Two-factor login is on. Save these recovery codes now.</p>
+                        <p className="font-bold text-foreground">Save these recovery codes now.</p>
                         <p className="text-xs text-muted-foreground">
-                            Each works once if you lose your phone. They won't be shown again.
+                            Each works once if you lose your phone. They won't be shown again, and any older codes no longer work.
                         </p>
                         <ul className="grid grid-cols-2 gap-2 font-mono text-xs bg-muted/40 p-3 rounded-sm">
                             {recoveryCodes.map((c) => <li key={c}>{c}</li>)}
@@ -132,9 +139,15 @@ export default function TwoFactorCard() {
                             <input autoComplete="one-time-code" required value={code}
                                 onChange={(e) => setCode(e.target.value)} className={inputClass} />
                         </label>
-                        <Button type="submit" variant="outline" disabled={busy} className="gap-2">
-                            {busy && <Loader2 className="size-4 animate-spin" />} Turn off
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button type="button" disabled={busy || !password || !code} onClick={regenerate} className="gap-2">
+                                {busy && <Loader2 className="size-4 animate-spin" />} New recovery codes
+                            </Button>
+                            <Button type="submit" variant="outline" disabled={busy}>Turn off</Button>
+                        </div>
+                        <p className="md:col-span-3 text-xs text-muted-foreground">
+                            Enter your password and a code, then get a fresh set of recovery codes or turn two-factor off.
+                        </p>
                     </form>
                 )}
 
