@@ -15,6 +15,7 @@ export default function ResetPassword() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [done, setDone] = useState<string | null>(null)
+    const [disableTwoFactor, setDisableTwoFactor] = useState(false)
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -26,8 +27,12 @@ export default function ResetPassword() {
         setIsLoading(true)
         try {
             if (token) {
-                await api.post("/auth/reset-password", { token, new_password: value })
-                setDone("Password updated. Every session has been signed out.")
+                await api.post("/auth/reset-password", { token, new_password: value, disable_two_factor: disableTwoFactor })
+                setDone(
+                    disableTwoFactor
+                        ? "Password updated and two-factor login turned off. Turn it back on from your Account page."
+                        : "Password updated. Every session has been signed out."
+                )
             } else {
                 const { data } = await api.post<{ detail: string }>("/auth/forgot-password", { email: value })
                 setDone(data.detail)
@@ -93,6 +98,18 @@ export default function ResetPassword() {
                                     />
                                 </div>
                             </div>
+                        )}
+
+                        {token && (
+                            <label className="flex items-start gap-2 text-xs text-[#9ca5ba]">
+                                <input
+                                    type="checkbox"
+                                    checked={disableTwoFactor}
+                                    onChange={(e) => setDisableTwoFactor(e.target.checked)}
+                                    className="mt-0.5"
+                                />
+                                <span>I lost my authenticator app and my recovery codes: also turn off two-factor login.</span>
+                            </label>
                         )}
 
                         {error && (
