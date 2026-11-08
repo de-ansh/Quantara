@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import utcnow
 from app.core.logging import get_logger
+from app.models.listed_security import ListedSecurity
 from app.models.stock import Stock
 
 logger = get_logger(__name__)
@@ -32,7 +33,8 @@ async def get_or_track_stock(db: AsyncSession, ticker: str) -> Stock | None:
     price = await asyncio.to_thread(last_close, ticker)
     if price is None:
         return None
-    stock = Stock(ticker=ticker, name=ticker, price=price, price_updated_at=utcnow())
+    listed = await db.get(ListedSecurity, ticker)  # the exchange's name, so the stock is findable by it
+    stock = Stock(ticker=ticker, name=listed.name if listed else ticker, price=price, price_updated_at=utcnow())
     db.add(stock)
     await db.flush()
     return stock

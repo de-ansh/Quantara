@@ -203,6 +203,35 @@ class RecommendationEngine:
 
         return explanation
 
+    # Final-score cut-offs for the plain-language verdict on the stock page
+    BUY_AT = 70.0
+    HOLD_AT = 50.0
+    _COMPONENT_LABELS = {
+        "research_score": "research quality",
+        "signal_score": "market signals",
+        "risk_alignment_score": "fit with your risk profile",
+        "macro_fit_score": "sector fit in the current market",
+    }
+
+    def verdict(self, scores: RecommendationScore) -> tuple[str, list[str]]:
+        """Buy / Hold / Avoid from the final score, with the three components that moved it most."""
+        label = (
+            "Buy" if scores.final_score >= self.BUY_AT
+            else "Hold" if scores.final_score >= self.HOLD_AT
+            else "Avoid"
+        )
+        parts = {k: getattr(scores, k) for k in self._COMPONENT_LABELS}
+        # Distance from a neutral 50, weighted by how much each part counts in the final score
+        weight = {"research_score": "research", "signal_score": "signal",
+                  "risk_alignment_score": "risk_alignment", "macro_fit_score": "macro_fit"}
+        ranked = sorted(parts, key=lambda k: abs(parts[k] - 50) * self.WEIGHTS[weight[k]], reverse=True)
+        reasons = [
+            f"{'Strong' if parts[k] >= 60 else 'Weak' if parts[k] < 40 else 'Average'} "
+            f"{self._COMPONENT_LABELS[k]} ({parts[k]:.0f}/100)"
+            for k in ranked[:3]
+        ]
+        return label, reasons
+
     def filter_by_risk_band(
         self,
         stocks: list[dict],

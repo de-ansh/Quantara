@@ -131,9 +131,11 @@ async def test_get_stock_correlations(monkeypatch):
         [
             Stock(ticker="JNJ", name="Johnson & Johnson", sector="Healthcare", beta=0.6),
             Stock(ticker="MSFT", name="Microsoft Corp.", sector="Technology", beta=1.1),
+            Stock(ticker="TLT", name="iShares 20+ Year Treasury Bond ETF"),  # tracked and a built-in hedge
         ],
     )
     resp = await risk.get_stock_correlations(ticker="AAPL", current_user={}, db=db)
+    assert [p.ticker for p in resp.peers].count("TLT") == 1
 
     assert resp.ticker == "AAPL"
     assert resp.benchmark_correlation > 0.8

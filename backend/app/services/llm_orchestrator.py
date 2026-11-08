@@ -103,6 +103,8 @@ class LLMOrchestrator:
             max_tokens=settings.openai_max_tokens,
             api_key=settings.openai_api_key,
             timeout=self.TIMEOUT_SECONDS,
+            # JSON mode: otherwise the model often wraps the answer in a ```json fence
+            model_kwargs={"response_format": {"type": "json_object"}},
         )
 
         # Build the state graph
@@ -508,7 +510,7 @@ class LLMOrchestrator:
 
         return state
 
-    def _generate_structured_analysis(self, state: AnalysisState) -> AnalysisState:
+    async def _generate_structured_analysis(self, state: AnalysisState) -> AnalysisState:
         """Generate structured analysis using LLM."""
         logger.info(f"Generating analysis for {state['ticker']}")
 
@@ -580,8 +582,11 @@ Generate a structured analysis based on this data.
                     max_tokens=settings.openai_max_tokens,
                     api_key=state["openai_api_key"],
                     timeout=self.TIMEOUT_SECONDS,
+                    model_kwargs={"response_format": {"type": "json_object"}},
                 )
-            response = llm.invoke(messages)
+            # Async: a sync call after the async embeddings request fails TLS (bad record mac)
+            # and would block the event loop for the whole LLM round-trip.
+            response = await llm.ainvoke(messages)
 
             # Log prompt and response
             logger.info(

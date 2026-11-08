@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import CommandPalette from "@/components/CommandPalette"
+import ChatAssistant from "@/components/ChatAssistant"
 import AlertsBell from "@/components/AlertsBell"
 import {
     LayoutDashboard,
@@ -112,8 +113,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
         )
     }
 
+    // Viewport-height shell: sidebar and header stay put, only <main> scrolls
     return (
-        <div className="min-h-screen bg-background text-foreground flex overflow-hidden">
+        <div className="h-dvh bg-background text-foreground flex overflow-hidden">
             {mobileNavOpen && (
                 <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
             )}
@@ -325,6 +327,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 </main>
             </div>
             <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+            <ChatAssistant />
         </div>
     )
 }

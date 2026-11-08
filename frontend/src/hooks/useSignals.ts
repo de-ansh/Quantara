@@ -16,7 +16,8 @@ export const useSignals = (options = {}) => {
 
             // Transform backend signals to frontend SignalEvent format
             return data.signals.map(s => ({
-                time: new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+                // Signals are dated events (earnings day, filing day), so a time of day would always read 00:00
+                time: new Date(s.timestamp).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }),
                 type: s.signal_type.toUpperCase() as SignalEvent['type'],
                 text: `${s.ticker}: ${s.signal_type.replace(/_/g, ' ').toUpperCase()} Detected. Strength: ${Math.round(s.strength)}%`,
             }));

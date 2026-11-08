@@ -8,9 +8,6 @@ import {
     Download,
     List,
     Grid,
-    TrendingUp,
-    TrendingDown,
-    Minus,
     Clock,
     X,
     Globe,
@@ -31,6 +28,12 @@ const riskTone = (risk: number | null) =>
         risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
             risk < 66.7 ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
                 "bg-red-500/10 text-red-400 border-red-500/20"
+
+// Research-quality bands from the backend's to_search_item
+const signalTone = (signal: string) =>
+    signal === "Strong" || signal === "High" ? "text-green-500" :
+        signal === "Weak" ? "text-red-500" :
+            signal === "Neutral" ? "text-foreground" : "text-muted-foreground"
 
 export default function ResearchExplorer() {
     const [view, setView] = useState("list")
@@ -120,7 +123,7 @@ export default function ResearchExplorer() {
             sector: r.sector || "",
             pe_ratio: r.pe ?? "",
             beta: r.beta ?? "",
-            market: isIndianAsset(r.ticker) ? "NSE" : "US"
+            market: r.exchange ?? getMarketLabel(r.ticker)
         }))
 
         exportToCsv(
@@ -158,7 +161,7 @@ export default function ResearchExplorer() {
                         <div className="px-4 pb-4 space-y-1.5">
                             {[
                                 { key: "all" as const, label: "Global (All Markets)", icon: "🌐" },
-                                { key: "india" as const, label: "Indian Equities (NSE)", icon: "🇮🇳" },
+                                { key: "india" as const, label: "Indian Equities (NSE/BSE)", icon: "🇮🇳" },
                                 { key: "us" as const, label: "US Equities (NYSE/NASDAQ)", icon: "🇺🇸" }
                             ].map((m) => (
                                 <button
@@ -394,9 +397,9 @@ export default function ResearchExplorer() {
                                                                 "text-[8px] font-bold px-1 py-0.2 rounded border uppercase font-mono",
                                                                 isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                                             )}>
-                                                                {getMarketLabel(row.ticker)}
+                                                                {row.exchange ?? getMarketLabel(row.ticker)}
                                                             </span>
-                                                            {row.status && (
+                                                            {row.status !== "neutral" && (
                                                                 <span className={cn(
                                                                     "text-[9px] font-bold font-mono px-1 py-0.2 rounded",
                                                                     row.status === "up" ? "text-green-400 bg-green-500/10" : "text-rose-400 bg-rose-500/10"
@@ -424,7 +427,7 @@ export default function ResearchExplorer() {
                                             <div className="grid grid-cols-2 gap-2 text-[10px] font-mono py-2 border-y border-border/40">
                                                 <div>
                                                     <div className="text-muted-foreground text-[9px]">Price</div>
-                                                    <div className="font-bold text-foreground text-xs">{row.price} <DayChange pct={row.change_pct} className="text-[10px]" /></div>
+                                                    <div className="font-bold text-foreground text-xs">{row.tracked === false ? "Open to load" : <>{row.price} <DayChange pct={row.change_pct} className="text-[10px]" /></>}</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-muted-foreground text-[9px]">Market Cap</div>
@@ -432,8 +435,8 @@ export default function ResearchExplorer() {
                                                 </div>
                                                 <div>
                                                     <div className="text-muted-foreground text-[9px]">Signal</div>
-                                                    <div className="font-bold text-primary flex items-center gap-1 truncate text-xs">
-                                                        {row.signal || "HOLD"}
+                                                    <div className={cn("font-bold truncate text-xs", signalTone(row.signal))}>
+                                                        {row.tracked === false ? "—" : row.signal}
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
@@ -509,13 +512,16 @@ export default function ResearchExplorer() {
                                                         "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono",
                                                         isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                                     )}>
-                                                        {getMarketLabel(row.ticker)}
+                                                        {row.exchange ?? getMarketLabel(row.ticker)}
                                                     </span>
                                                     <WatchlistButton ticker={row.ticker} />
                                                 </div>
+                                                <div className="text-[10px] font-sans font-medium text-muted-foreground truncate max-w-[260px]">{row.name}</div>
                                             </td>
                                             <td className="px-6 py-4 text-foreground/90 font-bold">
-                                                {row.price} <DayChange pct={row.change_pct} className="text-[10px] ml-1" />
+                                                {row.tracked === false
+                                                    ? <span className="font-sans font-normal text-muted-foreground">Open to load</span>
+                                                    : <>{row.price} <DayChange pct={row.change_pct} className="text-[10px] ml-1" /></>}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
                                             <td className="px-6 py-4">
@@ -527,13 +533,9 @@ export default function ResearchExplorer() {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <div className={cn(
-                                                    "flex items-center gap-1.5 font-bold",
-                                                    row.status === "up" ? "text-primary" : row.status === "down" ? "text-destructive" : "text-muted-foreground"
-                                                )}>
-                                                    {row.status === "up" ? <TrendingUp className="size-4" /> : row.status === "down" ? <TrendingDown className="size-4" /> : <Minus className="size-4" />}
-                                                    <span>{row.signal}</span>
-                                                </div>
+                                                <span className={cn("font-bold", signalTone(row.signal))}>
+                                                    {row.tracked === false ? "—" : row.signal}
+                                                </span>
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.sector ?? "—"}</td>
                                         </tr>

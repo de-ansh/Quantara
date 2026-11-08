@@ -655,8 +655,10 @@ export default function Simulation() {
                                                 stroke="hsl(var(--muted-foreground))"
                                                 fontSize={9}
                                                 fontWeight="bold"
-                                                tickFormatter={(v) => `Yr ${(v / 12).toFixed(0)}`}
-                                                tickCount={11}
+                                                type="number"
+                                                domain={[0, "dataMax"]}
+                                                ticks={Array.from({ length: horizonYears + 1 }, (_, y) => y * 12)}
+                                                tickFormatter={(v) => `Yr ${v / 12}`}
                                             />
                                             <YAxis 
                                                 stroke="hsl(var(--muted-foreground))"

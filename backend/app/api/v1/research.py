@@ -45,6 +45,8 @@ class StockSearchItem(BaseModel):
     sector: str | None = None
     pe: float | None = None
     beta: float | None = None
+    exchange: str | None = None
+    tracked: bool = True  # False: directory-only, no price or scores until someone opens it
 
 
 def _currency(ticker: str) -> str:
@@ -121,26 +123,45 @@ async def search_stocks(
     signals: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    track: bool = False,
 ) -> StockSearchListResponse:
     """
     Search stocks with criteria filters and optional market region.
 
-    Results are ordered by ticker; `total_count` is the number of matches before paging.
+    Tracked stocks come first, ordered by ticker. Without data filters (P/E, beta, risk,
+    signals) the list continues into the directory of every listed NSE/BSE/US security.
+    `track=true` (the stock page) starts tracking an exact-ticker directory hit.
+    `total_count` is the number of matches before paging.
     """
-    from sqlalchemy import and_, func, or_, select
+    from sqlalchemy import and_, case, func, or_, select
 
+    from app.models.listed_security import ListedSecurity
     from app.models.signal import Signal
     from app.models.stock import Stock
 
-    stmt = select(Stock)
+    if track and query and await db.get(Stock, query.strip().upper()) is None:
+        if await db.get(ListedSecurity, query.strip().upper()) is not None:
+            from app.services.stock_lookup import get_or_track_stock
+
+            if await get_or_track_stock(db, query.strip().upper()) is not None:
+                await db.commit()
+
+    # A tracked ticker no exchange lists any more (delisted, renamed after a demerger) would show up
+    # next to its successor, so search skips it; its page still opens by URL
+    stmt = select(Stock).where(
+        or_(Stock.ticker.in_(select(ListedSecurity.ticker)), ~select(ListedSecurity.ticker).exists())
+    )
+    directory = select(ListedSecurity)
 
     # Market region filter (US vs India)
     if market:
         m = market.strip().lower()
         if m in ("in", "india", "nse", "bse"):
             stmt = stmt.where(or_(Stock.ticker.ilike("%.NS"), Stock.ticker.ilike("%.BO")))
+            directory = directory.where(ListedSecurity.exchange.in_(["NSE", "BSE"]))
         elif m in ("us", "usa", "nyse", "nasdaq"):
             stmt = stmt.where(and_(~Stock.ticker.ilike("%.NS"), ~Stock.ticker.ilike("%.BO")))
+            directory = directory.where(ListedSecurity.exchange.not_in(["NSE", "BSE"]))
 
     # 1. Join with signals if signal filters applied
     if signals:
@@ -181,6 +202,35 @@ async def search_stocks(
     db_stocks = result.scalars().all()
 
     response_items = [to_search_item(stock) for stock in db_stocks]
+
+    data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals)
+    if all(f is None for f in data_filters):
+        q = (query or "").strip().upper()
+        directory = directory.where(~ListedSecurity.ticker.in_(select(Stock.ticker)))
+        if q:
+            directory = directory.where(
+                or_(ListedSecurity.ticker.ilike(f"%{q}%"), ListedSecurity.name.ilike(f"%{q}%"))
+            )
+        dir_total = (await db.execute(select(func.count()).select_from(directory.subquery()))).scalar_one()
+        room = limit - len(response_items)
+        if room > 0:
+            # Exact symbol (TCS.NS / TCS.BO / TCS) first, then symbol prefix, then name matches
+            rank = case(
+                (or_(ListedSecurity.ticker == q, ListedSecurity.ticker.ilike(f"{q}.%")), 0),
+                (ListedSecurity.ticker.ilike(f"{q}%"), 1),
+                else_=2,
+            )
+            hits = await db.execute(
+                directory.order_by(rank, func.length(ListedSecurity.ticker), ListedSecurity.ticker)
+                .limit(room)
+                .offset(max(0, offset - total))
+            )
+            response_items += [
+                StockSearchItem(ticker=d.ticker, name=d.name, price="N/A", cap="N/A", risk=None,
+                                signal="Unrated", status="neutral", exchange=d.exchange, tracked=False)
+                for d in hits.scalars()
+            ]
+        total += dir_total
 
     return StockSearchListResponse(stocks=response_items, total_count=int(total))
 
