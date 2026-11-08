@@ -13,6 +13,9 @@ export interface StockSearchItem {
     sector: string | null
     pe: number | null
     beta: number | null
+    exchange?: string | null
+    /** false: listed but nobody has opened it yet, so no price or scores */
+    tracked?: boolean
 }
 
 /** Signal metadata varies by signal type; these are the keys the UI reads. */

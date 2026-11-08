@@ -45,7 +45,8 @@ async def test_stock_search_market_filter():
 
     # When market=india, mock return only reliance
     mock_result.scalars.return_value.all.return_value = [reliance]
-    mock_result.scalar_one.return_value = 1
+    mock_result.scalars.return_value.__iter__.side_effect = lambda: iter([])  # no untracked directory hits
+    mock_result.scalar_one.side_effect = [1, 0, 1, 0]  # (tracked, directory) counts for each search
     mock_db.execute.return_value = mock_result
     current_user = {"id": "1", "email": "analyst@quantara.com"}
 
@@ -56,7 +57,6 @@ async def test_stock_search_market_filter():
 
     # When market=us, mock return only nvda
     mock_result.scalars.return_value.all.return_value = [nvda]
-    mock_result.scalar_one.return_value = 1
     resp_us = await search_stocks(current_user=current_user, db=mock_db, market="us")
     assert resp_us.total_count == 1
     assert resp_us.stocks[0].ticker == "NVDA"

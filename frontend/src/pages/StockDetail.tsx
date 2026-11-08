@@ -21,7 +21,7 @@ import apiClient, { apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { cn, timeAgo } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
-import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
+import { isIndianAsset, cleanTickerDisplay, getMarketLabel } from "@/lib/currency"
 import WatchlistButton from "@/components/WatchlistButton"
 import type { ApiSignal, StockSearchItem } from "@/types/api"
 import DayChange from "@/components/DayChange"
@@ -29,6 +29,7 @@ import PriceChart from "@/components/PriceChart"
 import PriceAlertForm from "@/components/PriceAlertForm"
 import AdviceNotice from "@/components/AdviceNotice"
 import FilingCard from "@/components/FilingCard"
+import VerdictCard from "@/components/VerdictCard"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -54,9 +55,9 @@ export default function StockDetail() {
     const { data: searchData, isLoading: loadingStock } = useQuery({
         queryKey: ['stockMetadata', activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get<{ stocks: StockSearchItem[] }>('/stocks/search', { params: { query: activeTicker } })
-            const found = res.data.stocks?.find((s) => s.ticker.toUpperCase() === activeTicker)
-            return found || res.data.stocks?.[0] || null
+            // track: opening a listed-but-untracked stock starts its price and risk jobs
+            const res = await apiClient.get<{ stocks: StockSearchItem[] }>('/stocks/search', { params: { query: activeTicker, track: true } })
+            return res.data.stocks?.find((s) => s.ticker.toUpperCase() === activeTicker) ?? null
         },
         enabled: !!activeTicker,
     })
@@ -125,17 +126,17 @@ export default function StockDetail() {
     ]
 
     return (
-        <div className="flex flex-col flex-1 p-6 bg-background overflow-y-auto custom-scrollbar transition-colors">
+        <div className="flex flex-col flex-1 p-4 sm:p-6 bg-background transition-colors">
             {/* Header Section */}
             <section className="mb-6 flex flex-wrap items-end justify-between gap-6 border-b border-border pb-6">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-baseline gap-4">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h2>
+                            <h1 className="text-4xl sm:text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h1>
                             <WatchlistButton ticker={activeTicker} className="[&_svg]:size-6" />
                             {isIndianAsset(activeTicker) ? (
                                 <Badge className="bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono text-xs uppercase px-2 py-0.5">
-                                    🇮🇳 NSE
+                                    🇮🇳 {getMarketLabel(activeTicker)}
                                 </Badge>
                             ) : (
                                 <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/30 font-mono text-xs uppercase px-2 py-0.5">
@@ -144,7 +145,7 @@ export default function StockDetail() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 text-muted-foreground text-sm font-medium">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-sm font-medium">
                         <span className="text-foreground uppercase tracking-wider font-bold">{companyName}</span>
                         <div className="size-1 rounded-full bg-border" />
                         <span>{sector}</span>
@@ -161,6 +162,8 @@ export default function StockDetail() {
                     </div>
                 </div>
 
+                <div className="flex flex-wrap items-stretch gap-3">
+                <VerdictCard ticker={activeTicker} version={`${report?.generated_at ?? ""}|${searchData?.risk ?? ""}`} />
                 {/* Risk Score Indicator */}
                 <div className="flex items-center gap-4 bg-card border border-border p-4 px-6 shadow-xl shadow-background/10 transition-colors">
                     <div className="flex flex-col items-end">
@@ -194,6 +197,7 @@ export default function StockDetail() {
                         </svg>
                         <ShieldCheck className="absolute text-primary size-5" />
                     </div>
+                </div>
                 </div>
             </section>
 
@@ -305,7 +309,7 @@ export default function StockDetail() {
                                     Fundamental Financial Metrics
                                 </h3>
                                 <Badge variant="outline" className="text-[10px] font-mono">
-                                    {isIndianAsset(activeTicker) ? `${cleanTickerDisplay(activeTicker)} SEBI/NSE Filing Data` : `${activeTicker} EDGAR Facts`}
+                                    {isIndianAsset(activeTicker) ? `${cleanTickerDisplay(activeTicker)} Exchange Filing Data` : `${activeTicker} EDGAR Facts`}
                                 </Badge>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

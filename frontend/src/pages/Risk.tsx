@@ -187,10 +187,11 @@ export default function Risk() {
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                         <input
                             type="text"
-                            placeholder="Enter Ticker (e.g. TLT)..."
+                            placeholder="Ticker, e.g. TCS.NS"
+                            aria-label="Ticker to analyze"
                             value={tickerInput}
                             onChange={(e) => setTickerInput(e.target.value)}
-                            className="bg-background border border-border rounded pl-8 pr-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary w-44 font-mono text-foreground"
+                            className="bg-background border border-border rounded pl-8 pr-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary w-48 font-mono text-foreground"
                         />
                     </div>
                     <Button type="submit" size="sm" className="h-7 text-[9px] font-black uppercase tracking-widest">Analyze</Button>

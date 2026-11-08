@@ -39,8 +39,9 @@ def _local_only_connect(self: socket.socket, address: object) -> None:
 def _fake_history(ticker: str, days: int = 260) -> pd.DataFrame:
     """Deterministic per-ticker daily OHLCV ending today (a seeded random walk)."""
     rng = np.random.default_rng(zlib.crc32(ticker.encode()))
-    close = 100 * np.cumprod(1 + rng.normal(0.0004, 0.015, days))
+    # bdate_range returns one date short when `end` falls on a weekend, so size by the index.
     index = pd.bdate_range(end=pd.Timestamp.now('UTC').normalize().tz_localize(None), periods=days)
+    close = 100 * np.cumprod(1 + rng.normal(0.0004, 0.015, len(index)))
     return pd.DataFrame(
         {"Open": close, "High": close * 1.01, "Low": close * 0.99, "Close": close,
          "Volume": 1_000_000.0, "Dividends": 0.0},

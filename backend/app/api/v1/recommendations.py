@@ -168,3 +168,44 @@ async def get_recommendations(
         total_count=len(response_recommendations),
         user_risk_level=user_risk_level,
     )
+
+
+class VerdictResponse(BaseModel):
+    """Plain-language call on one stock for the current user's risk profile."""
+
+    ticker: str
+    verdict: str  # Buy | Hold | Avoid | Unrated
+    final_score: float | None
+    reasons: list[str]
+    missing: list[str]  # what has to be computed before a verdict is possible
+    user_risk_level: str
+
+
+@router.get("/{ticker}/verdict", response_model=VerdictResponse)
+async def get_verdict(ticker: str, current_user: CurrentUser, db: DBSession) -> VerdictResponse:
+    """Buy / Hold / Avoid for one stock, from the same score that ranks recommendations."""
+    user_risk_level = current_user.get("risk_level") or "Moderate"
+    tolerance = current_user.get("volatility_tolerance")
+    stock = await db.get(Stock, ticker.upper())
+    missing = []
+    if stock is None or stock.research_score is None:
+        missing.append("research report")
+    if stock is None or stock.risk_score is None:
+        missing.append("risk score")
+    if missing:
+        return VerdictResponse(ticker=ticker.upper(), verdict="Unrated", final_score=None, reasons=[],
+                               missing=missing, user_risk_level=user_risk_level)
+
+    signal_avg = (
+        await db.execute(select(func.avg(Signal.strength)).where(Signal.ticker == stock.ticker))
+    ).scalar()
+    [rec] = recommendation_engine.rank_recommendations(
+        [{"ticker": stock.ticker, "sector": stock.sector or "Unknown", "risk_score": stock.risk_score,
+          "research_score": stock.research_score, "signal_score": float(signal_avg or 50.0)}],
+        user_risk_level,
+        float(tolerance) if tolerance is not None else 60.0,
+        top_n=1,
+    )
+    verdict, reasons = recommendation_engine.verdict(rec.scores)
+    return VerdictResponse(ticker=stock.ticker, verdict=verdict, final_score=round(rec.scores.final_score, 1),
+                           reasons=reasons, missing=[], user_risk_level=user_risk_level)
