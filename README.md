@@ -97,6 +97,27 @@ pnpm run dev
 
 **Frontend will be running on:** `http://localhost:5173`
 
+### Run it day to day (Docker)
+
+For real use, run the whole app in Docker rather than the dev servers: every service restarts
+on its own, and the backend runs without auto-reload (a hung reload once left an old process
+holding the background-job locks, and prices silently stopped for two days).
+
+```bash
+cd backend
+docker compose up -d            # postgres, redis, daily backups, backend :8000, frontend :3000
+```
+
+Open **http://localhost:3000**.
+
+- **After pulling new code:** `docker compose up -d --build backend frontend` (migrations run on start).
+- **Check it:** `docker compose ps` should show `quantara-backend` as `healthy`. If prices are more
+  than two hours old the app shows a warning banner; `docker compose restart backend` fixes a stuck job.
+- **Backups:** a dump lands in `backend/backups/` daily (14 kept). Restore one (replaces current data):
+  `docker exec -i quantara-postgres pg_restore -U quantara -d quantara --clean --if-exists --no-owner < backups/<file>.dump`
+- **Keep it running:** turn on Docker Desktop → Settings → General → *Start Docker Desktop when you
+  sign in*. Nothing runs while the Mac sleeps; prices and signals catch up on wake.
+
 ### Alternative: Run Everything with Docker
 
 If you prefer to run the backend in Docker as well:
