@@ -39,7 +39,8 @@ def _latest_first(frame: pd.DataFrame, row: str) -> list[float | None]:
 def _cagr_3y(values: list[float | None]) -> float | None:
     if len(values) < 4 or values[0] is None or values[3] is None or values[0] <= 0 or values[3] <= 0:
         return None
-    return round(((values[0] / values[3]) ** (1 / 3) - 1) * 100, 2)
+    yearly: float = (values[0] / values[3]) ** (1 / 3)
+    return round((yearly - 1) * 100, 2)
 
 
 def statement_metrics(income: pd.DataFrame, balance: pd.DataFrame) -> dict[str, float | None]:
@@ -47,10 +48,11 @@ def statement_metrics(income: pd.DataFrame, balance: pd.DataFrame) -> dict[str, 
     assets = _latest_first(balance, "Total Assets")
     current_liabilities = _latest_first(balance, "Current Liabilities")
     roce = None
-    if ebit and assets and current_liabilities and None not in (ebit[0], assets[0], current_liabilities[0]):
-        capital_employed = assets[0] - current_liabilities[0]
+    latest_ebit, latest_assets, latest_cl = (ebit or [None])[0], (assets or [None])[0], (current_liabilities or [None])[0]
+    if latest_ebit is not None and latest_assets is not None and latest_cl is not None:
+        capital_employed = latest_assets - latest_cl
         if capital_employed > 0:
-            roce = round(ebit[0] / capital_employed * 100, 2)
+            roce = round(latest_ebit / capital_employed * 100, 2)
     return {
         "roce_pct": roce,
         "revenue_cagr_3y_pct": _cagr_3y(_latest_first(income, "Total Revenue")),
