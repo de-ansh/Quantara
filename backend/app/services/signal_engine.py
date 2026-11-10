@@ -664,6 +664,18 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
             db_tickers = db_res.scalars().all()
             if db_tickers:
                 tickers = list(dict.fromkeys(tickers + list(db_tickers)))
+            # SEC filings exist only for US stocks, and per-stock Yahoo news/holder calls for all ~500
+            # tracked NSE stocks would be rate-limited; Indian stocks get these only if someone
+            # watches or holds them (NSE deal/pledge signals below cover every tracked one).
+            from sqlalchemy import union
+
+            from app.models.portfolio import PortfolioPosition
+            from app.models.watchlist import WatchlistItem
+
+            held = set((await session.execute(
+                union(select(WatchlistItem.ticker), select(PortfolioPosition.ticker))
+            )).scalars())
+            tickers = [t for t in tickers if not t.endswith((".NS", ".BO")) or t in held]
     except Exception as e:
         logger.warning(f"Unable to query active tickers from DB, using fallback: {e}")
 

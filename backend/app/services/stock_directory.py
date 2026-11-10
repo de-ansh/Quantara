@@ -26,6 +26,8 @@ logger = get_logger(__name__)
 
 NSE_EQUITY_LIST = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 NSE_ETF_LIST = "https://archives.nseindia.com/content/equities/eq_etfseclist.csv"
+# Always tracked (prices, fundamentals, risk), so the screener has a real universe to filter
+NIFTY_500_LIST = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 BSE_BHAVCOPY = "https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_{day}_F_0000.CSV"
 US_LIST = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
 DIRECTORY_LOCK_ID = 7_301_004
@@ -129,6 +131,22 @@ def parse_bse_prices(text: str) -> dict[str, dict]:
     return out
 
 
+def parse_index_members(text: str) -> list[dict]:
+    return [{"ticker": f"{r['Symbol']}.NS", "name": r.get("Company Name") or r["Symbol"]}
+            for r in _rows(text) if r.get("Symbol")]
+
+
+async def track_index_members(db: AsyncSession, text: str) -> int:
+    """Start tracking index members not tracked yet; returns how many were added."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    members = parse_index_members(text)
+    if not members:
+        return 0
+    result = await db.execute(pg_insert(Stock).values(members).on_conflict_do_nothing(index_elements=["ticker"]))
+    return result.rowcount or 0
+
+
 async def _get(client: httpx.AsyncClient, url: str) -> str | None:
     try:
         resp = await client.get(url)
@@ -165,9 +183,9 @@ async def refresh_directory(db: AsyncSession) -> dict[str, int]:
     """Re-load each market whose list downloaded; a failed source keeps yesterday's rows."""
     counts: dict[str, int] = {}
     async with httpx.AsyncClient(timeout=60.0, headers=_HEADERS, follow_redirects=True) as client:
-        nse_text, etf_text, bse_text, us_text = await asyncio.gather(
+        nse_text, etf_text, bse_text, us_text, nifty500_text = await asyncio.gather(
             _get(client, NSE_EQUITY_LIST), _get(client, NSE_ETF_LIST),
-            _latest_bhavcopy(client, date.today()), _get(client, US_LIST),
+            _latest_bhavcopy(client, date.today()), _get(client, US_LIST), _get(client, NIFTY_500_LIST),
         )
     # Shares and ETFs replace NSE rows together, so a failed ETF list doesn't wipe yesterday's ETFs
     nse = parse_nse(nse_text) + parse_nse_etfs(etf_text) if nse_text and etf_text else []
@@ -189,6 +207,8 @@ async def refresh_directory(db: AsyncSession) -> dict[str, int]:
     if us:
         await _replace(db, us, sorted({*_US_EXCHANGES.values(), "US"}))
         counts["US"] = len(us)
+    if nifty500_text:
+        counts["newly_tracked"] = await track_index_members(db, nifty500_text)
     # Stocks tracked before they had a name (saved as the bare ticker) take the exchange's name
     listed_name = select(ListedSecurity.name).where(ListedSecurity.ticker == Stock.ticker).scalar_subquery()
     await db.execute(

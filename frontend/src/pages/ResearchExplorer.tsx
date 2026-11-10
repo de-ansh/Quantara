@@ -23,6 +23,42 @@ import DayChange from "@/components/DayChange"
 
 const PAGE_SIZE = 25
 
+/** Fundamental screens: API parameter -> label; all percents except debt/equity (a ratio). */
+const FUNDAMENTALS = [
+    { key: "roe_min", label: "Min ROE %" },
+    { key: "debt_to_equity_max", label: "Max debt / equity" },
+    { key: "revenue_growth_min", label: "Min revenue growth %" },
+    { key: "profit_margin_min", label: "Min profit margin %" },
+    { key: "dividend_yield_min", label: "Min dividend yield %" },
+    { key: "return_1y_min", label: "Min 1-year return %" },
+] as const
+type FundamentalKey = (typeof FUNDAMENTALS)[number]["key"]
+type Fundamentals = Partial<Record<FundamentalKey, string>>
+
+/** Starting points that fill in the filters, so what each screen means stays visible and editable. */
+const PRESETS: { label: string; filters: Fundamentals; sort: string }[] = [
+    { label: "Quality compounders", filters: { roe_min: "15", debt_to_equity_max: "0.5", revenue_growth_min: "10" }, sort: "-roe" },
+    { label: "Dividend payers", filters: { dividend_yield_min: "2.5", debt_to_equity_max: "1" }, sort: "-dividend_yield" },
+    { label: "Momentum", filters: { return_1y_min: "20", revenue_growth_min: "5" }, sort: "-return_1y" },
+]
+
+const SORTS = [
+    { value: "", label: "Ticker (A–Z)" },
+    { value: "-market_cap", label: "Market cap" },
+    { value: "-roe", label: "ROE" },
+    { value: "-revenue_growth", label: "Revenue growth" },
+    { value: "-return_1y", label: "1-year return" },
+    { value: "-dividend_yield", label: "Dividend yield" },
+    { value: "pe", label: "P/E (low first)" },
+    { value: "risk", label: "Risk (low first)" },
+]
+
+const pctCell = (v: number | null | undefined) => {
+    if (v == null) return "—"
+    const shown = Number(v.toFixed(1)) // colour what is shown: -0.04 reads "0.0%", not a red "-0.0%"
+    return <span className={shown > 0 ? "text-green-500" : shown < 0 ? "text-red-500" : ""}>{shown > 0 ? "+" : ""}{(shown || 0).toFixed(1)}%</span>
+}
+
 const riskTone = (risk: number | null) =>
     risk == null ? "bg-muted/40 text-muted-foreground border-border" :
         risk < 33.3 ? "bg-green-500/10 text-green-400 border-green-500/20" :
@@ -45,9 +81,12 @@ export default function ResearchExplorer() {
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
+    const [fundamentals, setFundamentals] = useState<Fundamentals>({})
+    const [sort, setSort] = useState("")
+    const activeFundamentals = Object.entries(fundamentals).filter(([, v]) => v !== undefined && v.trim() !== "" && !Number.isNaN(Number(v)))
     const [filtersOpen, setFiltersOpen] = useState(false)
     // Page resets whenever the filters change (derived during render, no effect needed)
-    const filterKey = JSON.stringify([query, selectedMarket, peLimit, betaLimit, selectedSignals])
+    const filterKey = JSON.stringify([query, selectedMarket, peLimit, betaLimit, selectedSignals, activeFundamentals, sort])
     const [pageState, setPageState] = useState({ key: filterKey, page: 0 })
     const page = pageState.key === filterKey ? pageState.page : 0
     const setPage = (p: number) => setPageState({ key: filterKey, page: p })
@@ -55,7 +94,7 @@ export default function ResearchExplorer() {
 
     // Query backend Stock Search API
     const { data, isLoading } = useQuery({
-        queryKey: ["stocksSearch", query, selectedMarket, peLimit, betaLimit, selectedSignals, page],
+        queryKey: ["stocksSearch", query, selectedMarket, peLimit, betaLimit, selectedSignals, activeFundamentals, sort, page],
         queryFn: async () => {
             const params: Record<string, string | number> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE }
             if (query) params.query = query
@@ -63,6 +102,8 @@ export default function ResearchExplorer() {
             if (peLimit < 50) params.pe_max = peLimit
             if (betaLimit < 2.0) params.beta_max = betaLimit
             if (selectedSignals.length > 0) params.signals = selectedSignals.join(",")
+            for (const [k, v] of activeFundamentals) params[k] = Number(v)
+            if (sort) params.sort = sort
 
             const res = await apiClient.get<{ stocks: StockSearchItem[]; total_count: number }>("/stocks/search", { params })
             return res.data
@@ -70,7 +111,7 @@ export default function ResearchExplorer() {
     })
 
     // Mirrors the backend: these filters need fundamentals, which only tracked stocks have
-    const dataFiltersOn = peLimit < 50 || betaLimit < 2.0 || selectedSignals.length > 0
+    const dataFiltersOn = peLimit < 50 || betaLimit < 2.0 || selectedSignals.length > 0 || activeFundamentals.length > 0
     const results = data?.stocks || []
     const latestPriceAt = results.map(r => r.price_updated_at).filter((t): t is string => !!t).sort().at(-1)
     const totalCount = data?.total_count || 0
@@ -89,6 +130,8 @@ export default function ResearchExplorer() {
         setPeLimit(50)
         setBetaLimit(2.0)
         setSelectedSignals([])
+        setFundamentals({})
+        setSort("")
         setSelectedTickers([])
     }
 
@@ -125,6 +168,12 @@ export default function ResearchExplorer() {
             sector: r.sector || "",
             pe_ratio: r.pe ?? "",
             beta: r.beta ?? "",
+            roe_pct: r.roe_pct ?? "",
+            debt_to_equity: r.debt_to_equity ?? "",
+            revenue_growth_pct: r.revenue_growth_pct ?? "",
+            profit_margin_pct: r.profit_margin_pct ?? "",
+            dividend_yield_pct: r.dividend_yield_pct ?? "",
+            return_1y_pct: r.return_1y_pct ?? "",
             market: r.exchange ?? getMarketLabel(r.ticker)
         }))
 
@@ -186,6 +235,44 @@ export default function ResearchExplorer() {
                                     )}
                                 </button>
                             ))}
+                        </div>
+                    </details>
+
+                    <details className="border-b border-border group" open>
+                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
+                            <span className="text-xs font-medium text-foreground">Fundamentals</span>
+                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="px-4 pb-4 space-y-3">
+                            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Preset screens">
+                                {PRESETS.map(p => (
+                                    <button
+                                        key={p.label}
+                                        type="button"
+                                        onClick={() => { setFundamentals(p.filters); setSort(p.sort) }}
+                                        className="text-[11px] px-2 py-1 border border-border rounded-sm hover:bg-muted hover:border-primary/50"
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                {FUNDAMENTALS.map(f => (
+                                    <label key={f.key} className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                                        {f.label}
+                                        <input
+                                            type="number"
+                                            inputMode="decimal"
+                                            step="any"
+                                            value={fundamentals[f.key] ?? ""}
+                                            onChange={e => setFundamentals(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                            placeholder="Any"
+                                            className="h-8 px-2 bg-background border border-border rounded-sm text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">Covers the Nifty 500 and any stock you've opened; figures from Yahoo, refreshed daily.</p>
                         </div>
                     </details>
 
@@ -288,6 +375,16 @@ export default function ResearchExplorer() {
                                     className="w-full bg-muted/50 border border-border rounded pl-9 pr-4 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition-all text-foreground"
                                 />
                             </div>
+                            <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                                Sort
+                                <select
+                                    value={sort}
+                                    onChange={e => setSort(e.target.value)}
+                                    className="h-7 bg-muted/50 border border-border rounded px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                >
+                                    {SORTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                            </label>
                         </div>
 
                         <div className="flex items-center gap-3">
@@ -362,8 +459,8 @@ export default function ResearchExplorer() {
 
                     {dataFiltersOn && (
                         <p role="note" className="px-6 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
-                            P/E, beta and signal filters only cover stocks that have been opened at least once, since fundamentals
-                            load on first view. Clear them to browse every {selectedMarket === "india" ? "Indian " : selectedMarket === "us" ? "US " : ""}listing.
+                            These filters cover tracked stocks only: the Nifty 500 plus any stock you've opened. Clear them to browse
+                            every {selectedMarket === "india" ? "Indian " : selectedMarket === "us" ? "US " : ""}listing.
                         </p>
                     )}
 
@@ -491,6 +588,8 @@ export default function ResearchExplorer() {
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROE</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">1Y Return</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
@@ -533,6 +632,8 @@ export default function ResearchExplorer() {
                                                     : <>{row.price} <DayChange pct={row.change_pct} className="text-[11px] ml-1" /></>}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.roe_pct == null ? "—" : `${row.roe_pct.toFixed(1)}%`}</td>
+                                            <td className="px-6 py-4">{pctCell(row.return_1y_pct)}</td>
                                             <td className="px-6 py-4">
                                                 <span className={cn(
                                                     "px-2 py-0.5 rounded border",
