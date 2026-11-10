@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -50,10 +50,11 @@ async def test_end_to_end_flow(
         "weaknesses": ["Premium valuation", "Regulatory scrutiny"],
         "opportunities": ["AI integration", "Wearables expansion"],
         "threats": ["Intense competition", "Global supply chain risks"],
-        "confidence_score": 90.0
+        "confidence_score": 90.0,
+        "outlook_score": 75.0
     }
     """
-    mock_llm.invoke.return_value = mock_response
+    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
     # Override the llm on the active research_engine instance
     with patch.object(research_engine.llm_orchestrator, "llm", mock_llm):
@@ -108,7 +109,7 @@ async def test_end_to_end_flow(
         stock = res_stock.scalar_one_or_none()
         assert stock is not None
         assert stock.risk_score > 0
-        assert stock.research_score == 90.0
+        assert stock.research_score == 72.5  # outlook 75 at 90% confidence
 
         # Verify report is stored in DB
         stmt_report = select(ResearchReport).where(ResearchReport.ticker == "AAPL")
@@ -117,11 +118,11 @@ async def test_end_to_end_flow(
         assert report is not None
 
         # 7. Check cache: fetch research report again (mocks shouldn't be called this time)
-        mock_llm.invoke.reset_mock()
+        mock_llm.ainvoke.reset_mock()
         research_resp_cached = await client.get("/api/v1/stocks/AAPL/research", headers=headers)
         assert research_resp_cached.status_code == 200
         assert research_resp_cached.json()["ticker"] == "AAPL"
-        mock_llm.invoke.assert_not_called()
+        mock_llm.ainvoke.assert_not_called()
 
         # 8. Verify signal endpoint returning signals
         db_signal = DBSignal(

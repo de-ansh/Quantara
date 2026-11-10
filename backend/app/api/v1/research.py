@@ -27,6 +27,7 @@ class ResearchReportResponse(BaseModel):
     opportunities: list[str]
     threats: list[str]
     confidence_score: float
+    outlook_score: float | None = None  # absent on reports from before the outlook existed
     generated_at: datetime | None = None
 
 
@@ -45,6 +46,14 @@ class StockSearchItem(BaseModel):
     sector: str | None = None
     pe: float | None = None
     beta: float | None = None
+    roe_pct: float | None = None
+    debt_to_equity: float | None = None
+    revenue_growth_pct: float | None = None
+    profit_margin_pct: float | None = None
+    dividend_yield_pct: float | None = None
+    return_1y_pct: float | None = None
+    exchange: str | None = None
+    tracked: bool = True  # False: directory-only, no price or scores until someone opens it
 
 
 def _currency(ticker: str) -> str:
@@ -64,6 +73,17 @@ def format_market_cap(value: float | None, ticker: str) -> str:
         if value >= divisor:
             return f"{_currency(ticker)}{value / divisor:.2f}{suffix}"
     return f"{_currency(ticker)}{value:,.0f}"
+
+
+def _directory_item(d: Any) -> StockSearchItem:
+    """Explorer row for an untracked listing: end-of-day price where the exchange file has one."""
+    change = round((d.close / d.prev_close - 1) * 100, 2) if d.close and d.prev_close else None
+    return StockSearchItem(
+        ticker=d.ticker, name=d.name, price=format_price(d.close, d.ticker), cap="N/A", risk=None,
+        signal="Unrated", status="neutral" if not change else "up" if change > 0 else "down", change_pct=change,
+        price_updated_at=datetime.combine(d.price_date, datetime.min.time()) if d.price_date else None,
+        exchange=d.exchange, tracked=False,
+    )
 
 
 def to_search_item(stock: Any) -> StockSearchItem:
@@ -96,6 +116,12 @@ def to_search_item(stock: Any) -> StockSearchItem:
         sector=stock.sector,
         pe=stock.pe_ratio,
         beta=stock.beta,
+        roe_pct=stock.roe_pct,
+        debt_to_equity=stock.debt_to_equity,
+        revenue_growth_pct=stock.revenue_growth_pct,
+        profit_margin_pct=stock.profit_margin_pct,
+        dividend_yield_pct=stock.dividend_yield_pct,
+        return_1y_pct=stock.return_1y_pct,
     )
 
 
@@ -119,28 +145,54 @@ async def search_stocks(
     risk_min: float | None = None,
     risk_max: float | None = None,
     signals: str | None = None,
+    roe_min: float | None = None,
+    debt_to_equity_max: float | None = None,
+    revenue_growth_min: float | None = None,
+    profit_margin_min: float | None = None,
+    dividend_yield_min: float | None = None,
+    return_1y_min: float | None = None,
+    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|revenue_growth|profit_margin|dividend_yield|return_1y|risk)$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    track: bool = False,
 ) -> StockSearchListResponse:
     """
     Search stocks with criteria filters and optional market region.
 
-    Results are ordered by ticker; `total_count` is the number of matches before paging.
+    Tracked stocks come first, ordered by ticker. Without data filters (P/E, beta, risk,
+    signals) the list continues into the directory of every listed NSE/BSE/US security.
+    `track=true` (the stock page) starts tracking an exact-ticker directory hit.
+    `total_count` is the number of matches before paging.
     """
-    from sqlalchemy import and_, func, or_, select
+    from sqlalchemy import and_, case, func, or_, select
 
+    from app.models.listed_security import ListedSecurity
     from app.models.signal import Signal
     from app.models.stock import Stock
 
-    stmt = select(Stock)
+    if track and query and await db.get(Stock, query.strip().upper()) is None:
+        if await db.get(ListedSecurity, query.strip().upper()) is not None:
+            from app.services.stock_lookup import get_or_track_stock
+
+            if await get_or_track_stock(db, query.strip().upper()) is not None:
+                await db.commit()
+
+    # A tracked ticker no exchange lists any more (delisted, renamed after a demerger) would show up
+    # next to its successor, so search skips it; its page still opens by URL
+    stmt = select(Stock).where(
+        or_(Stock.ticker.in_(select(ListedSecurity.ticker)), ~select(ListedSecurity.ticker).exists())
+    )
+    directory = select(ListedSecurity)
 
     # Market region filter (US vs India)
     if market:
         m = market.strip().lower()
         if m in ("in", "india", "nse", "bse"):
             stmt = stmt.where(or_(Stock.ticker.ilike("%.NS"), Stock.ticker.ilike("%.BO")))
+            directory = directory.where(ListedSecurity.exchange.in_(["NSE", "BSE"]))
         elif m in ("us", "usa", "nyse", "nasdaq"):
             stmt = stmt.where(and_(~Stock.ticker.ilike("%.NS"), ~Stock.ticker.ilike("%.BO")))
+            directory = directory.where(ListedSecurity.exchange.not_in(["NSE", "BSE"]))
 
     # 1. Join with signals if signal filters applied
     if signals:
@@ -175,14 +227,83 @@ async def search_stocks(
         stmt = stmt.where(Stock.risk_score >= risk_min)
     if risk_max is not None:
         stmt = stmt.where(Stock.risk_score <= risk_max)
+    for column, bound, is_min in (
+        (Stock.roe_pct, roe_min, True), (Stock.debt_to_equity, debt_to_equity_max, False),
+        (Stock.revenue_growth_pct, revenue_growth_min, True), (Stock.profit_margin_pct, profit_margin_min, True),
+        (Stock.dividend_yield_pct, dividend_yield_min, True), (Stock.return_1y_pct, return_1y_min, True),
+    ):
+        if bound is not None:
+            stmt = stmt.where(column >= bound if is_min else column <= bound)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-    result = await db.execute(stmt.order_by(Stock.ticker).limit(limit).offset(offset))
+    sort_columns = {
+        "ticker": Stock.ticker, "market_cap": Stock.market_cap, "pe": Stock.pe_ratio, "roe": Stock.roe_pct,
+        "revenue_growth": Stock.revenue_growth_pct, "profit_margin": Stock.profit_margin_pct,
+        "dividend_yield": Stock.dividend_yield_pct, "return_1y": Stock.return_1y_pct, "risk": Stock.risk_score,
+    }
+    order = Stock.ticker
+    if sort:
+        column = sort_columns[sort.lstrip("-")]
+        order = (column.desc() if sort.startswith("-") else column.asc()).nulls_last()
+    result = await db.execute(stmt.order_by(order, Stock.ticker).limit(limit).offset(offset))
     db_stocks = result.scalars().all()
 
     response_items = [to_search_item(stock) for stock in db_stocks]
 
+    data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals, roe_min, debt_to_equity_max,
+                    revenue_growth_min, profit_margin_min, dividend_yield_min, return_1y_min)
+    if all(f is None for f in data_filters):
+        q = (query or "").strip().upper()
+        directory = directory.where(~ListedSecurity.ticker.in_(select(Stock.ticker)))
+        if q:
+            directory = directory.where(
+                or_(ListedSecurity.ticker.ilike(f"%{q}%"), ListedSecurity.name.ilike(f"%{q}%"))
+            )
+        dir_total = (await db.execute(select(func.count()).select_from(directory.subquery()))).scalar_one()
+        room = limit - len(response_items)
+        if room > 0:
+            # Exact symbol (TCS.NS / TCS.BO / TCS) first, then symbol prefix, then name matches
+            import re
+
+            from app.services.stock_lookup import EXCHANGE_PREFERENCE
+
+            # Exact symbol, symbol prefix, name prefix, whole-word name match, then any substring
+            # ("ITC" inside "Fitch" last); ties go to NSE, BSE, then US
+            rank = case(
+                (or_(ListedSecurity.ticker == q, ListedSecurity.ticker.ilike(f"{q}.%")), 0),
+                (ListedSecurity.ticker.ilike(f"{q}%"), 1),
+                (ListedSecurity.name.ilike(f"{q}%"), 2),
+                (ListedSecurity.name.op("~*")(rf"\m{re.escape(q)}"), 3),
+                else_=4,
+            )
+            hits = await db.execute(
+                directory.order_by(rank, EXCHANGE_PREFERENCE, func.length(ListedSecurity.ticker), ListedSecurity.ticker)
+                .limit(room)
+                .offset(max(0, offset - total))
+            )
+            response_items += [_directory_item(d) for d in hits.scalars()]
+        total += dir_total
+
     return StockSearchListResponse(stocks=response_items, total_count=int(total))
+
+
+class ResolvedTicker(BaseModel):
+    ticker: str
+    name: str | None = None
+    exchange: str | None = None
+
+
+@router.get("/stocks/resolve", response_model=ResolvedTicker)
+async def resolve_stock(q: str, current_user: CurrentUser, db: DBSession) -> ResolvedTicker:
+    """The listed ticker meant by a typed symbol or name ("ITC" -> ITC.NS, "infosys" -> INFY.NS)."""
+    from app.models.listed_security import ListedSecurity
+    from app.services.stock_lookup import resolve_ticker
+
+    ticker = await resolve_ticker(db, q)
+    if ticker is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No listed security matches {q!r}")
+    listed = await db.get(ListedSecurity, ticker)
+    return ResolvedTicker(ticker=ticker, name=listed.name if listed else None, exchange=listed.exchange if listed else None)
 
 
 @router.get("/stocks/{ticker}/research", response_model=ResearchReportResponse)
@@ -221,6 +342,7 @@ async def get_stock_research(
         not refresh
         and report
         and report.structured_json
+        and "outlook_score" in report.structured_json  # older reports regenerate to get one
         and utcnow() - report.updated_at < max_age
     ):
         return ResearchReportResponse(**{**report.structured_json, "generated_at": report.updated_at})

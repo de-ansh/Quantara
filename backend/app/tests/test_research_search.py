@@ -23,7 +23,8 @@ async def test_search_stocks_with_query():
         research_score=85.0,
     )
     mock_result.scalars.return_value.all.return_value = [nvda]
-    mock_result.scalar_one.return_value = 1
+    mock_result.scalars.return_value.__iter__.return_value = iter([])  # no untracked directory hits
+    mock_result.scalar_one.side_effect = [1, 0]  # tracked count, directory count
     mock_db.execute.return_value = mock_result
 
     current_user = {"id": "1", "email": "analyst@quantara.com"}

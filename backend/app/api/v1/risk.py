@@ -284,6 +284,8 @@ async def get_stock_correlations(
         .scalars()
         .all()
     )
+    hedges = [h for h in HEDGE_INSTRUMENTS["india" if is_indian else "us"] if h["ticker"] != ticker_upper]
+    hedge_tickers = {h["ticker"] for h in hedges}
     candidates = [
         {
             "ticker": p.ticker,
@@ -291,10 +293,10 @@ async def get_stock_correlations(
             "sector": p.sector or "Unknown",
             "beta": p.beta or 1.0,
         }
+        # A tracked hedge (e.g. TLT) is listed once, as a hedge
         for p in sorted(peer_rows, key=lambda p: p.sector != active_sector)
-    ][:9] + [
-        h for h in HEDGE_INSTRUMENTS["india" if is_indian else "us"] if h["ticker"] != ticker_upper
-    ]
+        if p.ticker not in hedge_tickers
+    ][:9] + hedges
 
     returns = await _get_daily_returns(
         tuple([ticker_upper, benchmark] + [c["ticker"] for c in candidates])

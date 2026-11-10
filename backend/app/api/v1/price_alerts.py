@@ -78,11 +78,12 @@ async def create_price_alert(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"You can have at most {MAX_ACTIVE_ALERTS} active price alerts",
         )
-    ticker = request.ticker.upper()
-    if await get_or_track_stock(db, ticker) is None:
+    stock = await get_or_track_stock(db, request.ticker)
+    if stock is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"No market data found for {ticker}"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"No market data found for {request.ticker.upper()}"
         )
+    ticker = stock.ticker  # the listing it resolved to ("ITC" -> ITC.NS)
     alert = PriceAlert(
         user_id=user_id,
         ticker=ticker,

@@ -20,7 +20,7 @@ function TotalsCard({ t }: { t: CurrencyTotals }) {
     return (
         <Card className="bg-q-surface border-q-border shadow-none">
             <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t.currency} holdings</CardTitle>
+                <CardTitle className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t.currency} holdings</CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0 space-y-3">
                 <div className="text-2xl font-black font-mono text-foreground">{money(t.market_value, t.currency)}</div>
@@ -28,7 +28,7 @@ function TotalsCard({ t }: { t: CurrencyTotals }) {
                     <div>
                         <dt className="text-muted-foreground">Unrealized P&amp;L</dt>
                         <dd className={cn("font-mono font-bold", tone(t.unrealized_pnl))}>
-                            {money(t.unrealized_pnl, t.currency, true)} <span className="text-[10px]">{pct(t.unrealized_pnl_pct)}</span>
+                            {money(t.unrealized_pnl, t.currency, true)} <span className="text-[11px]">{pct(t.unrealized_pnl_pct)}</span>
                         </dd>
                     </div>
                     <div>
@@ -38,7 +38,7 @@ function TotalsCard({ t }: { t: CurrencyTotals }) {
                 </dl>
                 {sectors.length > 0 && (
                     <div className="space-y-1.5 pt-2 border-t border-q-border/50">
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Sector allocation</p>
+                        <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Sector allocation</p>
                         {sectors.map(([sector, share]) => (
                             <div key={sector} className="text-[11px]">
                                 <div className="flex justify-between"><span>{sector}</span><span className="font-mono">{share.toFixed(1)}%</span></div>
@@ -70,7 +70,7 @@ export default function PortfolioDetail() {
                     </Link>
                     <h1 className="text-2xl font-black tracking-tight text-foreground">{portfolio?.name ?? "Portfolio"}</h1>
                     {perf?.prices_as_of && (
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Prices as of {timeAgo(perf.prices_as_of)}</p>
+                        <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">Prices as of {timeAgo(perf.prices_as_of)}</p>
                     )}
                 </div>
                 <Button onClick={() => navigate(`/simulation?portfolio=${id}`)} className="gap-1">
@@ -100,7 +100,7 @@ export default function PortfolioDetail() {
                 <Card className="bg-q-surface border-q-border shadow-none overflow-x-auto">
                     <table className="w-full text-xs">
                         <thead>
-                            <tr className="border-b border-q-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <tr className="border-b border-q-border text-[11px] uppercase tracking-wider text-muted-foreground">
                                 {["Holding", "Shares", "Avg cost", "Price", "Market value", "Weight", "Today", "Unrealized P&L"].map((h, i) => (
                                     <th key={h} scope="col" className={cn("px-4 py-3 font-bold", i === 0 ? "text-left" : "text-right")}>{h}</th>
                                 ))}
@@ -111,7 +111,7 @@ export default function PortfolioDetail() {
                                 <tr key={h.ticker} className="border-b border-q-border/40 hover:bg-primary/5">
                                     <th scope="row" className="px-4 py-2.5 text-left">
                                         <Link to={`/research/${h.ticker}`} className="font-mono font-black text-foreground hover:text-primary">{h.ticker}</Link>
-                                        <span className="block text-[10px] text-muted-foreground font-normal">{h.name}{h.sector ? ` · ${h.sector}` : ""}</span>
+                                        <span className="block text-[11px] text-muted-foreground font-normal">{h.name}{h.sector ? ` · ${h.sector}` : ""}</span>
                                     </th>
                                     <td className="px-4 py-2.5 text-right font-mono">{h.shares.toLocaleString()}</td>
                                     <td className="px-4 py-2.5 text-right font-mono">{h.avg_cost ? money(h.avg_cost, h.currency) : "—"}</td>
@@ -121,7 +121,7 @@ export default function PortfolioDetail() {
                                     <td className={cn("px-4 py-2.5 text-right font-mono", tone(h.day_change))}>{money(h.day_change, h.currency, true)}</td>
                                     <td className={cn("px-4 py-2.5 text-right font-mono font-bold", tone(h.unrealized_pnl))}>
                                         {money(h.unrealized_pnl, h.currency, true)}
-                                        <span className="block text-[10px] font-normal">{pct(h.unrealized_pnl_pct)}</span>
+                                        <span className="block text-[11px] font-normal">{pct(h.unrealized_pnl_pct)}</span>
                                     </td>
                                 </tr>
                             ))}

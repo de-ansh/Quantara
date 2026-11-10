@@ -78,7 +78,10 @@ async def add_to_watchlist(
 ) -> WatchlistResponse:
     """Watch a ticker. Tickers not yet tracked are verified against Yahoo, then added."""
     user_id = int(current_user["id"])
-    ticker = request.ticker.upper()
+    from app.services.stock_lookup import resolve_ticker
+
+    # The listing the user means ("ITC" -> ITC.NS), so the same stock isn't watched twice
+    ticker = await resolve_ticker(db, request.ticker) or request.ticker.upper()
 
     existing = (
         await db.execute(

@@ -110,12 +110,12 @@ export default function Account() {
                         <User className="size-6 text-primary" />
                         Account & Risk Control
                     </h1>
-                    <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
+                    <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
                         Profile, password and risk preferences
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 bg-primary/5 text-primary">
+                    <Badge variant="outline" className="font-mono text-[10px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 bg-primary/5 text-primary">
                         UID: #{user?.id || "N/A"}
                     </Badge>
                 </div>
@@ -141,7 +141,7 @@ export default function Account() {
                     <Card className="bg-card border-border shadow-none">
                         <CardHeader className="p-4 pb-2 border-b border-border/55">
                             <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Profile</CardTitle>
-                            <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
+                            <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
                                 Authenticated Trader Details
                             </CardDescription>
                         </CardHeader>
@@ -161,7 +161,7 @@ export default function Account() {
                     <Card className="bg-card border-border shadow-none">
                         <CardHeader className="p-4 pb-2 border-b border-border/55">
                             <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Risk Classification</CardTitle>
-                            <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
+                            <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
                                 Core investment constraint classification
                             </CardDescription>
                         </CardHeader>
@@ -175,7 +175,7 @@ export default function Account() {
                                             key={level}
                                             type="button"
                                             onClick={() => setRiskLevel(level)}
-                                            className={`py-2.5 text-[9px] font-black uppercase transition-all ${
+                                            className={`py-2.5 text-[10px] font-black uppercase transition-all ${
                                                 riskLevel === level ? "bg-primary text-white" : "bg-background text-muted-foreground hover:bg-muted"
                                             }`}
                                         >
@@ -226,7 +226,7 @@ export default function Account() {
                     <div>
                         <CardHeader className="p-4 pb-2 border-b border-border/55">
                             <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Sector Allocation Caps</CardTitle>
-                            <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
+                            <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
                                 Define maximum weight limits (%) per industry sector
                             </CardDescription>
                         </CardHeader>
@@ -255,7 +255,7 @@ export default function Account() {
                     </div>
 
                     <div className="p-6 border-t border-border bg-card/10 flex items-center justify-between">
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-bold uppercase">
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-bold uppercase">
                             <Sliders className="size-3.5 text-primary" /> Sector Constraints Enabled
                         </div>
                         <Button

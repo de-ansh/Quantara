@@ -61,7 +61,7 @@ async def test_get_recommendations_with_db_stocks(mock_current_user, sample_stoc
 
     # 2nd execute: select(Signal.ticker, func.avg(Signal.strength)).group_by(Signal.ticker)
     mock_sig_result = MagicMock()
-    mock_sig_result.all.return_value = [("AAPL", 80.0), ("MSFT", 70.0)]
+    mock_sig_result.all.return_value = [("AAPL", 80.0, None), ("MSFT", 70.0, None)]  # (ticker, strength, data)
 
     # 3rd execute: select(Recommendation) for active previous recommendations
     mock_active_prev = MagicMock()

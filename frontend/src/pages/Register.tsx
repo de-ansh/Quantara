@@ -71,7 +71,7 @@ export default function Register() {
                         <ShieldCheck className="size-6" />
                     </div>
                     <Link to="/" className="text-white text-lg font-bold uppercase tracking-widest">Quantara</Link>
-                    <span className="text-[10px] bg-[#1e5df1]/20 text-[#1e5df1] border border-[#1e5df1]/30 px-1.5 py-0.5 font-bold tracking-tighter">INSTITUTIONAL</span>
+                    <span className="text-[11px] bg-[#1e5df1]/20 text-[#1e5df1] border border-[#1e5df1]/30 px-1.5 py-0.5 font-bold tracking-tighter">INSTITUTIONAL</span>
                 </div>
                 <div className="flex items-center gap-4">
                     <button className="flex items-center justify-center size-8 border border-[#282d39] hover:bg-[#282d39] transition-colors">
@@ -163,7 +163,7 @@ export default function Register() {
                         </div>
 
                         {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-bold uppercase tracking-wider">
                                 {error}
                             </div>
                         )}
@@ -176,7 +176,7 @@ export default function Register() {
                             {isLoading ? "Processing Request..." : "Request Access"}
                         </button>
 
-                        <div className="flex items-center justify-end text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
+                        <div className="flex items-center justify-end text-[11px] text-[#9ca5ba] uppercase tracking-tighter">
                             <Link to="/login" className="text-[#1e5df1] hover:underline font-bold">Back to Login</Link>
                         </div>
                     </form>
@@ -195,7 +195,7 @@ export default function Register() {
                 </div>
             </main>
 
-            <footer className="fixed bottom-0 w-full border-t border-[#282d39] bg-[#151B23] px-6 py-2.5 flex flex-col md:flex-row items-center justify-between text-[10px] uppercase tracking-wider font-medium text-[#9ca5ba] z-50">
+            <footer className="fixed bottom-0 w-full border-t border-[#282d39] bg-[#151B23] px-6 py-2.5 flex flex-col md:flex-row items-center justify-between text-[11px] uppercase tracking-wider font-medium text-[#9ca5ba] z-50">
                 <div className="flex items-center gap-4">
                     <span className="text-white font-bold">Quantara</span>
                     <span className="hidden md:inline text-[#282d39]">|</span>

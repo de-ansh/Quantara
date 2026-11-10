@@ -203,15 +203,16 @@ async def test_run_periodic_signal_processing(
         except asyncio.CancelledError:
             pass
 
-    # Verify all 4 signal types were generated and stored in db
+    # Verify the signal types with real inputs were generated and stored in db
     stmt = select(DBSignal)
     result = await db_session.execute(stmt)
     signals = result.scalars().all()
 
-    assert len(signals) >= 4
+    assert len(signals) >= 3
     types = [s.signal_type for s in signals]
     assert "insider_buying" in types
-    assert "earnings_surprise" in types
+    # No consensus EPS estimates are available, so no earnings surprise is invented from filings
+    assert "earnings_surprise" not in types
     assert "sentiment_spike" in types
     assert "institutional_buying" in types
 
@@ -364,3 +365,12 @@ async def test_notify_slack_is_noop_unset_and_never_raises(monkeypatch):
     monkeypatch.setattr(notify.settings, "slack_webhook_url", "https://hooks.slack.test/x")
     await notify.notify_slack("hi")  # logged, not raised
     assert calls == [{"text": "hi"}]
+
+
+def test_signal_score_uses_direction_not_just_strength():
+    from app.services.recommendation_engine import signal_score
+
+    assert signal_score([]) == 50  # no signals: neutral
+    assert signal_score([(40.0, {"net_buying": 1e6})]) == 70  # insider buying is bullish
+    assert signal_score([(40.0, {"sentiment_change": -0.4})]) == 30  # a negative sentiment spike is bearish
+    assert signal_score([(22.0, {"surprise_pct": 11.1})]) == 61  # a beat, not "weak at 22"
