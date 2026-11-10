@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { AlertTriangle } from "lucide-react"
 import apiClient from "@/lib/api"
 import { timeAgo } from "@/lib/utils"
+import { useAuth } from "@/context/AuthContext"
 
 interface DataHealth {
     prices_updated_at: string | null
@@ -12,10 +13,12 @@ interface DataHealth {
 
 /** Says so when a background job has stopped, instead of letting old prices pass for live ones. */
 export default function StaleDataBanner() {
+    const { token } = useAuth()
     const { data } = useQuery({
         queryKey: ["dataHealth"],
         queryFn: async () => (await apiClient.get<DataHealth>("/market/data-health")).data,
         refetchInterval: 5 * 60 * 1000,
+        enabled: !!token, // after the session is restored, like AlertsBell; earlier calls just 401
     })
     if (!data?.prices_stale && !data?.directory_stale) return null
     return (
