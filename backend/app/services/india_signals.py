@@ -124,7 +124,7 @@ async def run_india_signals(db: AsyncSession) -> int:
         bulk, block, pledges = [await _fetch(client, u) for u in (BULK_DEALS, BLOCK_DEALS, PLEDGES)]
     deals = parse_deals(*(r.text for r in (bulk, block) if r is not None))
     pledge_by_name = parse_pledges(pledges.json()) if pledges is not None else {}
-    names = dict((await db.execute(
+    names: dict[str, str] = dict(row._tuple() for row in (await db.execute(
         select(ListedSecurity.ticker, ListedSecurity.name).where(ListedSecurity.ticker.in_([s.ticker for s in stocks]))
     )).all())
 

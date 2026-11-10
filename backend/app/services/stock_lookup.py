@@ -52,12 +52,13 @@ async def resolve_ticker(db: AsyncSession, text: str) -> str | None:
     if await db.get(Stock, symbol) is not None:  # tracked but in no exchange list (e.g. an index fund)
         return symbol
     name_starts = ListedSecurity.name.ilike(f"{raw}%")
-    return await db.scalar(
+    best: str | None = await db.scalar(
         select(ListedSecurity.ticker)
         .where(or_(name_starts, ListedSecurity.name.op("~*")(rf"\m{re.escape(raw)}")))
         .order_by(case((name_starts, 0), else_=1), EXCHANGE_PREFERENCE, func.length(ListedSecurity.ticker))
         .limit(1)
     )
+    return best
 
 
 async def get_or_track_stock(db: AsyncSession, ticker: str) -> Stock | None:
