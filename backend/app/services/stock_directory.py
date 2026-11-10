@@ -143,8 +143,10 @@ async def track_index_members(db: AsyncSession, text: str) -> int:
     members = parse_index_members(text)
     if not members:
         return 0
-    result = await db.execute(pg_insert(Stock).values(members).on_conflict_do_nothing(index_elements=["ticker"]))
-    return result.rowcount or 0
+    added = await db.execute(
+        pg_insert(Stock).values(members).on_conflict_do_nothing(index_elements=["ticker"]).returning(Stock.ticker)
+    )
+    return len(added.all())
 
 
 async def _get(client: httpx.AsyncClient, url: str) -> str | None:

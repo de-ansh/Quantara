@@ -11,6 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI, OpenAIError
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -47,7 +48,7 @@ numbers. No headings, tables or links.
 NSE first, then BSE, then US; say which listing you used. Use find_ticker when the user names a company \
 or a symbol could mean more than one listing."""
 
-TOOLS = [
+TOOLS: list[ChatCompletionToolParam] = [
     {"type": "function", "function": {
         "name": "stock_snapshot",
         "description": "Everything Quantara shows for one stock: price and fundamentals, 1-month/1-year "
@@ -161,7 +162,7 @@ async def _run_tool(name: str, args: dict, user: dict, db: Any) -> dict:
     return {"error": f"unknown tool or missing arguments: {name}"}
 
 
-async def _start(request: ChatRequest, user: dict, redis: Any) -> tuple[list[dict], AsyncOpenAI]:
+async def _start(request: ChatRequest, user: dict, redis: Any) -> tuple[list[ChatCompletionMessageParam], AsyncOpenAI]:
     """Validate, rate-limit and build the conversation sent to the model."""
     if request.messages[-1].role != "user":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The last message must be from the user")
@@ -173,13 +174,19 @@ async def _start(request: ChatRequest, user: dict, redis: Any) -> tuple[list[dic
         f"horizon {user.get('investment_horizon') or 'not set'} months."
     )
     on_screen = f" The user is looking at {request.ticker.upper()}." if request.ticker else ""
-    messages: list[dict] = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{profile}{on_screen}"}]
-    messages += [m.model_dump() for m in request.messages]
+    messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{profile}{on_screen}"}]
+    for m in request.messages:
+        if m.role == "user":
+            messages.append({"role": "user", "content": m.content})
+        else:
+            messages.append({"role": "assistant", "content": m.content})
     client = AsyncOpenAI(api_key=user.get("openai_api_key") or settings.openai_api_key, timeout=60.0)
     return messages, client
 
 
-async def _answer_tool_calls(calls: list[dict], messages: list[dict], user: dict, db: Any, tickers: list[str]) -> None:
+async def _answer_tool_calls(
+    calls: list[dict[str, str]], messages: list[ChatCompletionMessageParam], user: dict, db: Any, tickers: list[str]
+) -> None:
     """Append the assistant's tool calls and each tool's result to the conversation."""
     messages.append({"role": "assistant", "content": None, "tool_calls": [
         {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls
@@ -208,7 +215,8 @@ async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, r
             msg = resp.choices[0].message
             if not msg.tool_calls:
                 return ChatResponse(reply=msg.content or "", tickers=tickers)
-            calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls]
+            calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments}
+                     for c in msg.tool_calls if c.type == "function"]  # the only kind of tool offered
             await _answer_tool_calls(calls, messages, current_user, db, tickers)
     except OpenAIError as e:
         logger.error(f"Chat LLM call failed: {e}")

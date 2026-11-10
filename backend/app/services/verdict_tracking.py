@@ -90,14 +90,14 @@ async def track_record(db: AsyncSession, risk_level: str, horizon_days: int, tod
             returns[s.verdict].append(end / s.price - 1)
 
     everything = [r for rs in returns.values() for r in rs]
-    baseline = sum(everything) / len(everything) if everything else None
+    baseline = sum(everything) / len(everything) if everything else 0.0  # unused when there are no returns
     since = min((s.day for s in snaps), default=None)
     return {
         "risk_level": risk_level,
         "horizon_days": horizon_days,
         "tracking_since": since,
         "first_results_on": since + timedelta(days=horizon_days) if since else None,
-        "all_rated_avg_return_pct": round(baseline * 100, 2) if baseline is not None else None,
+        "all_rated_avg_return_pct": round(baseline * 100, 2) if everything else None,
         "verdicts": [
             {
                 "verdict": label,
