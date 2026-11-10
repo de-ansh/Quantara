@@ -129,7 +129,9 @@ async def test_verdict_needs_scores_then_maps_final_score(client, db_session):
 
 @pytest.mark.asyncio
 async def test_refresh_loads_every_list_and_names_bare_ticker_stocks(db_session, monkeypatch):
-    pages = {stock_directory.NSE_EQUITY_LIST: NSE, stock_directory.NSE_ETF_LIST: NSE_ETF, stock_directory.US_LIST: US}
+    nifty = "Company Name,Industry,Symbol,Series,ISIN Code\nTata Consultancy Services Ltd.,IT,TCS,EQ,INE467B01029\n"
+    pages = {stock_directory.NSE_EQUITY_LIST: NSE, stock_directory.NSE_ETF_LIST: NSE_ETF, stock_directory.US_LIST: US,
+             stock_directory.NIFTY_500_LIST: nifty}
 
     async def fake_get(client, url):
         return pages[url]
@@ -142,10 +144,12 @@ async def test_refresh_loads_every_list_and_names_bare_ticker_stocks(db_session,
     db_session.add(Stock(ticker="AAPL", name="AAPL"))  # tracked from a watchlist before it had a name
     await db_session.commit()
 
-    assert await stock_directory.refresh_directory(db_session) == {"NSE": 4, "BSE": 3, "US": 5}
+    assert await stock_directory.refresh_directory(db_session) == {"NSE": 4, "BSE": 3, "US": 5, "newly_tracked": 1}
     stock = await db_session.get(Stock, "AAPL")
     await db_session.refresh(stock)
     assert stock.name == "Apple Inc."
+    assert (await db_session.get(Stock, "TCS.NS")) is not None  # Nifty 500 members are tracked
+    assert await stock_directory.refresh_directory(db_session) == {"NSE": 4, "BSE": 3, "US": 5, "newly_tracked": 0}
 
 
 def test_bhavcopy_prices_reach_untracked_rows():
@@ -217,3 +221,28 @@ async def test_data_health_flags_prices_a_stopped_job_left_behind(client, db_ses
     stock.price_updated_at = utcnow()
     await db_session.commit()
     assert (await client.get("/api/v1/market/data-health", headers=await _headers(client))).json()["prices_stale"] is False
+
+
+@pytest.mark.asyncio
+async def test_screener_filters_and_sorts_on_fundamentals(client, db_session):
+    db_session.add_all([
+        Stock(ticker="QUAL.NS", name="Quality", roe_pct=28.0, debt_to_equity=0.1, revenue_growth_pct=15.0, return_1y_pct=12.0),
+        Stock(ticker="LEVER.NS", name="Levered", roe_pct=22.0, debt_to_equity=2.5, revenue_growth_pct=20.0, return_1y_pct=-5.0),
+        Stock(ticker="SLOW.NS", name="Slow", roe_pct=9.0, debt_to_equity=0.0, revenue_growth_pct=2.0, return_1y_pct=3.0),
+        Stock(ticker="NODATA.NS", name="No data"),
+        ListedSecurity(ticker="UNTRACKED.NS", name="Untracked", exchange="NSE"),
+        # Tracked stocks show only while an exchange lists them (delisted ones are hidden)
+        *(ListedSecurity(ticker=t, name=t, exchange="NSE") for t in ["QUAL.NS", "LEVER.NS", "SLOW.NS", "NODATA.NS"]),
+    ])
+    await db_session.commit()
+    headers = await _headers(client)
+
+    async def tickers(params: str) -> list[str]:
+        return [s["ticker"] for s in (await client.get(f"/api/v1/stocks/search?{params}", headers=headers)).json()["stocks"]]
+
+    # "Quality compounders": ROE >= 15%, debt/equity <= 0.5, growth >= 10%; directory rows are left out
+    assert await tickers("roe_min=15&debt_to_equity_max=0.5&revenue_growth_min=10") == ["QUAL.NS"]
+    assert await tickers("roe_min=15&sort=-roe") == ["QUAL.NS", "LEVER.NS"]
+    best_return = await tickers("sort=-return_1y")
+    assert best_return[:3] == ["QUAL.NS", "SLOW.NS", "LEVER.NS"] and best_return[3] == "NODATA.NS"  # no data sorts last
+    assert (await client.get("/api/v1/stocks/search?sort=drop_table", headers=headers)).status_code == 422

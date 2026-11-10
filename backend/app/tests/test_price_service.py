@@ -108,3 +108,16 @@ async def test_unrated_stocks_get_a_real_risk_score(db_session, monkeypatch):
     nohist = await db_session.get(Stock, "NOHIST")
     assert aapl.risk_score is not None and 0 <= aapl.risk_score <= 100
     assert nohist.risk_score is None  # defaults alone never become a score
+
+
+def test_fetch_fundamentals_normalises_screening_units(monkeypatch):
+    class _T:
+        info = {"longName": "Tata Consultancy Services Limited", "marketCap": 9e12, "returnOnEquity": 0.4557,
+                "debtToEquity": 9.83, "revenueGrowth": 0.112, "profitMargins": 0.1822, "dividendYield": 1.94,
+                "52WeekChange": -0.174, "trailingPE": "Infinity"}
+
+    monkeypatch.setattr(price_service.yf, "Ticker", lambda t: _T())
+    data = price_service.fetch_fundamentals("TCS.NS")
+    assert (data["roe_pct"], data["debt_to_equity"], data["revenue_growth_pct"]) == (45.57, 0.1, 11.2)
+    assert (data["profit_margin_pct"], data["dividend_yield_pct"], data["return_1y_pct"]) == (18.22, 1.94, -17.4)
+    assert data["pe_ratio"] is None  # "Infinity" would fail the whole row's update

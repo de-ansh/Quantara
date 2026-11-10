@@ -46,6 +46,12 @@ class StockSearchItem(BaseModel):
     sector: str | None = None
     pe: float | None = None
     beta: float | None = None
+    roe_pct: float | None = None
+    debt_to_equity: float | None = None
+    revenue_growth_pct: float | None = None
+    profit_margin_pct: float | None = None
+    dividend_yield_pct: float | None = None
+    return_1y_pct: float | None = None
     exchange: str | None = None
     tracked: bool = True  # False: directory-only, no price or scores until someone opens it
 
@@ -110,6 +116,12 @@ def to_search_item(stock: Any) -> StockSearchItem:
         sector=stock.sector,
         pe=stock.pe_ratio,
         beta=stock.beta,
+        roe_pct=stock.roe_pct,
+        debt_to_equity=stock.debt_to_equity,
+        revenue_growth_pct=stock.revenue_growth_pct,
+        profit_margin_pct=stock.profit_margin_pct,
+        dividend_yield_pct=stock.dividend_yield_pct,
+        return_1y_pct=stock.return_1y_pct,
     )
 
 
@@ -133,6 +145,13 @@ async def search_stocks(
     risk_min: float | None = None,
     risk_max: float | None = None,
     signals: str | None = None,
+    roe_min: float | None = None,
+    debt_to_equity_max: float | None = None,
+    revenue_growth_min: float | None = None,
+    profit_margin_min: float | None = None,
+    dividend_yield_min: float | None = None,
+    return_1y_min: float | None = None,
+    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|revenue_growth|profit_margin|dividend_yield|return_1y|risk)$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     track: bool = False,
@@ -208,14 +227,31 @@ async def search_stocks(
         stmt = stmt.where(Stock.risk_score >= risk_min)
     if risk_max is not None:
         stmt = stmt.where(Stock.risk_score <= risk_max)
+    for column, bound, is_min in (
+        (Stock.roe_pct, roe_min, True), (Stock.debt_to_equity, debt_to_equity_max, False),
+        (Stock.revenue_growth_pct, revenue_growth_min, True), (Stock.profit_margin_pct, profit_margin_min, True),
+        (Stock.dividend_yield_pct, dividend_yield_min, True), (Stock.return_1y_pct, return_1y_min, True),
+    ):
+        if bound is not None:
+            stmt = stmt.where(column >= bound if is_min else column <= bound)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-    result = await db.execute(stmt.order_by(Stock.ticker).limit(limit).offset(offset))
+    sort_columns = {
+        "ticker": Stock.ticker, "market_cap": Stock.market_cap, "pe": Stock.pe_ratio, "roe": Stock.roe_pct,
+        "revenue_growth": Stock.revenue_growth_pct, "profit_margin": Stock.profit_margin_pct,
+        "dividend_yield": Stock.dividend_yield_pct, "return_1y": Stock.return_1y_pct, "risk": Stock.risk_score,
+    }
+    order = Stock.ticker
+    if sort:
+        column = sort_columns[sort.lstrip("-")]
+        order = (column.desc() if sort.startswith("-") else column.asc()).nulls_last()
+    result = await db.execute(stmt.order_by(order, Stock.ticker).limit(limit).offset(offset))
     db_stocks = result.scalars().all()
 
     response_items = [to_search_item(stock) for stock in db_stocks]
 
-    data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals)
+    data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals, roe_min, debt_to_equity_max,
+                    revenue_growth_min, profit_margin_min, dividend_yield_min, return_1y_min)
     if all(f is None for f in data_filters):
         q = (query or "").strip().upper()
         directory = directory.where(~ListedSecurity.ticker.in_(select(Stock.ticker)))
