@@ -52,7 +52,7 @@ export default function YourDataCard() {
         <Card className="bg-card border-border shadow-none">
             <CardHeader className="p-4 border-b border-border">
                 <CardTitle className="text-xs font-bold uppercase tracking-wider">Your Data</CardTitle>
-                <CardDescription className="text-[10px] uppercase font-bold">Download or permanently delete everything we store</CardDescription>
+                <CardDescription className="text-[11px] uppercase font-bold">Download or permanently delete everything we store</CardDescription>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
@@ -73,7 +73,7 @@ export default function YourDataCard() {
                             This permanently deletes your account, portfolios, watchlist, alerts and activity history. It cannot be undone.
                         </p>
                         <label className="block space-y-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Confirm with your password</span>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Confirm with your password</span>
                             <input type="password" autoComplete="current-password" required value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 className="w-full max-w-sm bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground outline-none focus:border-red-400" />

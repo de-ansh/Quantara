@@ -120,9 +120,26 @@ def fetch_fundamentals(ticker: str) -> dict[str, Any] | None:
         "name": info.get("longName") or info.get("shortName"),
         "sector": YAHOO_SECTORS.get(sector, sector) if sector else None,
         "market_cap": info.get("marketCap"),
-        "pe_ratio": info.get("trailingPE"),
-        "beta": info.get("beta"),
+        "pe_ratio": _scaled(info.get("trailingPE"), 1),
+        "beta": _scaled(info.get("beta"), 1),
+        # Yahoo gives ROE, growth, margin and 1-year change as fractions, debt/equity as a percent and
+        # dividend yield already in percent (yfinance >= 0.2.5); store percents and a D/E ratio
+        "roe_pct": _scaled(info.get("returnOnEquity"), 100),
+        "debt_to_equity": _scaled(info.get("debtToEquity"), 0.01),
+        "revenue_growth_pct": _scaled(info.get("revenueGrowth"), 100),
+        "profit_margin_pct": _scaled(info.get("profitMargins"), 100),
+        "dividend_yield_pct": _scaled(info.get("dividendYield"), 1),
+        "return_1y_pct": _scaled(info.get("52WeekChange"), 100),
     }
+
+
+def _scaled(value: Any, factor: float) -> float | None:
+    """value * factor, rounded; None for missing or non-numeric values (Yahoo sometimes sends 'Infinity')."""
+    try:
+        result = float(value) * factor
+    except (TypeError, ValueError):
+        return None
+    return round(result, 2) if result == result and abs(result) != float("inf") else None
 
 
 async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTALS_MAX_AGE) -> int:
@@ -154,7 +171,7 @@ async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTA
     return updated
 
 
-async def score_unrated_stocks(db: AsyncSession, limit: int = 5) -> int:
+async def score_unrated_stocks(db: AsyncSession, limit: int = 25) -> int:
     """Compute a real risk score for stocks that have none yet; returns how many were scored.
 
     Picks a random few per pass so a ticker whose data keeps failing can't starve the rest.
@@ -189,6 +206,9 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
             await refresh_prices(db)
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
             await score_unrated_stocks(db)
+            from app.services.verdict_tracking import snapshot_verdicts
+
+            await snapshot_verdicts(db)  # once a day in effect: later runs that day add nothing
 
     while True:
         try:

@@ -39,6 +39,22 @@ class StockRecommendation:
     rank: int
 
 
+def signal_score(signals: list[tuple[float, dict | None]]) -> float:
+    """0-100 with 50 neutral, from (strength, data) pairs of a stock's signals.
+
+    A signal's strength is its size, not its direction: insider and institutional signals only fire
+    on net buying (bullish); others carry it in data ("direction", or the sign of a sentiment change
+    or earnings surprise).
+    """
+    if not signals:
+        return 50.0
+    def bearish(data: dict) -> bool:
+        return data.get("direction") == "bearish" or data.get("sentiment_change", 0) < 0 or data.get("surprise_pct", 0) < 0
+
+    signed = [-strength if bearish(data or {}) else strength for strength, data in signals]
+    return min(max(50 + sum(signed) / len(signed) / 2, 0.0), 100.0)
+
+
 class RecommendationEngine:
     """Recommendation scoring and ranking engine."""
 
@@ -157,7 +173,7 @@ class RecommendationEngine:
         Calculate final recommendation score.
 
         Args:
-            research_score: Research quality score (0-100)
+            research_score: Research outlook, confidence-weighted (0 bearish - 100 bullish)
             signal_score: Signal strength score (0-100)
             risk_alignment_score: Risk alignment score (0-100)
             macro_fit_score: Macro fit score (0-100)
@@ -195,13 +211,63 @@ class RecommendationEngine:
         """
         explanation = (
             f"{ticker} is recommended with a score of {scores.final_score:.1f}/100. "
-            f"This recommendation is based on strong research quality ({scores.research_score:.1f}), "
+            f"This recommendation is based on the research outlook ({scores.research_score:.1f}), "
             f"positive market signals ({scores.signal_score:.1f}), "
             f"good alignment with your {user_risk_level} risk profile ({scores.risk_alignment_score:.1f}), "
             f"and favorable macro conditions for {sector} ({scores.macro_fit_score:.1f})."
         )
 
         return explanation
+
+    # Final-score cut-offs for the plain-language verdict on the stock page
+    # Verdict rules on the components, not the blended score: with signals usually neutral and
+    # risk fit similar across stocks, the blend only spans ~50-70 and can't separate Buy from Hold.
+    BULLISH_OUTLOOK = 65.0
+    BEARISH_OUTLOOK = 40.0
+    GOOD_FIT = 60.0
+    POOR_FIT = 40.0
+    BEARISH_SIGNALS = 30.0
+    NOT_BEARISH_SIGNALS = 45.0
+    _COMPONENT_LABELS = {
+        "research_score": "research outlook",
+        "signal_score": "market signals",
+        "risk_alignment_score": "fit with your risk profile",
+        "macro_fit_score": "sector fit in the current market",
+    }
+
+    def verdict(self, scores: RecommendationScore) -> tuple[str, list[str]]:
+        """Buy / Hold / Avoid, with the three components that moved the score most.
+
+        Avoid: bearish outlook, far outside the user's risk band, clearly bearish signals, or riskier
+        than the user's profile with no bullish case to justify it.
+        Buy: bullish outlook that fits the user's risk, without bearish signals. Otherwise Hold.
+        """
+        if (
+            scores.research_score < self.BEARISH_OUTLOOK
+            or scores.risk_alignment_score < self.POOR_FIT
+            or scores.signal_score < self.BEARISH_SIGNALS
+            or (scores.risk_alignment_score < self.GOOD_FIT and scores.research_score < 50)
+        ):
+            label = "Avoid"
+        elif (
+            scores.research_score >= self.BULLISH_OUTLOOK
+            and scores.risk_alignment_score >= self.GOOD_FIT
+            and scores.signal_score >= self.NOT_BEARISH_SIGNALS
+        ):
+            label = "Buy"
+        else:
+            label = "Hold"
+        parts = {k: getattr(scores, k) for k in self._COMPONENT_LABELS}
+        # Distance from a neutral 50, weighted by how much each part counts in the final score
+        weight = {"research_score": "research", "signal_score": "signal",
+                  "risk_alignment_score": "risk_alignment", "macro_fit_score": "macro_fit"}
+        ranked = sorted(parts, key=lambda k: abs(parts[k] - 50) * self.WEIGHTS[weight[k]], reverse=True)
+        reasons = [
+            f"{'Strong' if parts[k] >= 60 else 'Weak' if parts[k] < 40 else 'Average'} "
+            f"{self._COMPONENT_LABELS[k]} ({parts[k]:.0f}/100)"
+            for k in ranked[:3]
+        ]
+        return label, reasons
 
     def filter_by_risk_band(
         self,

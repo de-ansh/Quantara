@@ -1,9 +1,8 @@
 import { useState } from "react"
-import apiClient from "@/lib/api"
+import apiClient, { resolveTicker } from "@/lib/api"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import {
     Play,
-    Zap,
     SlidersHorizontal,
     AlertTriangle,
     Plus,
@@ -179,9 +178,11 @@ export default function Simulation() {
         )
     }
 
-    const handleAddTicker = (tickerToAdd?: string) => {
-        const sym = (tickerToAdd || newTickerInput).trim().toUpperCase()
-        if (!sym) return
+    const handleAddTicker = async (tickerToAdd?: string) => {
+        const typed = (tickerToAdd || newTickerInput).trim()
+        if (!typed) return
+        // The listing the user means ("ITC" -> ITC.NS); unknown input is kept so the run reports it
+        const sym = (await resolveTicker(typed)) ?? typed.toUpperCase()
         if (holdings.some(h => h.ticker === sym)) {
             setNewTickerInput("")
             return
@@ -288,24 +289,18 @@ export default function Simulation() {
             {/* Header */}
             <div className="h-12 border-b border-border flex items-center justify-between px-4 bg-card shrink-0">
                 <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                        <div className="size-6 bg-[#1e5df1] flex items-center justify-center">
-                            <Zap className="size-3.5 text-white" />
-                        </div>
-                        <h1 className="text-sm font-black tracking-tighter uppercase">Quantara</h1>
-                    </div>
-                    <nav className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
-                        <span className="text-primary">Portfolio Simulation Studio</span>
+                    <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80">
+                        <h1 className="text-primary text-[11px] font-bold">Portfolio Simulation</h1>
                         <div className="h-3 w-[1px] bg-border" />
                         <span className="flex items-center gap-1 text-emerald-400">
                             <ShieldCheck className="size-3" />
                             MPT Covariance Engine Active
                         </span>
-                    </nav>
+                    </div>
                 </div>
                 <div className="hidden sm:flex items-center gap-4">
                     {marketData?.vix?.value && (
-                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono font-bold uppercase tracking-widest">
+                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-widest">
                             VIX: {marketData.vix.value} ({marketData.vix.change_percent >= 0 ? "+" : ""}{marketData.vix.change_percent}%)
                         </div>
                     )}
@@ -316,7 +311,7 @@ export default function Simulation() {
                         const open = session === "OPEN"
                         return (
                             <div className={cn(
-                                "flex items-center gap-2 px-2 py-1 border text-[9px] font-bold uppercase tracking-widest",
+                                "flex items-center gap-2 px-2 py-1 border text-[10px] font-bold uppercase tracking-widest",
                                 open ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-muted/40 border-border text-muted-foreground"
                             )}>
                                 <div className={cn("size-1.5 rounded-full", open ? "bg-green-500 animate-pulse" : "bg-zinc-500")} />
@@ -329,7 +324,7 @@ export default function Simulation() {
 
             {/* Macro Alert Banner */}
             {marketData?.alerts?.[0] && (
-                <div className="flex items-center gap-3 px-4 py-2 border-b border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider shrink-0">
+                <div className="flex items-center gap-3 px-4 py-2 border-b border-amber-500/25 bg-amber-500/5 text-amber-500 text-[11px] font-mono uppercase tracking-wider shrink-0">
                     <span className="flex items-center gap-1.5 shrink-0 font-bold">
                         <AlertTriangle className="size-3.5 animate-pulse" />
                         MACRO_ALERT
@@ -343,11 +338,11 @@ export default function Simulation() {
                 {/* Controls Sidebar (stacks above the projection on phones) */}
                 <aside className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-card flex flex-col shrink-0 md:overflow-y-auto custom-scrollbar">
                     <div className="p-3 border-b border-border bg-muted/20 flex items-center justify-between">
-                        <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                        <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             <SlidersHorizontal className="size-3.5" />
                             Holdings & Allocation
                         </h2>
-                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
                             <span className={cn(
                                 "px-1.5 py-0.5 rounded-sm font-bold",
                                 Math.abs(totalWeight - 100) < 0.5 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400"
@@ -367,21 +362,21 @@ export default function Simulation() {
                     <div className="p-4 space-y-6">
                         {/* Quick Presets */}
                         <div className="space-y-1.5">
-                            <span className="text-[9px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
+                            <span className="text-[10px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
                                 Quick Portfolio Presets
                             </span>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setHoldings(defaultHoldings)}
-                                    className="flex-1 py-1 px-2 text-[10px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
+                                    className="flex-1 py-1 px-2 text-[11px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
                                 >
                                     <span>🇺🇸</span> US Core
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setHoldings(INDIAN_PRESET)}
-                                    className="flex-1 py-1 px-2 text-[10px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
+                                    className="flex-1 py-1 px-2 text-[11px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
                                 >
                                     <span>🇮🇳</span> NIFTY Core
                                 </button>
@@ -434,7 +429,7 @@ export default function Simulation() {
                                     <button
                                         onClick={() => handleAddTicker()}
                                         disabled={!newTickerInput.trim()}
-                                        className="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 text-[10px] font-bold uppercase rounded-sm flex items-center gap-1 disabled:opacity-40"
+                                        className="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 text-[11px] font-bold uppercase rounded-sm flex items-center gap-1 disabled:opacity-40"
                                     >
                                         <Plus className="size-3" /> Add
                                     </button>
@@ -446,7 +441,7 @@ export default function Simulation() {
                                         <button
                                             key={chip}
                                             onClick={() => handleAddTicker(chip)}
-                                            className="text-[9px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm transition-colors"
+                                            className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm transition-colors"
                                         >
                                             +{chip}
                                         </button>
@@ -457,7 +452,7 @@ export default function Simulation() {
 
                         {/* Volatility Assumptions */}
                         <section>
-                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/70 mb-2 tracking-tighter">
+                            <h3 className="text-[10px] font-bold uppercase text-muted-foreground/70 mb-2 tracking-tighter">
                                 Volatility Scenario
                             </h3>
                             <div className="grid grid-cols-3 border border-border overflow-hidden rounded-sm">
@@ -468,7 +463,7 @@ export default function Simulation() {
                                         title={sc.title}
                                         aria-pressed={volatilityAssumption === sc.value}
                                         className={cn(
-                                            "py-2 text-[9px] font-bold uppercase transition-colors",
+                                            "py-2 text-[10px] font-bold uppercase transition-colors",
                                             idx === 1 && "border-x border-border",
                                             volatilityAssumption === sc.value ? "bg-primary text-white" : "hover:bg-muted"
                                         )}
@@ -481,7 +476,7 @@ export default function Simulation() {
 
                         {/* Parameters */}
                         <section className="space-y-3">
-                            <h3 className="text-[9px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
+                            <h3 className="text-[10px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
                                 Parameters
                             </h3>
                             <div className="flex items-center justify-between">
@@ -489,7 +484,7 @@ export default function Simulation() {
                                 <select 
                                     value={initialInvestment}
                                     onChange={(e) => setInitialInvestment(Number(e.target.value))}
-                                    className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
+                                    className="bg-background border border-border text-[11px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
                                 >
                                     {(INVESTMENT_OPTIONS.includes(initialInvestment)
                                         ? INVESTMENT_OPTIONS
@@ -504,7 +499,7 @@ export default function Simulation() {
                                 <select 
                                     value={horizonYears}
                                     onChange={(e) => setHorizonYears(Number(e.target.value))}
-                                    className="bg-background border border-border text-[10px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
+                                    className="bg-background border border-border text-[11px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
                                 >
                                     <option value={5}>5 Years</option>
                                     <option value={10}>10 Years</option>
@@ -521,7 +516,7 @@ export default function Simulation() {
                         <button 
                             onClick={runSimulation}
                             disabled={isLoading}
-                            className="w-full bg-primary hover:bg-primary/90 text-white text-[10px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                            className="w-full bg-primary hover:bg-primary/90 text-white text-[11px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
                         >
                             <Play className="size-3.5 fill-current" />
                             {isLoading ? "Simulating..." : "Recalculate Simulation"}
@@ -530,7 +525,7 @@ export default function Simulation() {
                         {/* Save to portfolios */}
                         <section className="space-y-2 pt-2 border-t border-border">
                             {loaded && (
-                                <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider truncate">
+                                <p className="text-[11px] text-muted-foreground font-mono uppercase tracking-wider truncate">
                                     Loaded: <span className="text-foreground font-bold">{loaded.name}</span>
                                 </p>
                             )}
@@ -540,14 +535,14 @@ export default function Simulation() {
                                         <button
                                             onClick={() => handleSavePortfolio(false)}
                                             disabled={savePortfolio.isPending}
-                                            className="flex-1 border border-border hover:bg-muted text-[10px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1 disabled:opacity-50"
+                                            className="flex-1 border border-border hover:bg-muted text-[11px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1 disabled:opacity-50"
                                         >
                                             <Save className="size-3" /> Update
                                         </button>
                                     )}
                                     <button
                                         onClick={() => setSaveName(loaded ? `${loaded.name} (copy)` : "")}
-                                        className="flex-1 border border-border hover:bg-muted text-[10px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1"
+                                        className="flex-1 border border-border hover:bg-muted text-[11px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1"
                                     >
                                         <Save className="size-3" /> {loaded ? "Save as new" : "Save as portfolio"}
                                     </button>
@@ -567,17 +562,17 @@ export default function Simulation() {
                                         className="flex-1 min-w-0 bg-background border border-border text-[11px] px-2 py-1.5 rounded-sm text-foreground outline-none focus:border-primary"
                                     />
                                     <button type="submit" disabled={!saveName.trim() || savePortfolio.isPending}
-                                        className="bg-primary text-white text-[10px] font-bold uppercase px-3 rounded-sm disabled:opacity-40">
+                                        className="bg-primary text-white text-[11px] font-bold uppercase px-3 rounded-sm disabled:opacity-40">
                                         Save
                                     </button>
                                     <button type="button" onClick={() => setSaveName(null)}
-                                        className="text-[10px] text-muted-foreground hover:text-foreground px-1">
+                                        className="text-[11px] text-muted-foreground hover:text-foreground px-1">
                                         Cancel
                                     </button>
                                 </form>
                             )}
                             {saveMessage && (
-                                <p role="status" className={cn("text-[10px] font-mono", saveMessage.ok ? "text-emerald-400" : "text-q-risk-high")}>
+                                <p role="status" className={cn("text-[11px] font-mono", saveMessage.ok ? "text-emerald-400" : "text-q-risk-high")}>
                                     {saveMessage.text}
                                 </p>
                             )}
@@ -591,11 +586,11 @@ export default function Simulation() {
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Portfolio Projection</h2>
-                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                                <p className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">
                                     Lognormal 5th–95th Percentile Bands | {scenarioLabel(volatilityAssumption).toUpperCase()} SCENARIO
                                 </p>
                                 {result && result.estimated_tickers.length > 0 && (
-                                    <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest mt-1">
+                                    <p className="text-[11px] text-amber-500 font-bold uppercase tracking-widest mt-1">
                                         No price history for {result.estimated_tickers.join(", ")}: using asset-class estimates
                                     </p>
                                 )}
@@ -606,7 +601,7 @@ export default function Simulation() {
                                     <button
                                         onClick={() => setActiveView("chart")}
                                         className={cn(
-                                            "flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors",
+                                            "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
                                             activeView === "chart" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
                                         )}
                                     >
@@ -615,7 +610,7 @@ export default function Simulation() {
                                     <button
                                         onClick={() => setActiveView("correlation")}
                                         className={cn(
-                                            "flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors border-l border-border",
+                                            "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors border-l border-border",
                                             activeView === "correlation" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
                                         )}
                                     >
@@ -625,13 +620,13 @@ export default function Simulation() {
 
                                 <button
                                     onClick={handleExportSimulation}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors border border-border rounded-sm hover:bg-muted text-foreground/80 font-mono bg-card"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors border border-border rounded-sm hover:bg-muted text-foreground/80 font-mono bg-card"
                                 >
                                     <Download className="size-3" /> Export CSV
                                 </button>
 
                                 {result && result.diversification_benefit_pct > 0 && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[9px] font-bold uppercase tracking-widest text-emerald-400 font-mono">
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-bold uppercase tracking-widest text-emerald-400 font-mono">
                                         <ShieldCheck className="size-3" />
                                         +{result.diversification_benefit_pct.toFixed(1)}% MPT Gain
                                     </div>
@@ -653,14 +648,16 @@ export default function Simulation() {
                                             <XAxis 
                                                 dataKey="month" 
                                                 stroke="hsl(var(--muted-foreground))"
-                                                fontSize={9}
+                                                fontSize={11}
                                                 fontWeight="bold"
-                                                tickFormatter={(v) => `Yr ${(v / 12).toFixed(0)}`}
-                                                tickCount={11}
+                                                type="number"
+                                                domain={[0, "dataMax"]}
+                                                ticks={Array.from({ length: horizonYears + 1 }, (_, y) => y * 12)}
+                                                tickFormatter={(v) => `Yr ${v / 12}`}
                                             />
                                             <YAxis 
                                                 stroke="hsl(var(--muted-foreground))"
-                                                fontSize={9}
+                                                fontSize={11}
                                                 fontWeight="bold"
                                                 tickFormatter={(v) => `${currSym}${(v / 1e6).toFixed(1)}M`}
                                             />
@@ -687,7 +684,7 @@ export default function Simulation() {
                                         <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
                                             Asset Pairwise Correlation Matrix ($\rho_{'{i,j}'}$)
                                         </h3>
-                                        <p className="text-[10px] text-muted-foreground font-mono">
+                                        <p className="text-[11px] text-muted-foreground font-mono">
                                             Evaluated by Quantara Portfolio Analytics Engine. Green indicates negative correlation (risk reduction).
                                         </p>
                                     </div>
@@ -741,8 +738,8 @@ export default function Simulation() {
                     <div className="h-72 border-t border-border grid grid-cols-12 shrink-0 bg-background transition-colors">
                         <div className="col-span-12 xl:col-span-4 border-r border-border p-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
-                                <span className="text-[10px] text-destructive font-black tracking-tighter uppercase">
+                                <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
+                                <span className="text-[11px] text-destructive font-black tracking-tighter uppercase">
                                     {result ? `${result.max_drawdown.toFixed(1)}% MAX DD` : "— MAX DD"}
                                 </span>
                             </div>
@@ -754,7 +751,7 @@ export default function Simulation() {
                                         ))}
                                     </div>
                                 </div>
-                                <div className="relative z-10 flex flex-col justify-between h-full text-[9px] font-mono text-muted-foreground/60 uppercase">
+                                <div className="relative z-10 flex flex-col justify-between h-full text-[10px] font-mono text-muted-foreground/60 uppercase">
                                     <span>2008 GFC Event Benchmark</span>
                                     <div className="text-right">Risk Factor: Systemic</div>
                                 </div>
@@ -762,13 +759,13 @@ export default function Simulation() {
                         </div>
 
                         <div className="col-span-12 xl:col-span-8 bg-card/20 p-6">
-                            <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">Projected Portfolio Metrics</h3>
+                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-4">Projected Portfolio Metrics</h3>
                             <div className="grid grid-cols-3 gap-px bg-border border border-border">
                                 {metrics.map((m, i) => (
                                     <div key={i} className="bg-card p-4 flex flex-col gap-1 hover:bg-muted/50 cursor-help transition-colors">
-                                        <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-tight">{m.label}</span>
+                                        <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tight">{m.label}</span>
                                         <span className={cn("text-2xl font-black tabular-nums tracking-tighter", m.color || "text-foreground")}>{m.value}</span>
-                                        <span className="text-[9px] text-muted-foreground/80 font-bold uppercase tracking-tighter">{m.sub}</span>
+                                        <span className="text-[10px] text-muted-foreground/80 font-bold uppercase tracking-tighter">{m.sub}</span>
                                     </div>
                                 ))}
                             </div>

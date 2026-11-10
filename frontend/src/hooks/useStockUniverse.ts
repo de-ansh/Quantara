@@ -9,10 +9,11 @@ export const useStockUniverse = () => {
     return useQuery({
         queryKey: ['stocks', 'universe'],
         queryFn: async () => {
-            const { data } = await apiClient.get<{ stocks: Array<{ ticker: string }> }>('/stocks/search', {
+            const { data } = await apiClient.get<{ stocks: Array<{ ticker: string; tracked?: boolean }> }>('/stocks/search', {
                 params: { limit: 200 },
             });
-            return data.stocks.map(s => s.ticker);
+            // Search continues into every listed security after the tracked ones; keep only tracked
+            return data.stocks.filter(s => s.tracked !== false).map(s => s.ticker);
         },
         staleTime: 5 * 60 * 1000,
     });

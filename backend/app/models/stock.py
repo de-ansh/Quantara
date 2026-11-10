@@ -31,6 +31,13 @@ class Stock(Base):
         Float, nullable=True, comment="Price-to-earnings ratio"
     )
     beta: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Beta vs market")
+    # Screening fundamentals from Yahoo, in percent except debt/equity (a ratio, 0.5 = 50%)
+    roe_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    debt_to_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_growth_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dividend_yield_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    return_1y_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Market cap in listing currency"
     )

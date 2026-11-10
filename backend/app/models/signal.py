@@ -24,7 +24,7 @@ class Signal(Base):
         String(50),
         nullable=False,
         index=True,
-        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike",
+        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike, large_deal, promoter_pledge",
     )
     strength: Mapped[float] = mapped_column(Float, nullable=False, comment="Signal strength 0-100")
     confidence: Mapped[float] = mapped_column(

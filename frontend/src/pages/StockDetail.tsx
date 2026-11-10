@@ -21,7 +21,7 @@ import apiClient, { apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { cn, timeAgo } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
-import { isIndianAsset, cleanTickerDisplay } from "@/lib/currency"
+import { isIndianAsset, cleanTickerDisplay, getMarketLabel } from "@/lib/currency"
 import WatchlistButton from "@/components/WatchlistButton"
 import type { ApiSignal, StockSearchItem } from "@/types/api"
 import DayChange from "@/components/DayChange"
@@ -29,6 +29,7 @@ import PriceChart from "@/components/PriceChart"
 import PriceAlertForm from "@/components/PriceAlertForm"
 import AdviceNotice from "@/components/AdviceNotice"
 import FilingCard from "@/components/FilingCard"
+import VerdictCard from "@/components/VerdictCard"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -54,9 +55,9 @@ export default function StockDetail() {
     const { data: searchData, isLoading: loadingStock } = useQuery({
         queryKey: ['stockMetadata', activeTicker],
         queryFn: async () => {
-            const res = await apiClient.get<{ stocks: StockSearchItem[] }>('/stocks/search', { params: { query: activeTicker } })
-            const found = res.data.stocks?.find((s) => s.ticker.toUpperCase() === activeTicker)
-            return found || res.data.stocks?.[0] || null
+            // track: opening a listed-but-untracked stock starts its price and risk jobs
+            const res = await apiClient.get<{ stocks: StockSearchItem[] }>('/stocks/search', { params: { query: activeTicker, track: true } })
+            return res.data.stocks?.find((s) => s.ticker.toUpperCase() === activeTicker) ?? null
         },
         enabled: !!activeTicker,
     })
@@ -93,7 +94,9 @@ export default function StockDetail() {
     const betaVal = searchData?.beta ? Number(searchData.beta).toFixed(2) : "—"
 
     // Risk Classification
-    const riskScoreRaw = riskData?.overall_risk_score ?? searchData?.risk
+    // Without price history the live analysis is built from defaults; show the stored score or "—" instead
+    const liveRiskIsGuess = (riskData?.assumed_inputs as string[] | undefined)?.includes("price_history")
+    const riskScoreRaw = (liveRiskIsGuess ? undefined : riskData?.overall_risk_score) ?? searchData?.risk
     const hasRiskScore = riskScoreRaw !== undefined && riskScoreRaw !== null
     const overallRiskScore = hasRiskScore ? Math.round(riskScoreRaw) : 0
     const riskLevel = riskData?.risk_level || (!hasRiskScore ? "Unrated" : overallRiskScore < 34 ? "Conservative" : overallRiskScore < 67 ? "Moderate" : "Aggressive")
@@ -125,17 +128,17 @@ export default function StockDetail() {
     ]
 
     return (
-        <div className="flex flex-col flex-1 p-6 bg-background overflow-y-auto custom-scrollbar transition-colors">
+        <div className="flex flex-col flex-1 p-4 sm:p-6 bg-background transition-colors">
             {/* Header Section */}
             <section className="mb-6 flex flex-wrap items-end justify-between gap-6 border-b border-border pb-6">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-baseline gap-4">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h2>
+                            <h1 className="text-4xl sm:text-6xl font-black tracking-tighter text-foreground">{cleanTickerDisplay(activeTicker)}</h1>
                             <WatchlistButton ticker={activeTicker} className="[&_svg]:size-6" />
                             {isIndianAsset(activeTicker) ? (
                                 <Badge className="bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono text-xs uppercase px-2 py-0.5">
-                                    🇮🇳 NSE
+                                    🇮🇳 {getMarketLabel(activeTicker)}
                                 </Badge>
                             ) : (
                                 <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/30 font-mono text-xs uppercase px-2 py-0.5">
@@ -144,7 +147,7 @@ export default function StockDetail() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 text-muted-foreground text-sm font-medium">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-sm font-medium">
                         <span className="text-foreground uppercase tracking-wider font-bold">{companyName}</span>
                         <div className="size-1 rounded-full bg-border" />
                         <span>{sector}</span>
@@ -161,16 +164,18 @@ export default function StockDetail() {
                     </div>
                 </div>
 
+                <div className="flex flex-wrap items-stretch gap-3">
+                <VerdictCard ticker={activeTicker} version={`${report?.generated_at ?? ""}|${searchData?.risk ?? ""}`} />
                 {/* Risk Score Indicator */}
                 <div className="flex items-center gap-4 bg-card border border-border p-4 px-6 shadow-xl shadow-background/10 transition-colors">
                     <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Institutional Risk Score</span>
+                        <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Institutional Risk Score</span>
                         <span className="text-3xl font-black text-foreground leading-none">
                             {hasRiskScore ? overallRiskScore : "—"}
                             <span className="text-lg text-muted-foreground font-medium ml-1">/100</span>
                         </span>
                         <span className={cn(
-                            "text-[9px] font-black uppercase tracking-widest mt-1",
+                            "text-[10px] font-black uppercase tracking-widest mt-1",
                             riskLevel === "Conservative" ? "text-green-400" :
                                 riskLevel === "Moderate" ? "text-amber-400" : "text-rose-400"
                         )}>
@@ -194,6 +199,7 @@ export default function StockDetail() {
                         </svg>
                         <ShieldCheck className="absolute text-primary size-5" />
                     </div>
+                </div>
                 </div>
             </section>
 
@@ -248,15 +254,30 @@ export default function StockDetail() {
                                     <Zap className="text-primary size-4" />
                                     <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Investment Thesis</h3>
                                     {report && (
-                                        <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary border border-primary/20">
-                                            {Math.round(report.confidence_score)}% CONFIDENCE
+                                        <span className="ml-auto flex gap-1.5">
+                                            {report.outlook_score != null && (
+                                                <span
+                                                    title="Research outlook: 0 clearly bearish, 50 neutral, 100 clearly bullish"
+                                                    className={cn(
+                                                        "rounded px-2 py-0.5 text-[11px] font-bold border",
+                                                        report.outlook_score >= 60 ? "bg-green-500/10 text-green-500 border-green-500/30" :
+                                                            report.outlook_score < 40 ? "bg-red-500/10 text-red-500 border-red-500/30" :
+                                                                "bg-muted text-muted-foreground border-border"
+                                                    )}
+                                                >
+                                                    OUTLOOK {Math.round(report.outlook_score)} · {report.outlook_score >= 60 ? "BULLISH" : report.outlook_score < 40 ? "BEARISH" : "NEUTRAL"}
+                                                </span>
+                                            )}
+                                            <span title="How complete the data behind the report is" className="rounded bg-primary/20 px-2 py-0.5 text-[11px] font-bold text-primary border border-primary/20">
+                                                {Math.round(report.confidence_score)}% CONFIDENCE
+                                            </span>
                                         </span>
                                     )}
                                 </div>
                                 <div className="p-6 relative min-h-[220px]">
                                     {isLoading && (
                                         <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
-                                            <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Running_Research_Synthesizer...</div>
+                                            <div className="text-[11px] font-black tracking-widest uppercase animate-pulse">Running_Research_Synthesizer...</div>
                                         </div>
                                     )}
                                     <p className="text-sm leading-relaxed text-muted-foreground mb-4 font-medium">
@@ -304,25 +325,25 @@ export default function StockDetail() {
                                     <DollarSign className="size-4 text-primary" />
                                     Fundamental Financial Metrics
                                 </h3>
-                                <Badge variant="outline" className="text-[10px] font-mono">
-                                    {isIndianAsset(activeTicker) ? `${cleanTickerDisplay(activeTicker)} SEBI/NSE Filing Data` : `${activeTicker} EDGAR Facts`}
+                                <Badge variant="outline" className="text-[11px] font-mono">
+                                    {isIndianAsset(activeTicker) ? `${cleanTickerDisplay(activeTicker)} Exchange Filing Data` : `${activeTicker} EDGAR Facts`}
                                 </Badge>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Earnings Stability</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground">Earnings Stability</span>
                                     <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.earnings_stability_score)}/100</div>
-                                    <p className="text-[10px] text-muted-foreground mt-1">Multi-quarter profitability score</p>
+                                    <p className="text-[11px] text-muted-foreground mt-1">Multi-quarter profitability score</p>
                                 </div>
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Leverage Score</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground">Leverage Score</span>
                                     <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.leverage_score)}/100</div>
-                                    <p className="text-[10px] text-muted-foreground mt-1">Debt-to-equity vulnerability</p>
+                                    <p className="text-[11px] text-muted-foreground mt-1">Debt-to-equity vulnerability</p>
                                 </div>
                                 <div className="p-4 bg-muted/30 border border-border rounded-sm">
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Valuation Risk</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground">Valuation Risk</span>
                                     <div className="text-2xl font-black font-mono text-foreground mt-1">{score(components?.valuation_risk_score)}/100</div>
-                                    <p className="text-[10px] text-muted-foreground mt-1">Historical multiple expansion</p>
+                                    <p className="text-[11px] text-muted-foreground mt-1">Historical multiple expansion</p>
                                 </div>
                             </div>
                         </div>
@@ -336,7 +357,7 @@ export default function StockDetail() {
                                     <BarChart3 className="size-4 text-primary" />
                                     Multi-Factor Risk Breakdown
                                 </h3>
-                                <Badge variant="secondary" className="text-[10px] font-mono">{riskLevel} Overall</Badge>
+                                <Badge variant="secondary" className="text-[11px] font-mono">{riskLevel} Overall</Badge>
                             </div>
                             <div className="space-y-4">
                                 {[
@@ -349,7 +370,7 @@ export default function StockDetail() {
                                 ].map((item) => (
                                     <div key={item.label} className="space-y-1">
                                         <div className="flex justify-between text-xs font-mono">
-                                            <span className="text-muted-foreground uppercase text-[10px] font-bold">{item.label}</span>
+                                            <span className="text-muted-foreground uppercase text-[11px] font-bold">{item.label}</span>
                                             <span className="font-bold text-foreground">{item.val.toFixed(1)}/100</span>
                                         </div>
                                         <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -377,7 +398,7 @@ export default function StockDetail() {
                                     <Activity className="size-4 text-primary" />
                                     Active Signals for {activeTicker}
                                 </h3>
-                                <Badge variant="outline" className="text-[10px] font-mono">{signals.length} Signals Found</Badge>
+                                <Badge variant="outline" className="text-[11px] font-mono">{signals.length} Signals Found</Badge>
                             </div>
                             {signals.length === 0 ? (
                                 <div className="py-12 text-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
@@ -391,7 +412,7 @@ export default function StockDetail() {
                                                 <div className="size-2 rounded-full bg-primary" />
                                                 <div>
                                                     <span className="text-xs font-bold uppercase text-foreground">{sig.signal_type.replace('_', ' ')}</span>
-                                                    <div className="text-[10px] text-muted-foreground font-mono flex items-center gap-2">
+                                                    <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-2">
                                                         <Clock className="size-3" />
                                                         {new Date(sig.timestamp).toLocaleDateString()}
                                                     </div>
@@ -399,10 +420,10 @@ export default function StockDetail() {
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <div className="text-right font-mono">
-                                                    <span className="text-[10px] text-muted-foreground">Strength</span>
+                                                    <span className="text-[11px] text-muted-foreground">Strength</span>
                                                     <div className="text-xs font-bold text-foreground">{sig.strength.toFixed(1)}%</div>
                                                 </div>
-                                                <Badge variant="secondary" className="text-[10px]">{(sig.confidence * 100).toFixed(0)}% Conf.</Badge>
+                                                <Badge variant="secondary" className="text-[11px]">{(sig.confidence * 100).toFixed(0)}% Conf.</Badge>
                                             </div>
                                         </div>
                                     ))}
@@ -419,11 +440,11 @@ export default function StockDetail() {
                                     <Layers className="size-4 text-primary" />
                                     Macro Regime & Sector Dynamics
                                 </h3>
-                                <Badge variant="secondary" className="text-[10px]">{sector}</Badge>
+                                <Badge variant="secondary" className="text-[11px]">{sector}</Badge>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="p-4 bg-muted/30 border border-border space-y-2">
-                                    <span className="text-[10px] font-bold uppercase text-muted-foreground">Sector Sensitivity</span>
+                                    <span className="text-[11px] font-bold uppercase text-muted-foreground">Sector Sensitivity</span>
                                     <p className="text-sm font-bold text-foreground">{sector} Industry Index</p>
                                     <p className="text-xs text-muted-foreground leading-relaxed">
                                         Beta of {betaVal === "—" ? "—" : `${betaVal}x`} relative to broad market benchmark ({isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500"}).
@@ -440,7 +461,7 @@ export default function StockDetail() {
                                 <Radar className="text-primary size-4" />
                                 <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Risk Alignment Visualization</h3>
                             </div>
-                            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest">
+                            <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest">
                                 <div className="flex items-center gap-1.5"><div className="size-2 bg-primary" /> User Profile</div>
                                 <div className="flex items-center gap-1.5"><div className="size-2 bg-amber-400" /> Asset Profile</div>
                             </div>
@@ -453,14 +474,14 @@ export default function StockDetail() {
                                     style={{ clipPath: `polygon(50% 50%, 0 0, 100% 0, 100% ${hasRiskScore ? alignmentScore : 0}%)` }}
                                 />
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Alignment</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Alignment</span>
                                     <span className="text-4xl font-black text-foreground">{hasRiskScore ? `${alignmentScore}%` : "—"}</span>
                                 </div>
                             </div>
                             <div className="mt-6 grid flex-1 grid-cols-1 gap-4 md:mt-0 md:grid-cols-2">
                                 <div className="flex flex-col gap-2 rounded border border-border bg-muted/40 p-4">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">User Risk Profile</span>
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">User Risk Profile</span>
                                         <User className="size-3.5 text-primary" />
                                     </div>
                                     <span className="text-base font-bold text-foreground uppercase tracking-tight">{userRiskLevel}</span>
@@ -470,7 +491,7 @@ export default function StockDetail() {
                                 </div>
                                 <div className="flex flex-col gap-2 rounded border border-border bg-muted/40 p-4">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Asset Risk Profile</span>
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Asset Risk Profile</span>
                                         <TrendingUp className="size-3.5 text-amber-400" />
                                     </div>
                                     <span className="text-base font-bold text-foreground uppercase tracking-tight">{riskLevel}{hasRiskScore && ` (${overallRiskScore}/100)`}</span>
@@ -512,7 +533,7 @@ export default function StockDetail() {
                                 { label: "Risk Classification", valColor: "text-primary", val: riskLevel.toUpperCase() },
                             ].map((item) => (
                                 <div key={item.label} className="flex flex-col">
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{item.label}</span>
+                                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{item.label}</span>
                                     <span className={cn("text-lg font-bold tracking-tighter", item.valColor)}>{item.val}</span>
                                 </div>
                             ))}

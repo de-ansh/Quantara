@@ -1,15 +1,16 @@
-from datetime import timedelta
+from datetime import date, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.models.recommendation import Recommendation
 from app.models.signal import Signal
 from app.models.stock import Stock
-from app.services.recommendation_engine import RecommendationEngine
+from app.services.recommendation_engine import RecommendationEngine, signal_score
 
 router = APIRouter()
 recommendation_engine = RecommendationEngine()
@@ -77,10 +78,10 @@ async def get_recommendations(
             user_risk_level=user_risk_level,
         )
 
-    # 3. Aggregate recent signal strength per ticker across all signals
-    sig_stmt = select(Signal.ticker, func.avg(Signal.strength)).group_by(Signal.ticker)
-    sig_result = await db.execute(sig_stmt)
-    signal_averages: dict[str, float] = {t: float(avg) for t, avg in sig_result.all()}
+    # 3. Direction-aware signal score per ticker (50 when a stock has no signals)
+    by_ticker: dict[str, list[tuple[float, dict | None]]] = {}
+    for ticker, strength, data in (await db.execute(select(Signal.ticker, Signal.strength, Signal.data))).all():
+        by_ticker.setdefault(ticker, []).append((strength, data))
 
     # Only stocks with computed risk and research scores can be ranked
     candidate_stocks = [
@@ -89,7 +90,7 @@ async def get_recommendations(
             "sector": s.sector or "Unknown",
             "risk_score": s.risk_score,
             "research_score": s.research_score,
-            "signal_score": float(signal_averages.get(s.ticker) or 50.0),
+            "signal_score": signal_score(by_ticker.get(s.ticker, [])),
         }
         for s in stocks_db
         if s.risk_score is not None and s.research_score is not None
@@ -168,3 +169,71 @@ async def get_recommendations(
         total_count=len(response_recommendations),
         user_risk_level=user_risk_level,
     )
+
+
+class VerdictResponse(BaseModel):
+    """Plain-language call on one stock for the current user's risk profile."""
+
+    ticker: str
+    verdict: str  # Buy | Hold | Avoid | Unrated
+    final_score: float | None
+    reasons: list[str]
+    missing: list[str]  # what has to be computed before a verdict is possible
+    user_risk_level: str
+
+
+@router.get("/{ticker}/verdict", response_model=VerdictResponse)
+async def get_verdict(ticker: str, current_user: CurrentUser, db: DBSession) -> VerdictResponse:
+    """Buy / Hold / Avoid for one stock, from the same score that ranks recommendations."""
+    user_risk_level = current_user.get("risk_level") or "Moderate"
+    tolerance = current_user.get("volatility_tolerance")
+    stock = await db.get(Stock, ticker.upper())
+    missing = []
+    if stock is None or stock.research_score is None:
+        missing.append("research report")
+    if stock is None or stock.risk_score is None:
+        missing.append("risk score")
+    if missing:
+        return VerdictResponse(ticker=ticker.upper(), verdict="Unrated", final_score=None, reasons=[],
+                               missing=missing, user_risk_level=user_risk_level)
+
+    from app.services.verdict_tracking import verdict_for
+
+    v = await verdict_for(db, stock, user_risk_level, float(tolerance) if tolerance is not None else None)
+    assert v is not None  # both scores were checked above
+    return VerdictResponse(ticker=stock.ticker, verdict=v.verdict, final_score=round(v.final_score, 1),
+                           reasons=v.reasons, missing=[], user_risk_level=user_risk_level)
+
+
+class VerdictOutcome(BaseModel):
+    verdict: str
+    count: int
+    avg_return_pct: float
+    vs_all_rated_pct: float  # this verdict's average return minus every rated stock's
+    share_that_rose_pct: float
+
+
+class TrackRecordResponse(BaseModel):
+    """How stocks given each verdict did afterwards; empty until the first horizon has passed."""
+
+    risk_level: str
+    horizon_days: int
+    tracking_since: date | None
+    first_results_on: date | None
+    all_rated_avg_return_pct: float | None
+    verdicts: list[VerdictOutcome]
+
+
+@router.get("/track-record", response_model=TrackRecordResponse)
+async def get_track_record(
+    current_user: CurrentUser,
+    db: DBSession,
+    horizon_days: Annotated[int, Query()] = 30,
+) -> TrackRecordResponse:
+    """Returns `horizon_days` after each daily verdict for the user's risk profile."""
+    from app.services.verdict_tracking import track_record
+
+    if horizon_days not in (30, 90, 180):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "horizon_days must be 30, 90 or 180")
+    record = await track_record(db, current_user.get("risk_level") or "Moderate", horizon_days)
+    return TrackRecordResponse(**record)

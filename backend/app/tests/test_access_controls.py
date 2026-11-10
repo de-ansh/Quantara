@@ -22,6 +22,7 @@ REPORT = {
     "opportunities": [],
     "threats": [],
     "confidence_score": 80.0,
+    "outlook_score": 60.0,
 }
 
 

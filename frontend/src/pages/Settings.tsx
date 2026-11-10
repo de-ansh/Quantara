@@ -86,11 +86,11 @@ export default function Settings() {
                         <SettingsIcon className="size-6 text-primary" />
                         System Settings
                     </h1>
-                    <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
+                    <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
                         Configure visual aesthetics and security credentials
                     </p>
                 </div>
-                <Badge variant="outline" className="font-mono text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 bg-primary/5 text-primary">
+                <Badge variant="outline" className="font-mono text-[10px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 bg-primary/5 text-primary">
                     Node Configuration
                 </Badge>
             </div>
@@ -100,7 +100,7 @@ export default function Settings() {
                 <Card className="bg-card border-border shadow-none">
                     <CardHeader className="p-4 pb-2 border-b border-border/50">
                         <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Visual Theme</CardTitle>
-                        <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
+                        <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
                             Select terminal theme mode
                         </CardDescription>
                     </CardHeader>
@@ -115,7 +115,7 @@ export default function Settings() {
                                 }`}
                             >
                                 <Moon className="size-6 mb-2" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Institutional Dark</span>
+                                <span className="text-[11px] font-black uppercase tracking-widest">Institutional Dark</span>
                             </button>
                             <button
                                 onClick={() => setTheme("light")}
@@ -126,10 +126,10 @@ export default function Settings() {
                                 }`}
                             >
                                 <Sun className="size-6 mb-2" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Aero Light</span>
+                                <span className="text-[11px] font-black uppercase tracking-widest">Aero Light</span>
                             </button>
                         </div>
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold text-center leading-relaxed">
+                        <p className="text-[11px] text-muted-foreground uppercase font-bold text-center leading-relaxed">
                             Current visual theme: <span className="text-primary font-black">{theme.toUpperCase()}</span>
                         </p>
                     </CardContent>
@@ -141,12 +141,12 @@ export default function Settings() {
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">API Credentials & Overrides</CardTitle>
                             {hasServerKey && (
-                                <Badge variant="outline" className="text-[9px] font-mono text-green-400 border-green-500/30 bg-green-500/10 flex items-center gap-1 font-bold uppercase">
+                                <Badge variant="outline" className="text-[10px] font-mono text-green-400 border-green-500/30 bg-green-500/10 flex items-center gap-1 font-bold uppercase">
                                     <ShieldCheck className="size-3" /> Server-Encrypted
                                 </Badge>
                             )}
                         </div>
-                        <CardDescription className="text-[10px] text-muted-foreground uppercase font-bold">
+                        <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
                             Encrypted server-side using AES-CBC Fernet and synchronized with your session
                         </CardDescription>
                     </CardHeader>
@@ -159,7 +159,7 @@ export default function Settings() {
                                     OpenAI API Key
                                 </label>
                                 {serverConfiguredKey && (
-                                    <span className="text-[10px] font-mono text-muted-foreground">
+                                    <span className="text-[11px] font-mono text-muted-foreground">
                                         Active: {serverConfiguredKey}
                                     </span>
                                 )}
@@ -195,7 +195,7 @@ export default function Settings() {
                                 placeholder="Company AdminName admin@company.com"
                                 className="w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm px-4 py-2.5 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50 font-mono"
                             />
-                            <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wide">
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">
                                 SEC EDGAR requests require a valid User-Agent containing name and email.
                             </p>
                         </div>

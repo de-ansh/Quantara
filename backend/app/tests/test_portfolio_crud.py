@@ -20,6 +20,16 @@ from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.stock import Stock
 
 
+@pytest.fixture(autouse=True)
+def _tickers_resolve_to_themselves(monkeypatch):
+    """These tests script every db.execute; resolution (its own tests) would consume extra results."""
+    from app.services import stock_lookup
+
+    async def passthrough(db, text):
+        return text.strip().upper()
+
+    monkeypatch.setattr(stock_lookup, "resolve_ticker", passthrough)
+
 @pytest.fixture
 def mock_current_user():
     return {

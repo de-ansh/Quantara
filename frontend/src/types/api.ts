@@ -13,6 +13,15 @@ export interface StockSearchItem {
     sector: string | null
     pe: number | null
     beta: number | null
+    roe_pct?: number | null
+    debt_to_equity?: number | null
+    revenue_growth_pct?: number | null
+    profit_margin_pct?: number | null
+    dividend_yield_pct?: number | null
+    return_1y_pct?: number | null
+    exchange?: string | null
+    /** false: listed but nobody has opened it yet, so no price or scores */
+    tracked?: boolean
 }
 
 /** Signal metadata varies by signal type; these are the keys the UI reads. */
@@ -23,6 +32,9 @@ export interface SignalMetadata {
     sell_volume?: number
     net_buying?: number
     num_insiders?: number
+    /** Set by signals that can point either way (NSE large deals, promoter pledges) */
+    direction?: "bullish" | "bearish"
+    sentiment_change?: number
     [key: string]: unknown
 }
 

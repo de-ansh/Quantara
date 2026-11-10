@@ -29,6 +29,8 @@ class SignalType(StrEnum):
     INSTITUTIONAL_BUYING = "institutional_buying"
     INSIDER_BUYING = "insider_buying"
     SENTIMENT_SPIKE = "sentiment_spike"
+    LARGE_DEAL = "large_deal"  # NSE bulk/block deals, netted per day
+    PROMOTER_PLEDGE = "promoter_pledge"  # NSE promoter pledge disclosures
 
 
 @dataclass
@@ -570,14 +572,8 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
     stock = res_stock.scalar_one_or_none()
 
     if not stock:
-        # Create a basic placeholder Stock record if it doesn't exist
-        stock = Stock(
-            ticker=signal.ticker,
-            name=signal.ticker,
-            sector="Technology",
-            risk_score=50.0,
-            research_score=None,
-        )
+        # Placeholder with no invented sector or risk score: the price and risk jobs fill them in
+        stock = Stock(ticker=signal.ticker, name=signal.ticker)
         db.add(stock)
         await db.commit()
 
@@ -668,6 +664,18 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
             db_tickers = db_res.scalars().all()
             if db_tickers:
                 tickers = list(dict.fromkeys(tickers + list(db_tickers)))
+            # SEC filings exist only for US stocks, and per-stock Yahoo news/holder calls for all ~500
+            # tracked NSE stocks would be rate-limited; Indian stocks get these only if someone
+            # watches or holds them (NSE deal/pledge signals below cover every tracked one).
+            from sqlalchemy import union
+
+            from app.models.portfolio import PortfolioPosition
+            from app.models.watchlist import WatchlistItem
+
+            held = set((await session.execute(
+                union(select(WatchlistItem.ticker), select(PortfolioPosition.ticker))
+            )).scalars())
+            tickers = [t for t in tickers if not t.endswith((".NS", ".BO")) or t in held]
     except Exception as e:
         logger.warning(f"Unable to query active tickers from DB, using fallback: {e}")
 
@@ -708,30 +716,9 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
             except Exception as ins_err:
                 logger.warning(f"Error processing insider signals for {ticker}: {ins_err}")
 
-            # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
-            try:
-                facts = await sec.fetch_company_facts(ticker)
-                if facts:
-                    extracted = sec.extract_metrics(facts)
-                    eps_history = extracted.get("eps", [])
-                    if eps_history:
-                        actual_eps = eps_history[-1]["val"]
-                        estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
-
-                        surprise_sig = engine.detect_earnings_surprise(
-                            ticker=ticker,
-                            actual_eps=actual_eps,
-                            estimated_eps=estimated_eps,
-                            timestamp=(
-                                datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
-                                if eps_history[-1].get("filed")
-                                else None
-                            ),
-                        )
-                        if surprise_sig:
-                            await save_signal_to_db(db, surprise_sig)
-            except Exception as earn_err:
-                logger.warning(f"Error processing earnings surprise for {ticker}: {earn_err}")
+            # 2. Earnings surprises need consensus EPS estimates, which no free source here provides;
+            # detect_earnings_surprise stays for when one is wired in (an invented estimate is worse
+            # than no signal: it reported an 11% beat for every company).
 
             # 3. Detect sentiment spikes from news & social mention volume
             try:
@@ -759,6 +746,13 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
                     await save_signal_to_db(db, inst_sig)
             except Exception as inst_err:
                 logger.warning(f"Error processing institutional accumulation for {ticker}: {inst_err}")
+
+        try:
+            from app.services.india_signals import run_india_signals
+
+            logger.info(f"NSE deal and pledge signals: {await run_india_signals(db)}")
+        except Exception as india_err:
+            logger.warning(f"Error processing NSE deal/pledge signals: {india_err}")
 
     logger.info("Signal generation pass completed successfully")
 

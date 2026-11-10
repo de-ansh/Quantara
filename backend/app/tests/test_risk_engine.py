@@ -131,9 +131,11 @@ async def test_get_stock_correlations(monkeypatch):
         [
             Stock(ticker="JNJ", name="Johnson & Johnson", sector="Healthcare", beta=0.6),
             Stock(ticker="MSFT", name="Microsoft Corp.", sector="Technology", beta=1.1),
+            Stock(ticker="TLT", name="iShares 20+ Year Treasury Bond ETF"),  # tracked and a built-in hedge
         ],
     )
     resp = await risk.get_stock_correlations(ticker="AAPL", current_user={}, db=db)
+    assert [p.ticker for p in resp.peers].count("TLT") == 1
 
     assert resp.ticker == "AAPL"
     assert resp.benchmark_correlation > 0.8
@@ -363,3 +365,24 @@ async def test_risk_endpoint_reports_assumed_inputs_when_data_unavailable(monkey
 
     assert resp.assumed_inputs == ["price_history", "beta", "pe_ratio", "debt_to_equity", "sector"]
     assert resp.factor_sensitivities == {}
+
+
+def test_a_deep_drawdown_floors_the_risk_score():
+    from app.services.risk_engine import RiskEngine, RiskLevel
+
+    engine = RiskEngine()
+    calm_fundamentals = {
+        "ticker": "FALL.BO", "historical_volatility": 0.5, "beta": 0.3, "debt_to_equity": 0.1,
+        "earnings_volatility": 0.2, "consecutive_profitable_quarters": 8, "sector": "Consumer Staples",
+        "pe_ratio": 10.0, "price_to_book": 1.0,
+    }
+    averaged = engine.analyze_stock_risk(**calm_fundamentals)
+    assert averaged.risk_level != RiskLevel.AGGRESSIVE  # the average alone hides the collapse
+
+    collapsed = engine.analyze_stock_risk(**calm_fundamentals, max_drawdown=-0.83)
+    assert collapsed.overall_risk_score == 85.0 and collapsed.risk_level == RiskLevel.AGGRESSIVE
+    assert "fell 83% from its peak" in collapsed.explanation
+
+    # An ordinary pullback doesn't move a score that's already above its floor
+    mild = engine.analyze_stock_risk(**calm_fundamentals, max_drawdown=-0.10)
+    assert mild.overall_risk_score == averaged.overall_risk_score
