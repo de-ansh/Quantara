@@ -26,6 +26,9 @@ export interface SignalMetadata {
     sell_volume?: number
     net_buying?: number
     num_insiders?: number
+    /** Set by signals that can point either way (NSE large deals, promoter pledges) */
+    direction?: "bullish" | "bearish"
+    sentiment_change?: number
     [key: string]: unknown
 }
 

@@ -71,6 +71,11 @@ class RiskEngine:
         "valuation": 0.20,
     }
 
+    # A 60% fall in the past year is maximal drawdown risk; the overall score can't sit far below
+    # it, since an average of cheap valuation and low debt shouldn't hide an 80% collapse.
+    FULL_DRAWDOWN = 0.60
+    DRAWDOWN_FLOOR_FACTOR = 0.85
+
     # Risk level thresholds
     CONSERVATIVE_THRESHOLD = 33.33
     MODERATE_THRESHOLD = 66.67
@@ -252,6 +257,13 @@ class RiskEngine:
 
         return 50  # Default to moderate risk if no data
 
+    def drawdown_floor(self, max_drawdown: float | None) -> float:
+        """Lowest overall score a stock with this 1-year max drawdown (e.g. -0.83) can have."""
+        if max_drawdown is None:
+            return 0.0
+        drawdown_score = min(abs(max_drawdown) / self.FULL_DRAWDOWN * 100, 100)
+        return drawdown_score * self.DRAWDOWN_FLOOR_FACTOR
+
     def calculate_overall_risk(self, components: RiskComponents) -> float:
         """
         Calculate overall risk score from components.
@@ -359,6 +371,7 @@ class RiskEngine:
         pe_ratio: float | None = None,
         price_to_book: float | None = None,
         price_to_sales: float | None = None,
+        max_drawdown: float | None = None,
     ) -> RiskAnalysis:
         """
         Perform complete risk analysis on a stock.
@@ -376,6 +389,7 @@ class RiskEngine:
             pe_ratio: Optional P/E ratio
             price_to_book: Optional P/B ratio
             price_to_sales: Optional P/S ratio
+            max_drawdown: Optional 1-year max drawdown as a fraction (-0.35); floors the score
 
         Returns:
             Complete risk analysis
@@ -399,10 +413,16 @@ class RiskEngine:
         )
 
         # Calculate overall risk
-        overall_risk = self.calculate_overall_risk(components)
+        weighted = self.calculate_overall_risk(components)
+        overall_risk = max(weighted, self.drawdown_floor(max_drawdown))
         risk_level = self.classify_risk_level(overall_risk)
         risk_band = self.get_risk_band(overall_risk)
         explanation = self.generate_explanation(ticker, overall_risk, risk_level, components)
+        if overall_risk > weighted:
+            explanation += (
+                f" Raised from {weighted:.1f} because the stock fell {abs(max_drawdown or 0):.0%} "
+                f"from its peak in the past year."
+            )
 
         logger.info(
             f"Risk analysis complete for {ticker}: "

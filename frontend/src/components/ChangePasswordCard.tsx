@@ -47,22 +47,22 @@ export default function ChangePasswordCard() {
                 <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                     <KeyRound className="size-4 text-primary" /> Change Password
                 </CardTitle>
-                <CardDescription className="text-[10px] uppercase font-bold">Signs out all other sessions</CardDescription>
+                <CardDescription className="text-[11px] uppercase font-bold">Signs out all other sessions</CardDescription>
             </CardHeader>
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                     <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Current password</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Current password</span>
                         <input type="password" autoComplete="current-password" required value={current}
                             onChange={e => setCurrent(e.target.value)} className={inputClass} />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">New password</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">New password</span>
                         <input type="password" autoComplete="new-password" required minLength={8} value={next}
                             onChange={e => setNext(e.target.value)} className={inputClass} />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Confirm new password</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Confirm new password</span>
                         <input type="password" autoComplete="new-password" required minLength={8} value={confirm}
                             onChange={e => setConfirm(e.target.value)} className={inputClass} />
                     </label>

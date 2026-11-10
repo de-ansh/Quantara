@@ -115,7 +115,8 @@ async def test_store_result_node(db_session, orchestrator, sample_state):
         "weaknesses": ["Valuation"],
         "opportunities": ["AI"],
         "threats": ["Competition"],
-        "confidence_score": 85.0,
+        "confidence_score": 80.0,
+        "outlook_score": 90.0,
     }
 
     await orchestrator._store_result(sample_state)
@@ -126,7 +127,7 @@ async def test_store_result_node(db_session, orchestrator, sample_state):
     stock = res_stock.scalar_one_or_none()
     assert stock is not None
     assert stock.risk_score == 62.5
-    assert stock.research_score == 85.0
+    assert stock.research_score == 82.0  # outlook 90, pulled toward 50 by 80% confidence
     assert stock.sector == "Technology"
 
     # Verify research report saved
@@ -134,7 +135,7 @@ async def test_store_result_node(db_session, orchestrator, sample_state):
     res_report = await db_session.execute(stmt_report)
     report = res_report.scalar_one_or_none()
     assert report is not None
-    assert report.confidence_score == 85.0
+    assert report.confidence_score == 80.0
     assert report.structured_json["summary"] == "Strong fundamentals"
 
 
@@ -151,3 +152,24 @@ async def test_risk_classification_debt_to_equity(orchestrator, sample_state):
     unknown = await orchestrator._risk_classification(sample_state)
     assert unknown["computed_metrics"]["debt_to_equity"] is None
     assert unknown["risk_classification"]["components"]["leverage_score"] > 0.0
+
+
+def test_research_score_is_the_outlook_weighted_by_confidence():
+    from app.services.llm_orchestrator import research_score
+
+    assert research_score(90, 100) == 90  # full confidence: the outlook as is
+    assert research_score(90, 0) == 50  # no confidence: neutral
+    assert research_score(20, 50) == 35  # bearish, half confidence: halfway to neutral
+    assert research_score(None, 80) is None and research_score(70, None) is None
+
+
+def test_prompt_raw_data_keeps_recent_annual_values_and_drops_bulk():
+    from app.services.llm_orchestrator import prompt_raw_data
+
+    yearly = [{"end": f"{y}-12-31", "val": y, "form": "10-K"} for y in range(2008, 2026)]
+    quarterly = [{"end": "2025-06-30", "val": 1, "form": "10-Q"}]
+    raw = {"ticker": "AAPL", "price_df": object(), "transcripts": ["long"],
+           "historical_metrics": {"revenue": yearly + quarterly}, "pe_ratio": 30}
+    view = prompt_raw_data(raw)
+    assert set(view) == {"ticker", "pe_ratio", "annual_history"}
+    assert [r["val"] for r in view["annual_history"]["revenue"]] == [2021, 2022, 2023, 2024, 2025]

@@ -29,7 +29,7 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
     return (
         <section aria-label="Verdict" className="bg-card border border-border p-4 px-5 min-w-[240px] max-w-sm">
             <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
                     Verdict{data?.user_risk_level ? ` · ${data.user_risk_level} profile` : ""}
                 </span>
                 {data?.final_score != null && (

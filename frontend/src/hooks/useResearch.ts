@@ -10,6 +10,8 @@ interface ResearchReportResponse {
     opportunities: string[];
     threats: string[];
     confidence_score: number;
+    /** 0 clearly bearish, 50 neutral, 100 clearly bullish; null on reports older than the field */
+    outlook_score: number | null;
     generated_at: string | null;
 }
 

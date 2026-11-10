@@ -10,6 +10,7 @@ from app.models.research import ResearchReport
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
+from app.models.verdict_snapshot import VerdictSnapshot
 from app.models.watchlist import WatchlistItem
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "WatchlistItem",
     "PriceAlert",
     "ListedSecurity",
+    "VerdictSnapshot",
 ]

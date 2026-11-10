@@ -49,7 +49,7 @@ export default function RecentActivityCard() {
                             <span className="text-foreground">
                                 {ACTION_LABELS[log.action] ?? log.action.replace(/_/g, " ")}
                                 {log.status !== "success" && (
-                                    <span className="ml-2 text-[10px] font-bold uppercase text-red-400">{log.status}</span>
+                                    <span className="ml-2 text-[11px] font-bold uppercase text-red-400">{log.status}</span>
                                 )}
                             </span>
                             <time dateTime={log.timestamp} className="font-mono text-[11px] text-muted-foreground">

@@ -5,9 +5,11 @@ functions as the pages (risk, price history, verdict, research report, signals, 
 """
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -34,14 +36,16 @@ means for this stock. Keep it short and concrete; use the numbers.
 - When asked whether to buy: give a clear lean (Buy, Hold or Avoid) for the user's risk profile, the 2-4 \
 reasons that matter most, the main risk that would change your view, and what to watch next. Respect the \
 app's verdict but say so if the data points elsewhere.
-- Know the verdict's limits: its "research quality" part is the report model's confidence in its data, \
-not a bullish view, and missing inputs are filled with defaults (listed in risk.assumed_inputs).
+- Know the verdict's inputs: "research outlook" is the research report's bearish (0) to bullish (100) \
+view, pulled toward 50 when the report's confidence is low; missing risk inputs are filled with defaults \
+(listed in risk.assumed_inputs).
 - End buy/sell answers with one short line that this is research, not personalised financial advice. \
 Don't repeat that elsewhere.
 - Format for a narrow chat panel: short paragraphs and "- " bullet lists; **bold** for the verdict and key \
 numbers. No headings, tables or links.
-- Tickers: Yahoo form (TCS.NS for NSE, 500325.BO or SYMBOL.BO for BSE, plain for US). Use find_ticker \
-when the user names a company."""
+- Tickers: Yahoo form (TCS.NS for NSE, SYMBOL.BO for BSE, plain for US). A bare symbol is looked up on \
+NSE first, then BSE, then US; say which listing you used. Use find_ticker when the user names a company \
+or a symbol could mean more than one listing."""
 
 TOOLS = [
     {"type": "function", "function": {
@@ -91,8 +95,9 @@ async def stock_snapshot(ticker: str, user: dict, db: Any) -> dict:
     from app.api.v1.risk import get_stock_risk_analysis
     from app.models.research import ResearchReport
     from app.models.signal import Signal
+    from app.services.stock_lookup import resolve_ticker
 
-    ticker = ticker.strip().upper()
+    ticker = await resolve_ticker(db, ticker) or ticker.strip().upper()  # "ITC" means ITC.NS, not a US symbol
     found = (await search_stocks(user, db, query=ticker, track=True)).stocks
     item = next((s for s in found if s.ticker == ticker), None)
     if item is None:
@@ -156,24 +161,44 @@ async def _run_tool(name: str, args: dict, user: dict, db: Any) -> dict:
     return {"error": f"unknown tool or missing arguments: {name}"}
 
 
-@router.post("/", response_model=ChatResponse)
-async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient) -> ChatResponse:
-    """One assistant turn; the client sends the whole conversation each time (nothing is stored)."""
+async def _start(request: ChatRequest, user: dict, redis: Any) -> tuple[list[dict], AsyncOpenAI]:
+    """Validate, rate-limit and build the conversation sent to the model."""
     if request.messages[-1].role != "user":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The last message must be from the user")
     # Each turn is a paid LLM call (several with tools), so cap it per user
-    await enforce_rate_limit(redis, f"chat:{current_user['id']}", CHAT_LIMIT_PER_HOUR, 3600)
-
+    await enforce_rate_limit(redis, f"chat:{user['id']}", CHAT_LIMIT_PER_HOUR, 3600)
     profile = (
-        f"User risk profile: {current_user.get('risk_level') or 'Moderate (not set)'}, "
-        f"volatility tolerance {current_user.get('volatility_tolerance') or 'not set'}, "
-        f"horizon {current_user.get('investment_horizon') or 'not set'} months."
+        f"User risk profile: {user.get('risk_level') or 'Moderate (not set)'}, "
+        f"volatility tolerance {user.get('volatility_tolerance') or 'not set'}, "
+        f"horizon {user.get('investment_horizon') or 'not set'} months."
     )
     on_screen = f" The user is looking at {request.ticker.upper()}." if request.ticker else ""
     messages: list[dict] = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{profile}{on_screen}"}]
     messages += [m.model_dump() for m in request.messages]
+    client = AsyncOpenAI(api_key=user.get("openai_api_key") or settings.openai_api_key, timeout=60.0)
+    return messages, client
 
-    client = AsyncOpenAI(api_key=current_user.get("openai_api_key") or settings.openai_api_key, timeout=60.0)
+
+async def _answer_tool_calls(calls: list[dict], messages: list[dict], user: dict, db: Any, tickers: list[str]) -> None:
+    """Append the assistant's tool calls and each tool's result to the conversation."""
+    messages.append({"role": "assistant", "content": None, "tool_calls": [
+        {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls
+    ]})
+    for c in calls:
+        try:
+            args = json.loads(c["arguments"] or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        result = await _run_tool(c["name"], args, user, db)
+        if c["name"] == "stock_snapshot" and "stock" in result:
+            tickers.append(result["stock"]["ticker"])  # the listing actually looked up
+        messages.append({"role": "tool", "tool_call_id": c["id"], "content": json.dumps(result, default=str)})
+
+
+@router.post("/", response_model=ChatResponse)
+async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient) -> ChatResponse:
+    """One assistant turn; the client sends the whole conversation each time (nothing is stored)."""
+    messages, client = await _start(request, current_user, redis)
     tickers: list[str] = []
     try:
         for _ in range(MAX_TOOL_ROUNDS + 1):
@@ -183,17 +208,46 @@ async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, r
             msg = resp.choices[0].message
             if not msg.tool_calls:
                 return ChatResponse(reply=msg.content or "", tickers=tickers)
-            messages.append(msg.model_dump(exclude_none=True))
-            for call in msg.tool_calls:
-                try:
-                    args = json.loads(call.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                if call.function.name == "stock_snapshot" and args.get("ticker"):
-                    tickers.append(str(args["ticker"]).upper())
-                result = await _run_tool(call.function.name, args, current_user, db)
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
+            calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls]
+            await _answer_tool_calls(calls, messages, current_user, db, tickers)
     except OpenAIError as e:
         logger.error(f"Chat LLM call failed: {e}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The assistant is unavailable right now") from e
     raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The assistant needed too many lookups; ask a narrower question")
+
+
+@router.post("/stream")
+async def chat_stream(
+    request: ChatRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> StreamingResponse:
+    """Same turn as POST /, but the answer arrives as plain text while the model writes it."""
+    messages, client = await _start(request, current_user, redis)  # errors here are normal HTTP errors
+
+    async def answer() -> AsyncIterator[str]:
+        tickers: list[str] = []
+        try:
+            for _ in range(MAX_TOOL_ROUNDS + 1):
+                stream = await client.chat.completions.create(
+                    model=settings.openai_model, messages=messages, tools=TOOLS, temperature=0.2, stream=True,
+                )
+                calls: dict[int, dict] = {}
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta is None:
+                        continue
+                    if delta.content:
+                        yield delta.content
+                    for tc in delta.tool_calls or []:  # a call's id, name and arguments arrive in pieces
+                        call = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                        call["id"] = tc.id or call["id"]
+                        call["name"] += (tc.function.name or "") if tc.function else ""
+                        call["arguments"] += (tc.function.arguments or "") if tc.function else ""
+                if not calls:
+                    return
+                await _answer_tool_calls(list(calls.values()), messages, current_user, db, tickers)
+            yield "\n\nI needed too many lookups for that; please ask a narrower question."
+        except OpenAIError as e:  # headers are already sent, so the failure goes into the text
+            logger.error(f"Chat LLM stream failed: {e}")
+            yield "\n\nThe assistant is unavailable right now. Please try again."
+
+    return StreamingResponse(answer(), media_type="text/plain; charset=utf-8")

@@ -1,8 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { useLocation } from "react-router-dom"
-import { useMutation } from "@tanstack/react-query"
 import { MessageSquare, Send, X } from "lucide-react"
-import apiClient, { apiErrorDetail } from "@/lib/api"
+import { postStream } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -50,26 +49,51 @@ export default function ChatAssistant() {
     const endRef = useRef<HTMLDivElement>(null)
     const lastRef = useRef<HTMLDivElement>(null)
 
-    const ask = useMutation({
-        mutationFn: async (history: Message[]) =>
-            (await apiClient.post<{ reply: string }>("/chat/", { messages: history, ticker })).data.reply,
-        onSuccess: reply => setMessages(m => [...m, { role: "assistant", content: reply }]),
-    })
+    const [pending, setPending] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+
+    /** Stream the reply into a new assistant message as it is written. */
+    const ask = async (history: Message[]) => {
+        setPending(true)
+        setError(null)
+        let started = false
+        try {
+            // the server caps a conversation at 30 messages
+            await postStream("/chat/stream", { messages: history.slice(-20), ticker }, chunk => {
+                const first = !started // read now: the state updater below may run later
+                started = true
+                setMessages(m => first
+                    ? [...m, { role: "assistant", content: chunk }]
+                    : [...m.slice(0, -1), { role: "assistant", content: m[m.length - 1].content + chunk }])
+            })
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "The assistant couldn't answer.")
+        } finally {
+            setPending(false)
+        }
+    }
 
     useEffect(() => { if (open) inputRef.current?.focus() }, [open])
-    // A new answer opens at its first line; anything else (your message, the typing note) at the bottom
+    // A new answer opens at its first line (once, not on every streamed chunk); anything else at the bottom
+    const lastRole = messages.at(-1)?.role
     useEffect(() => {
-        if (messages.at(-1)?.role === "assistant") lastRef.current?.scrollIntoView({ block: "start" })
+        if (lastRole === "assistant") lastRef.current?.scrollIntoView({ block: "start" })
         else endRef.current?.scrollIntoView({ block: "end" })
-    }, [messages, ask.isPending])
+    }, [messages.length, lastRole, pending])
 
     const send = (text: string) => {
         const content = text.trim()
-        if (!content || ask.isPending) return
+        if (!content || pending) return
         const history = [...messages, { role: "user" as const, content }]
         setMessages(history)
         setDraft("")
-        ask.mutate(history.slice(-20)) // the server caps a conversation at 30 messages
+        void ask(history)
+    }
+    const retry = () => {
+        // A reply cut off mid-stream is dropped and asked for again
+        const history = lastRole === "assistant" ? messages.slice(0, -1) : messages
+        setMessages(history)
+        void ask(history)
     }
     const onSubmit = (e: FormEvent) => { e.preventDefault(); send(draft) }
 
@@ -104,7 +128,7 @@ export default function ChatAssistant() {
                 </div>
                 <div className="flex items-center gap-1">
                     {messages.length > 0 && (
-                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); ask.reset() }}>
+                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); setError(null) }} disabled={pending}>
                             New chat
                         </Button>
                     )}
@@ -144,13 +168,13 @@ export default function ChatAssistant() {
                         </div>
                     </div>
                 ))}
-                {ask.isPending && (
+                {pending && lastRole === "user" && (
                     <p className="text-muted-foreground text-xs animate-pulse" role="status">Looking at the data…</p>
                 )}
-                {ask.isError && (
+                {error && (
                     <div role="alert" className="text-xs text-destructive flex items-center gap-2">
-                        <span>{apiErrorDetail(ask.error) ?? "The assistant couldn't answer."}</span>
-                        <button type="button" className="underline" onClick={() => ask.mutate(messages.slice(-20))}>Retry</button>
+                        <span>{error}</span>
+                        <button type="button" className="underline" onClick={retry}>Retry</button>
                     </div>
                 )}
                 <div ref={endRef} />
@@ -171,7 +195,7 @@ export default function ChatAssistant() {
                     placeholder={ticker ? `Ask about ${ticker}…` : "Ask about a stock or chart…"}
                     className="flex-1 resize-none max-h-32 bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
-                <Button type="submit" size="icon" className="size-9 shrink-0" disabled={!draft.trim() || ask.isPending} aria-label="Send">
+                <Button type="submit" size="icon" className="size-9 shrink-0" disabled={!draft.trim() || pending} aria-label="Send">
                     <Send className="size-4" />
                 </Button>
             </form>

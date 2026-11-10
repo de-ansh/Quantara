@@ -92,7 +92,7 @@ test.describe('Dashboard E2E Tests', () => {
     await expect(aaplRow).toContainText('88.0'); // final score, not a fake % return
 
     // Verify Signals
-    await expect(page.locator('text=AAPL: BULLISH TREND Detected')).toBeVisible();
+    await expect(page.locator('text=AAPL: BULLISH TREND. Strength')).toBeVisible();
   });
 
   test('should navigate to Settings page and check theme toggles', async ({ page }) => {

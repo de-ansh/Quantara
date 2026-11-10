@@ -131,26 +131,26 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
             <CardContent className="p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Name</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Name</span>
                         <input className={inputClass} value={draft.name} maxLength={100}
                             onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Core growth" />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Initial investment</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Initial investment</span>
                         <input className={cn(inputClass, "font-mono")} type="number" min={1} value={draft.initialInvestment}
                             onChange={e => setDraft(d => ({ ...d, initialInvestment: e.target.value }))} />
                     </label>
                 </div>
                 <label className="space-y-1 block">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description (optional)</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Description (optional)</span>
                     <input className={inputClass} value={draft.description}
                         onChange={e => setDraft(d => ({ ...d, description: e.target.value }))} />
                 </label>
 
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Holdings</span>
-                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Holdings</span>
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
                             <span className={cn("px-1.5 py-0.5 rounded-sm font-bold",
                                 Math.abs(total - 100) <= 0.5 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400")}>
                                 Total: {total.toFixed(1)}%
@@ -161,7 +161,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                             </button>
                         </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground">
                         Weights drive the simulator. Add shares and average cost to track value and P&amp;L, or leave
                         weights blank to weight by market value.
                     </p>
@@ -221,7 +221,7 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
                     <CardTitle className="text-sm font-bold text-foreground">
                         <Link to={`/portfolios/${portfolio.id}`} className="hover:text-primary">{portfolio.name}</Link>
                     </CardTitle>
-                    <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
                         Updated {timeAgo(portfolio.updated_at)}
                     </span>
                 </div>
@@ -230,7 +230,7 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
             <CardContent className="p-4 pt-2 space-y-3 flex-1 flex flex-col">
                 <div className="flex items-baseline justify-between font-mono">
                     <span className="text-lg font-bold text-foreground">{sym}{portfolio.initial_investment.toLocaleString()}</span>
-                    <span className="text-[10px] uppercase text-muted-foreground">{portfolio.positions.length} holdings</span>
+                    <span className="text-[11px] uppercase text-muted-foreground">{portfolio.positions.length} holdings</span>
                 </div>
 
                 {/* Allocation bar */}
@@ -291,7 +291,7 @@ export default function Portfolios() {
                     <h1 className="text-2xl font-black uppercase tracking-tight flex items-center gap-2 text-foreground">
                         <Briefcase className="size-6 text-primary" /> Portfolios
                     </h1>
-                    <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
+                    <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
                         Save allocations and run them through the simulator
                     </p>
                 </div>

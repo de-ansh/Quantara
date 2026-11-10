@@ -83,12 +83,21 @@ async def _verify_positions(db: DBSession, positions: list[PositionBase]) -> Non
         )
     stocks = {t: await get_or_track_stock(db, t) for t in tickers}
     unknown = [t for t, s in stocks.items() if s is None]
-    known = {t: s for t, s in stocks.items() if s is not None}
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"No market data found for: {', '.join(unknown)}",
         )
+    # Store the listing each typed ticker resolved to ("ITC" -> ITC.NS), then re-check for doubles
+    for p in positions:
+        p.ticker = stocks[p.ticker.upper()].ticker
+    tickers = [p.ticker for p in positions]
+    if len(set(tickers)) != len(tickers):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Each ticker can appear only once in a portfolio",
+        )
+    known = {s.ticker: s for s in stocks.values() if s is not None}
 
     if positions and all(p.weight == 0 for p in positions):
         if not all(p.shares > 0 for p in positions):

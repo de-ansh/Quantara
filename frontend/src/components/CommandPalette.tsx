@@ -262,7 +262,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                             <X className="size-3.5" />
                         </button>
                     )}
-                    <Badge variant="outline" className="text-[10px] font-mono font-bold tracking-widest text-muted-foreground border-border px-1.5 py-0.5">
+                    <Badge variant="outline" className="text-[11px] font-mono font-bold tracking-widest text-muted-foreground border-border px-1.5 py-0.5">
                         ESC
                     </Badge>
                 </div>
@@ -309,7 +309,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                                             {item.subtitle && (
                                                 <p
                                                     className={cn(
-                                                        "text-[10px] truncate font-medium",
+                                                        "text-[11px] truncate font-medium",
                                                         isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
                                                     )}
                                                 >
@@ -323,7 +323,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                                         {item.badge && (
                                             <span
                                                 className={cn(
-                                                    "text-[9px] font-black font-mono tracking-wider px-1.5 py-0.5 rounded uppercase border",
+                                                    "text-[10px] font-black font-mono tracking-wider px-1.5 py-0.5 rounded uppercase border",
                                                     isSelected
                                                         ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
                                                         : "border-border bg-background text-muted-foreground"
@@ -346,7 +346,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
                 </div>
 
                 {/* Command Palette Footer */}
-                <div className="px-4 py-2 border-t border-border bg-muted/40 flex items-center justify-between text-[10px] font-mono text-muted-foreground font-bold uppercase tracking-wider shrink-0">
+                <div className="px-4 py-2 border-t border-border bg-muted/40 flex items-center justify-between text-[11px] font-mono text-muted-foreground font-bold uppercase tracking-wider shrink-0">
                     <div className="flex items-center gap-3">
                         <span><kbd className="bg-background px-1 py-0.5 border border-border rounded">↑</kbd> <kbd className="bg-background px-1 py-0.5 border border-border rounded">↓</kbd> Navigate</span>
                         <span><kbd className="bg-background px-1 py-0.5 border border-border rounded">↵</kbd> Select</span>

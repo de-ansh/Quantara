@@ -29,6 +29,8 @@ class SignalType(StrEnum):
     INSTITUTIONAL_BUYING = "institutional_buying"
     INSIDER_BUYING = "insider_buying"
     SENTIMENT_SPIKE = "sentiment_spike"
+    LARGE_DEAL = "large_deal"  # NSE bulk/block deals, netted per day
+    PROMOTER_PLEDGE = "promoter_pledge"  # NSE promoter pledge disclosures
 
 
 @dataclass
@@ -570,14 +572,8 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
     stock = res_stock.scalar_one_or_none()
 
     if not stock:
-        # Create a basic placeholder Stock record if it doesn't exist
-        stock = Stock(
-            ticker=signal.ticker,
-            name=signal.ticker,
-            sector="Technology",
-            risk_score=50.0,
-            research_score=None,
-        )
+        # Placeholder with no invented sector or risk score: the price and risk jobs fill them in
+        stock = Stock(ticker=signal.ticker, name=signal.ticker)
         db.add(stock)
         await db.commit()
 
@@ -708,30 +704,9 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
             except Exception as ins_err:
                 logger.warning(f"Error processing insider signals for {ticker}: {ins_err}")
 
-            # 2. Extract earnings metrics from SEC company facts to detect earnings surprises
-            try:
-                facts = await sec.fetch_company_facts(ticker)
-                if facts:
-                    extracted = sec.extract_metrics(facts)
-                    eps_history = extracted.get("eps", [])
-                    if eps_history:
-                        actual_eps = eps_history[-1]["val"]
-                        estimated_eps = actual_eps * 0.9 if actual_eps != 0 else 0.0
-
-                        surprise_sig = engine.detect_earnings_surprise(
-                            ticker=ticker,
-                            actual_eps=actual_eps,
-                            estimated_eps=estimated_eps,
-                            timestamp=(
-                                datetime.strptime(eps_history[-1]["filed"], "%Y-%m-%d")
-                                if eps_history[-1].get("filed")
-                                else None
-                            ),
-                        )
-                        if surprise_sig:
-                            await save_signal_to_db(db, surprise_sig)
-            except Exception as earn_err:
-                logger.warning(f"Error processing earnings surprise for {ticker}: {earn_err}")
+            # 2. Earnings surprises need consensus EPS estimates, which no free source here provides;
+            # detect_earnings_surprise stays for when one is wired in (an invented estimate is worse
+            # than no signal: it reported an 11% beat for every company).
 
             # 3. Detect sentiment spikes from news & social mention volume
             try:
@@ -759,6 +734,13 @@ async def _run_signal_pass(sec: Any, yahoo: Any, engine: "SignalEngine") -> None
                     await save_signal_to_db(db, inst_sig)
             except Exception as inst_err:
                 logger.warning(f"Error processing institutional accumulation for {ticker}: {inst_err}")
+
+        try:
+            from app.services.india_signals import run_india_signals
+
+            logger.info(f"NSE deal and pledge signals: {await run_india_signals(db)}")
+        except Exception as india_err:
+            logger.warning(f"Error processing NSE deal/pledge signals: {india_err}")
 
     logger.info("Signal generation pass completed successfully")
 

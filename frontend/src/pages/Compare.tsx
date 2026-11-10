@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import WatchlistButton from "@/components/WatchlistButton"
 import { useQuickTickers } from "@/hooks/useStockUniverse"
 import { cn } from "@/lib/utils"
-import apiClient from "@/lib/api"
+import apiClient, { resolveTicker } from "@/lib/api"
 import type { RiskAnalysis } from "@/types/api"
 
 const MAX_TICKERS = 4
@@ -32,9 +32,10 @@ export default function Compare() {
     const quickTickers = useQuickTickers()
 
     const setTickers = (next: string[]) => setSearchParams(next.length ? { tickers: next.join(",") } : {})
-    const addTicker = (t: string) => {
-        const sym = t.trim().toUpperCase()
-        if (sym && !tickers.includes(sym) && tickers.length < MAX_TICKERS) setTickers([...tickers, sym])
+    const addTicker = async (t: string) => {
+        if (!t.trim()) return
+        const sym = (await resolveTicker(t)) ?? t.trim().toUpperCase() // "ITC" -> ITC.NS
+        if (!tickers.includes(sym) && tickers.length < MAX_TICKERS) setTickers([...tickers, sym])
         setInput("")
     }
 
@@ -82,7 +83,7 @@ export default function Compare() {
                 <h1 className="text-2xl font-black uppercase tracking-tight flex items-center gap-2 text-foreground">
                     <Columns3 className="size-6 text-primary" /> Compare Stocks
                 </h1>
-                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
+                <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
                     Risk profile and co-movement of up to {MAX_TICKERS} tickers
                 </p>
             </div>
@@ -110,7 +111,7 @@ export default function Compare() {
                 <div className="flex flex-wrap gap-1">
                     {quickTickers.filter(t => !tickers.includes(t)).slice(0, 16).map(t => (
                         <button key={t} type="button" onClick={() => addTicker(t)}
-                            className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm">
+                            className="text-[11px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm">
                             +{t}
                         </button>
                     ))}
@@ -127,15 +128,15 @@ export default function Compare() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-q-border">
-                                    <th className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Metric</th>
+                                    <th className="text-left px-4 py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-bold">Metric</th>
                                     {tickers.map((t, i) => (
                                         <th key={t} scope="col" className="text-right px-4 py-3">
                                             <span className="inline-flex items-center gap-1">
                                                 <Link to={`/research/${t}`} className="font-mono font-black text-foreground hover:text-primary">{t}</Link>
                                                 <WatchlistButton ticker={t} />
                                             </span>
-                                            {risks[i].isLoading && <span className="block text-[9px] text-muted-foreground font-normal">loading…</span>}
-                                            {risks[i].isError && <span className="block text-[9px] text-q-risk-high font-normal">failed to load</span>}
+                                            {risks[i].isLoading && <span className="block text-[10px] text-muted-foreground font-normal">loading…</span>}
+                                            {risks[i].isError && <span className="block text-[10px] text-q-risk-high font-normal">failed to load</span>}
                                         </th>
                                     ))}
                                 </tr>
@@ -188,7 +189,7 @@ export default function Compare() {
                                         </tbody>
                                     </table>
                                     {sim.estimated_tickers.length > 0 && (
-                                        <p className="mt-3 text-[10px] text-amber-500 uppercase tracking-wider">
+                                        <p className="mt-3 text-[11px] text-amber-500 uppercase tracking-wider">
                                             No price history for {sim.estimated_tickers.join(", ")}: correlations involving them are asset-class estimates
                                         </p>
                                     )}

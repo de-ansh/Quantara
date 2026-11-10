@@ -27,6 +27,7 @@ class ResearchReportResponse(BaseModel):
     opportunities: list[str]
     threats: list[str]
     confidence_score: float
+    outlook_score: float | None = None  # absent on reports from before the outlook existed
     generated_at: datetime | None = None
 
 
@@ -66,6 +67,17 @@ def format_market_cap(value: float | None, ticker: str) -> str:
         if value >= divisor:
             return f"{_currency(ticker)}{value / divisor:.2f}{suffix}"
     return f"{_currency(ticker)}{value:,.0f}"
+
+
+def _directory_item(d: Any) -> StockSearchItem:
+    """Explorer row for an untracked listing: end-of-day price where the exchange file has one."""
+    change = round((d.close / d.prev_close - 1) * 100, 2) if d.close and d.prev_close else None
+    return StockSearchItem(
+        ticker=d.ticker, name=d.name, price=format_price(d.close, d.ticker), cap="N/A", risk=None,
+        signal="Unrated", status="neutral" if not change else "up" if change > 0 else "down", change_pct=change,
+        price_updated_at=datetime.combine(d.price_date, datetime.min.time()) if d.price_date else None,
+        exchange=d.exchange, tracked=False,
+    )
 
 
 def to_search_item(stock: Any) -> StockSearchItem:
@@ -215,24 +227,47 @@ async def search_stocks(
         room = limit - len(response_items)
         if room > 0:
             # Exact symbol (TCS.NS / TCS.BO / TCS) first, then symbol prefix, then name matches
+            import re
+
+            from app.services.stock_lookup import EXCHANGE_PREFERENCE
+
+            # Exact symbol, symbol prefix, name prefix, whole-word name match, then any substring
+            # ("ITC" inside "Fitch" last); ties go to NSE, BSE, then US
             rank = case(
                 (or_(ListedSecurity.ticker == q, ListedSecurity.ticker.ilike(f"{q}.%")), 0),
                 (ListedSecurity.ticker.ilike(f"{q}%"), 1),
-                else_=2,
+                (ListedSecurity.name.ilike(f"{q}%"), 2),
+                (ListedSecurity.name.op("~*")(rf"\m{re.escape(q)}"), 3),
+                else_=4,
             )
             hits = await db.execute(
-                directory.order_by(rank, func.length(ListedSecurity.ticker), ListedSecurity.ticker)
+                directory.order_by(rank, EXCHANGE_PREFERENCE, func.length(ListedSecurity.ticker), ListedSecurity.ticker)
                 .limit(room)
                 .offset(max(0, offset - total))
             )
-            response_items += [
-                StockSearchItem(ticker=d.ticker, name=d.name, price="N/A", cap="N/A", risk=None,
-                                signal="Unrated", status="neutral", exchange=d.exchange, tracked=False)
-                for d in hits.scalars()
-            ]
+            response_items += [_directory_item(d) for d in hits.scalars()]
         total += dir_total
 
     return StockSearchListResponse(stocks=response_items, total_count=int(total))
+
+
+class ResolvedTicker(BaseModel):
+    ticker: str
+    name: str | None = None
+    exchange: str | None = None
+
+
+@router.get("/stocks/resolve", response_model=ResolvedTicker)
+async def resolve_stock(q: str, current_user: CurrentUser, db: DBSession) -> ResolvedTicker:
+    """The listed ticker meant by a typed symbol or name ("ITC" -> ITC.NS, "infosys" -> INFY.NS)."""
+    from app.models.listed_security import ListedSecurity
+    from app.services.stock_lookup import resolve_ticker
+
+    ticker = await resolve_ticker(db, q)
+    if ticker is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No listed security matches {q!r}")
+    listed = await db.get(ListedSecurity, ticker)
+    return ResolvedTicker(ticker=ticker, name=listed.name if listed else None, exchange=listed.exchange if listed else None)
 
 
 @router.get("/stocks/{ticker}/research", response_model=ResearchReportResponse)
@@ -271,6 +306,7 @@ async def get_stock_research(
         not refresh
         and report
         and report.structured_json
+        and "outlook_score" in report.structured_json  # older reports regenerate to get one
         and utcnow() - report.updated_at < max_age
     ):
         return ResearchReportResponse(**{**report.structured_json, "generated_at": report.updated_at})

@@ -150,6 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     import asyncio
 
     from app.services.filing_watch import run_periodic_filing_watch
+    from app.services.held_research import run_periodic_held_research
     from app.services.price_service import run_periodic_price_refresh
     from app.services.signal_engine import run_periodic_signal_processing
     from app.services.stock_directory import run_periodic_directory_refresh
@@ -161,8 +162,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             asyncio.create_task(run_periodic_price_refresh()),
             asyncio.create_task(run_periodic_filing_watch()),
             asyncio.create_task(run_periodic_directory_refresh()),
+            asyncio.create_task(run_periodic_held_research()),
         ]
-        logger.info("Background signal processing, price refresh, filing watch and directory tasks started")
+        logger.info("Background signal, price, filing watch, directory and nightly research tasks started")
     app.state.bg_tasks = bg_tasks
 
     yield

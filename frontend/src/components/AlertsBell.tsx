@@ -61,7 +61,7 @@ export default function AlertsBell() {
                 >
                     <Bell className="h-5 w-5" />
                     {unread > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-q-risk-high text-white text-[9px] font-bold flex items-center justify-center">
+                        <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-q-risk-high text-white text-[10px] font-bold flex items-center justify-center">
                             {unread > 9 ? "9+" : unread}
                         </span>
                     )}
@@ -90,7 +90,7 @@ export default function AlertsBell() {
                                                 : `${a.signal_type.replace(/_/g, " ")} · strength ${Math.round(a.strength)}`}
                                         </span>
                                     </span>
-                                    <span className="shrink-0 text-[10px] text-muted-foreground font-mono">
+                                    <span className="shrink-0 text-[11px] text-muted-foreground font-mono">
                                         {a.unread && <span className="mr-1 inline-block size-1.5 rounded-full bg-primary align-middle" />}
                                         {timeAgo(a.detected_at)}
                                     </span>

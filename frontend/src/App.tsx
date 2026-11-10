@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom"
 import { ThemeProvider } from "@/context/ThemeProvider"
 import { AuthProvider } from "@/context/AuthContext"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import TickerGate from "@/components/TickerGate"
 import MainLayout from "@/layouts/MainLayout"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import RouteErrorBoundary from "@/components/ErrorBoundary"
@@ -44,11 +45,11 @@ function App() {
                 <Routes>
                   <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                   <Route path="/research" element={<ProtectedRoute><StockDetail /></ProtectedRoute>} />
-                  <Route path="/research/:ticker" element={<ProtectedRoute><StockDetail /></ProtectedRoute>} />
+                  <Route path="/research/:ticker" element={<ProtectedRoute><TickerGate><StockDetail /></TickerGate></ProtectedRoute>} />
                   <Route path="/explorer" element={<ProtectedRoute><ResearchExplorer /></ProtectedRoute>} />
                   <Route path="/signals" element={<ProtectedRoute><Signals /></ProtectedRoute>} />
                   <Route path="/risk" element={<ProtectedRoute><Risk /></ProtectedRoute>} />
-                  <Route path="/risk/:ticker" element={<ProtectedRoute><Risk /></ProtectedRoute>} />
+                  <Route path="/risk/:ticker" element={<ProtectedRoute><TickerGate><Risk /></TickerGate></ProtectedRoute>} />
                   <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
                   <Route path="/portfolios" element={<ProtectedRoute><Portfolios /></ProtectedRoute>} />
                   <Route path="/portfolios/:id" element={<ProtectedRoute><PortfolioDetail /></ProtectedRoute>} />

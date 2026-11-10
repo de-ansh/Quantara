@@ -1,8 +1,8 @@
-"""Every listed security we can look up, from the exchanges' official lists (not tracked or priced)."""
+"""Every listed security we can look up, from the exchanges' official lists (not tracked)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import Date, DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.clock import utcnow
@@ -19,4 +19,8 @@ class ListedSecurity(Base):
     exchange: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
     is_etf: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # End-of-day prices for Indian listings from BSE's bhavcopy (matched by ISIN); None for US rows
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prev_close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

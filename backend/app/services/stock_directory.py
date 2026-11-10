@@ -117,6 +117,18 @@ def parse_us(text: str) -> list[dict]:
     return out
 
 
+def parse_bse_prices(text: str) -> dict[str, dict]:
+    """ISIN -> end-of-day close, previous close and trade date, for every scrip in the bhavcopy."""
+    out = {}
+    for r in _rows(text):
+        try:
+            close, prev = float(r["ClsPric"]), float(r.get("PrvsClsgPric") or 0) or None
+            out[r["ISIN"]] = {"close": close, "prev_close": prev, "price_date": date.fromisoformat(r["TradDt"])}
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
 async def _get(client: httpx.AsyncClient, url: str) -> str | None:
     try:
         resp = await client.get(url)
@@ -145,7 +157,8 @@ async def _replace(db: AsyncSession, rows: list[dict], exchanges: list[str]) -> 
     await db.execute(delete(ListedSecurity).where(ListedSecurity.exchange.in_(exchanges)))
     if rows:
         now = utcnow()
-        await db.execute(insert(ListedSecurity), [{**r, "updated_at": now} for r in rows])
+        no_price = {"close": None, "prev_close": None, "price_date": None}  # bulk insert needs one key set
+        await db.execute(insert(ListedSecurity), [{**no_price, **r, "updated_at": now} for r in rows])
 
 
 async def refresh_directory(db: AsyncSession) -> dict[str, int]:
@@ -158,11 +171,17 @@ async def refresh_directory(db: AsyncSession) -> dict[str, int]:
         )
     # Shares and ETFs replace NSE rows together, so a failed ETF list doesn't wipe yesterday's ETFs
     nse = parse_nse(nse_text) + parse_nse_etfs(etf_text) if nse_text and etf_text else []
+    # One price file for both Indian exchanges: an NSE company's BSE close, matched by ISIN
+    prices = parse_bse_prices(bse_text) if bse_text else {}
+    for row in nse:
+        row.update(prices.get(row["isin"] or "", {}))
     if nse:
         await _replace(db, nse, ["NSE"])
         counts["NSE"] = len(nse)
     # Without a fresh NSE list the ISIN dedupe can't run, so BSE waits for the next pass
     bse = parse_bse(bse_text, {r["isin"] for r in nse if r["isin"]}) if bse_text and nse else []
+    for row in bse:
+        row.update(prices.get(row["isin"] or "", {}))
     if bse:
         await _replace(db, bse, ["BSE"])
         counts["BSE"] = len(bse)
