@@ -19,6 +19,12 @@ export interface StockSearchItem {
     profit_margin_pct?: number | null
     dividend_yield_pct?: number | null
     return_1y_pct?: number | null
+    roce_pct?: number | null
+    revenue_cagr_3y_pct?: number | null
+    profit_cagr_3y_pct?: number | null
+    promoter_pct?: number | null
+    /** Change in promoter holding from the previous quarter, in percentage points */
+    promoter_change_pp?: number | null
     exchange?: string | null
     /** false: listed but nobody has opened it yet, so no price or scores */
     tracked?: boolean

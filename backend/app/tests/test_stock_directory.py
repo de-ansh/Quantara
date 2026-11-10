@@ -246,3 +246,9 @@ async def test_screener_filters_and_sorts_on_fundamentals(client, db_session):
     best_return = await tickers("sort=-return_1y")
     assert best_return[:3] == ["QUAL.NS", "SLOW.NS", "LEVER.NS"] and best_return[3] == "NODATA.NS"  # no data sorts last
     assert (await client.get("/api/v1/stocks/search?sort=drop_table", headers=headers)).status_code == 422
+
+    qual = await db_session.get(Stock, "QUAL.NS")
+    qual.roce_pct, qual.revenue_cagr_3y_pct, qual.promoter_change_pp = 31.0, 14.0, 1.5
+    await db_session.commit()
+    assert await tickers("roce_min=20&revenue_cagr_3y_min=10&promoter_change_min=0") == ["QUAL.NS"]
+    assert (await tickers("sort=-roce"))[0] == "QUAL.NS"

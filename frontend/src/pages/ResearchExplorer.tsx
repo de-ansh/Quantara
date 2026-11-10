@@ -26,11 +26,16 @@ const PAGE_SIZE = 25
 /** Fundamental screens: API parameter -> label; all percents except debt/equity (a ratio). */
 const FUNDAMENTALS = [
     { key: "roe_min", label: "Min ROE %" },
+    { key: "roce_min", label: "Min ROCE %" },
     { key: "debt_to_equity_max", label: "Max debt / equity" },
     { key: "revenue_growth_min", label: "Min revenue growth %" },
+    { key: "revenue_cagr_3y_min", label: "Min 3Y revenue CAGR %" },
+    { key: "profit_cagr_3y_min", label: "Min 3Y profit CAGR %" },
     { key: "profit_margin_min", label: "Min profit margin %" },
     { key: "dividend_yield_min", label: "Min dividend yield %" },
     { key: "return_1y_min", label: "Min 1-year return %" },
+    { key: "promoter_min", label: "Min promoter holding %" },
+    { key: "promoter_change_min", label: "Min promoter change (pts)" },
 ] as const
 type FundamentalKey = (typeof FUNDAMENTALS)[number]["key"]
 type Fundamentals = Partial<Record<FundamentalKey, string>>
@@ -40,12 +45,17 @@ const PRESETS: { label: string; filters: Fundamentals; sort: string }[] = [
     { label: "Quality compounders", filters: { roe_min: "15", debt_to_equity_max: "0.5", revenue_growth_min: "10" }, sort: "-roe" },
     { label: "Dividend payers", filters: { dividend_yield_min: "2.5", debt_to_equity_max: "1" }, sort: "-dividend_yield" },
     { label: "Momentum", filters: { return_1y_min: "20", revenue_growth_min: "5" }, sort: "-return_1y" },
+    { label: "Promoters buying", filters: { promoter_change_min: "1" }, sort: "-promoter_change" },
 ]
 
 const SORTS = [
     { value: "", label: "Ticker (A–Z)" },
     { value: "-market_cap", label: "Market cap" },
     { value: "-roe", label: "ROE" },
+    { value: "-roce", label: "ROCE" },
+    { value: "-revenue_cagr_3y", label: "3Y revenue CAGR" },
+    { value: "-profit_cagr_3y", label: "3Y profit CAGR" },
+    { value: "-promoter_change", label: "Promoter change" },
     { value: "-revenue_growth", label: "Revenue growth" },
     { value: "-return_1y", label: "1-year return" },
     { value: "-dividend_yield", label: "Dividend yield" },
@@ -174,6 +184,11 @@ export default function ResearchExplorer() {
             profit_margin_pct: r.profit_margin_pct ?? "",
             dividend_yield_pct: r.dividend_yield_pct ?? "",
             return_1y_pct: r.return_1y_pct ?? "",
+            roce_pct: r.roce_pct ?? "",
+            revenue_cagr_3y_pct: r.revenue_cagr_3y_pct ?? "",
+            profit_cagr_3y_pct: r.profit_cagr_3y_pct ?? "",
+            promoter_pct: r.promoter_pct ?? "",
+            promoter_change_pp: r.promoter_change_pp ?? "",
             market: r.exchange ?? getMarketLabel(r.ticker)
         }))
 
@@ -272,7 +287,7 @@ export default function ResearchExplorer() {
                                     </label>
                                 ))}
                             </div>
-                            <p className="text-[11px] text-muted-foreground">Covers the Nifty 500 and any stock you've opened; figures from Yahoo, refreshed daily.</p>
+                            <p className="text-[11px] text-muted-foreground">Covers the Nifty 500 and any stock you've opened. Ratios and returns from Yahoo, daily; ROCE and 3-year CAGR from annual statements, weekly; promoter holding from NSE filings, quarterly. Blank means no data, and that stock is left out of a filter.</p>
                         </div>
                     </details>
 
@@ -589,6 +604,8 @@ export default function ResearchExplorer() {
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROE</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROCE</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Change in promoter holding from the previous quarter">Promoter Δ</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">1Y Return</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
@@ -633,6 +650,8 @@ export default function ResearchExplorer() {
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.roe_pct == null ? "—" : `${row.roe_pct.toFixed(1)}%`}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.roce_pct == null ? "—" : `${row.roce_pct.toFixed(1)}%`}</td>
+                                            <td className="px-6 py-4">{row.promoter_change_pp == null ? "—" : <span className={row.promoter_change_pp > 0 ? "text-green-500" : row.promoter_change_pp < 0 ? "text-red-500" : ""}>{row.promoter_change_pp > 0 ? "+" : ""}{row.promoter_change_pp.toFixed(2)} pts</span>}</td>
                                             <td className="px-6 py-4">{pctCell(row.return_1y_pct)}</td>
                                             <td className="px-6 py-4">
                                                 <span className={cn(
