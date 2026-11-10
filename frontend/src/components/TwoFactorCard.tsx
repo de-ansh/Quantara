@@ -68,7 +68,7 @@ export default function TwoFactorCard() {
     }
 
     const inputClass = "w-full bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground focus:border-primary outline-none"
-    const labelClass = "text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+    const labelClass = "text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
 
     return (
         <Card className="bg-card border-border shadow-none">
@@ -76,7 +76,7 @@ export default function TwoFactorCard() {
                 <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                     <Smartphone className="size-4 text-primary" /> Two-Factor Login
                 </CardTitle>
-                <CardDescription className="text-[10px] uppercase font-bold">
+                <CardDescription className="text-[11px] uppercase font-bold">
                     {status?.two_factor_enabled
                         ? `On · ${status.recovery_codes_left} recovery codes left`
                         : "Off · asks for an authenticator-app code at sign-in"}

@@ -62,7 +62,7 @@ export default function Login() {
                         <ShieldCheck className="size-6" />
                     </div>
                     <h1 className="text-white text-lg font-bold uppercase tracking-widest">Quantara</h1>
-                    <span className="text-[10px] bg-[#1e5df1]/20 text-[#1e5df1] border border-[#1e5df1]/30 px-1.5 py-0.5 font-bold tracking-tighter">INSTITUTIONAL</span>
+                    <span className="text-[11px] bg-[#1e5df1]/20 text-[#1e5df1] border border-[#1e5df1]/30 px-1.5 py-0.5 font-bold tracking-tighter">INSTITUTIONAL</span>
                 </div>
                 <div className="flex items-center gap-4">
                     <button className="flex items-center justify-center size-8 border border-[#282d39] hover:bg-[#282d39] transition-colors">
@@ -107,7 +107,7 @@ export default function Login() {
                         <div className="space-y-1.5">
                             <div className="flex justify-between items-end">
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-[#9ca5ba]" htmlFor="password">Access Key / Password</label>
-                                <Link className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase" to="/reset-password">Forgot Key?</Link>
+                                <Link className="text-[11px] text-[#1e5df1] hover:underline font-bold uppercase" to="/reset-password">Forgot Key?</Link>
                             </div>
                             <div className="relative">
                                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />
@@ -139,7 +139,7 @@ export default function Login() {
                                         required
                                     />
                                 </div>
-                                <p className="text-[10px] text-[#9ca5ba]">
+                                <p className="text-[11px] text-[#9ca5ba]">
                                     Enter the 6-digit code from your authenticator app, or a recovery code.{" "}
                                     <Link to="/reset-password" className="text-[#1e5df1] hover:underline font-bold">Lost both?</Link>
                                 </p>
@@ -147,7 +147,7 @@ export default function Login() {
                         )}
 
                         {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-bold uppercase tracking-wider">
                                 {error}
                             </div>
                         )}
@@ -160,7 +160,7 @@ export default function Login() {
                             {isLoading ? "Authenticating..." : "Secure Sign In"}
                         </button>
 
-                        <div className="flex items-center justify-end text-[10px] text-[#9ca5ba] uppercase tracking-tighter">
+                        <div className="flex items-center justify-end text-[11px] text-[#9ca5ba] uppercase tracking-tighter">
                             <Link to="/register" className="text-[#1e5df1] hover:underline font-bold">Request Access</Link>
                         </div>
                     </form>
@@ -179,7 +179,7 @@ export default function Login() {
                 </div>
             </main>
 
-            <footer className="fixed bottom-0 w-full border-t border-[#282d39] bg-[#151B23] px-6 py-2.5 flex flex-col md:flex-row items-center justify-between text-[10px] uppercase tracking-wider font-medium text-[#9ca5ba] z-50">
+            <footer className="fixed bottom-0 w-full border-t border-[#282d39] bg-[#151B23] px-6 py-2.5 flex flex-col md:flex-row items-center justify-between text-[11px] uppercase tracking-wider font-medium text-[#9ca5ba] z-50">
                 <div className="flex items-center gap-4">
                     <span className="text-white font-bold">Quantara</span>
                     <span className="hidden md:inline text-[#282d39]">|</span>

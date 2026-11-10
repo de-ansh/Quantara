@@ -69,6 +69,8 @@ export default function ResearchExplorer() {
         }
     })
 
+    // Mirrors the backend: these filters need fundamentals, which only tracked stocks have
+    const dataFiltersOn = peLimit < 50 || betaLimit < 2.0 || selectedSignals.length > 0
     const results = data?.stocks || []
     const latestPriceAt = results.map(r => r.price_updated_at).filter((t): t is string => !!t).sort().at(-1)
     const totalCount = data?.total_count || 0
@@ -144,7 +146,7 @@ export default function ResearchExplorer() {
                         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Institutional Filters</h2>
                         <button 
                             onClick={handleResetAll}
-                            className="text-[10px] text-primary hover:underline font-bold"
+                            className="text-[11px] text-primary hover:underline font-bold"
                         >
                             Reset All
                         </button>
@@ -194,7 +196,7 @@ export default function ResearchExplorer() {
                         </summary>
                         <div className="px-4 pb-4 space-y-6">
                             <div className="space-y-3">
-                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                <div className="flex justify-between items-center text-[11px] font-mono">
                                     <span className="text-muted-foreground/80">MAX P/E Ratio</span>
                                     <span className="text-foreground font-bold">{peLimit === 50 ? "Any" : `${peLimit}.0x`}</span>
                                 </div>
@@ -217,7 +219,7 @@ export default function ResearchExplorer() {
                         </summary>
                         <div className="px-4 pb-4 space-y-6">
                             <div className="space-y-3">
-                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                <div className="flex justify-between items-center text-[11px] font-mono">
                                     <span className="text-muted-foreground/80">MAX Beta</span>
                                     <span className="text-foreground font-bold">{betaLimit === 2.0 ? "Any" : betaLimit.toFixed(2)}</span>
                                 </div>
@@ -273,7 +275,7 @@ export default function ResearchExplorer() {
                                 Filters
                             </button>
                             <h2 className="text-sm font-semibold text-foreground select-none">
-                                {isLoading ? "Syncing..." : `${totalCount} Results Discovery`}
+                                {isLoading ? "Syncing..." : `${totalCount.toLocaleString()} results`}
                             </h2>
                             <span className="h-4 w-px bg-border" />
                             <div className="relative flex-1 group">
@@ -332,7 +334,7 @@ export default function ResearchExplorer() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleExport(true)}
-                                    className="h-7 text-[10px] font-black uppercase tracking-wider bg-background"
+                                    className="h-7 text-[11px] font-black uppercase tracking-wider bg-background"
                                 >
                                     <Download className="size-3 mr-1" />
                                     Export Selected ({selectedTickers.length})
@@ -343,19 +345,26 @@ export default function ResearchExplorer() {
                                     disabled={selectedTickers.length < 2 || selectedTickers.length > 4}
                                     title="Select 2–4 stocks to compare side by side"
                                     onClick={() => navigate(`/compare?tickers=${selectedTickers.join(",")}`)}
-                                    className="h-7 text-[10px] font-black uppercase tracking-wider bg-background"
+                                    className="h-7 text-[11px] font-black uppercase tracking-wider bg-background"
                                 >
                                     Compare (2–4)
                                 </Button>
                                 <Button
                                     size="sm"
                                     onClick={() => navigate(`/simulation?tickers=${selectedTickers.join(",")}`)}
-                                    className="h-7 text-[10px] font-black uppercase tracking-wider"
+                                    className="h-7 text-[11px] font-black uppercase tracking-wider"
                                 >
                                     Simulate Selected
                                 </Button>
                             </div>
                         </div>
+                    )}
+
+                    {dataFiltersOn && (
+                        <p role="note" className="px-6 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+                            P/E, beta and signal filters only cover stocks that have been opened at least once, since fundamentals
+                            load on first view. Clear them to browse every {selectedMarket === "india" ? "Indian " : selectedMarket === "us" ? "US " : ""}listing.
+                        </p>
                     )}
 
                     {/* Results Content Area: List Table or Card Grid */}
@@ -394,21 +403,21 @@ export default function ResearchExplorer() {
                                                             <span className="font-mono text-base font-black text-foreground">{row.ticker}</span>
                                                             <WatchlistButton ticker={row.ticker} />
                                                             <span className={cn(
-                                                                "text-[8px] font-bold px-1 py-0.2 rounded border uppercase font-mono",
+                                                                "text-[10px] font-bold px-1 py-0.2 rounded border uppercase font-mono",
                                                                 isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                                             )}>
                                                                 {row.exchange ?? getMarketLabel(row.ticker)}
                                                             </span>
                                                             {row.status !== "neutral" && (
                                                                 <span className={cn(
-                                                                    "text-[9px] font-bold font-mono px-1 py-0.2 rounded",
+                                                                    "text-[10px] font-bold font-mono px-1 py-0.2 rounded",
                                                                     row.status === "up" ? "text-green-400 bg-green-500/10" : "text-rose-400 bg-rose-500/10"
                                                                 )}>
                                                                     {row.status === "up" ? "▲" : "▼"}
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <div className="text-[10px] text-muted-foreground truncate max-w-[140px] font-medium">
+                                                        <div className="text-[11px] text-muted-foreground truncate max-w-[140px] font-medium">
                                                             {row.name || row.sector || "Equity Asset"}
                                                         </div>
                                                     </div>
@@ -416,7 +425,7 @@ export default function ResearchExplorer() {
                                                 <Badge
                                                     variant="outline"
                                                     className={cn(
-                                                        "text-[9px] font-mono font-bold px-1.5 py-0.5",
+                                                        "text-[10px] font-mono font-bold px-1.5 py-0.5",
                                                         riskTone(row.risk)
                                                     )}
                                                 >
@@ -424,23 +433,23 @@ export default function ResearchExplorer() {
                                                 </Badge>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono py-2 border-y border-border/40">
+                                            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono py-2 border-y border-border/40">
                                                 <div>
-                                                    <div className="text-muted-foreground text-[9px]">Price</div>
-                                                    <div className="font-bold text-foreground text-xs">{row.tracked === false ? "Open to load" : <>{row.price} <DayChange pct={row.change_pct} className="text-[10px]" /></>}</div>
+                                                    <div className="text-muted-foreground text-[10px]">Price</div>
+                                                    <div className="font-bold text-foreground text-xs">{row.price === "N/A" && row.tracked === false ? "Open to load" : <>{row.price} <DayChange pct={row.change_pct} className="text-[11px]" /></>}</div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-muted-foreground text-[9px]">Market Cap</div>
+                                                    <div className="text-muted-foreground text-[10px]">Market Cap</div>
                                                     <div className="font-bold text-foreground text-xs">{row.cap}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-muted-foreground text-[9px]">Signal</div>
+                                                    <div className="text-muted-foreground text-[10px]">Signal</div>
                                                     <div className={cn("font-bold truncate text-xs", signalTone(row.signal))}>
                                                         {row.tracked === false ? "—" : row.signal}
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-muted-foreground text-[9px]">Sector</div>
+                                                    <div className="text-muted-foreground text-[10px]">Sector</div>
                                                     <div className="font-bold text-foreground text-xs truncate">{row.sector ?? "—"}</div>
                                                 </div>
                                             </div>
@@ -450,7 +459,7 @@ export default function ResearchExplorer() {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => navigate(`/research/${row.ticker}`)}
-                                                    className="flex-1 h-7 text-[9px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                    className="flex-1 h-7 text-[10px] font-black uppercase tracking-wider border-border hover:bg-muted"
                                                 >
                                                     Research
                                                 </Button>
@@ -458,7 +467,7 @@ export default function ResearchExplorer() {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => navigate(`/risk/${row.ticker}`)}
-                                                    className="flex-1 h-7 text-[9px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                    className="flex-1 h-7 text-[10px] font-black uppercase tracking-wider border-border hover:bg-muted"
                                                 >
                                                     Risk
                                                 </Button>
@@ -471,7 +480,7 @@ export default function ResearchExplorer() {
                             <table className="w-full border-collapse text-left">
                                 <thead className="sticky top-0 bg-card z-10 transition-colors">
                                     <tr className="border-b border-border">
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-12">
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground w-12">
                                             <input
                                                 type="checkbox"
                                                 checked={results.length > 0 && selectedTickers.length === results.length}
@@ -479,12 +488,12 @@ export default function ResearchExplorer() {
                                                 className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
                                             />
                                         </th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
-                                        <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border font-mono text-xs">
@@ -509,19 +518,19 @@ export default function ResearchExplorer() {
                                                 <div className="flex items-center gap-2">
                                                     <span>{row.ticker}</span>
                                                     <span className={cn(
-                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono",
+                                                        "text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono",
                                                         isIndianAsset(row.ticker) ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                                     )}>
                                                         {row.exchange ?? getMarketLabel(row.ticker)}
                                                     </span>
                                                     <WatchlistButton ticker={row.ticker} />
                                                 </div>
-                                                <div className="text-[10px] font-sans font-medium text-muted-foreground truncate max-w-[260px]">{row.name}</div>
+                                                <div className="text-[11px] font-sans font-medium text-muted-foreground truncate max-w-[260px]">{row.name}</div>
                                             </td>
                                             <td className="px-6 py-4 text-foreground/90 font-bold">
-                                                {row.tracked === false
+                                                {row.price === "N/A" && row.tracked === false
                                                     ? <span className="font-sans font-normal text-muted-foreground">Open to load</span>
-                                                    : <>{row.price} <DayChange pct={row.change_pct} className="text-[10px] ml-1" /></>}
+                                                    : <>{row.price} <DayChange pct={row.change_pct} className="text-[11px] ml-1" /></>}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
                                             <td className="px-6 py-4">
@@ -566,7 +575,7 @@ export default function ResearchExplorer() {
             </div>
 
             <footer className="h-8 flex items-center border-t border-border bg-card px-6 shrink-0 z-20 transition-colors">
-                <div className="flex-1 flex items-center justify-between gap-4 text-[10px] text-muted-foreground/60 font-bold uppercase tracking-tight">
+                <div className="flex-1 flex items-center justify-between gap-4 text-[11px] text-muted-foreground/60 font-bold uppercase tracking-tight">
                     <span className="flex items-center gap-1.5">
                         <Clock className="size-3" /> Prices updated: {latestPriceAt ? timeAgo(latestPriceAt) : "—"}
                     </span>

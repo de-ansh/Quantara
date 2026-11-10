@@ -163,14 +163,14 @@ export default function Risk() {
             {/* Ticker Selector Row */}
             <div className="flex flex-wrap items-center justify-between gap-4 bg-card border border-border p-3 px-4 shrink-0 rounded-sm">
                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mr-2">Quick Tickers:</span>
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mr-2">Quick Tickers:</span>
                     <div className="flex flex-wrap gap-1.5">
                         {universe.map((t) => (
                             <button
                                 key={t}
                                 onClick={() => handleSelectTicker(t)}
                                 className={cn(
-                                    "px-2.5 py-1 text-[10px] font-bold rounded-sm border transition-colors font-mono",
+                                    "px-2.5 py-1 text-[11px] font-bold rounded-sm border transition-colors font-mono",
                                     activeTicker === t
                                         ? "bg-primary border-primary text-white"
                                         : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -194,7 +194,7 @@ export default function Risk() {
                             className="bg-background border border-border rounded pl-8 pr-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary w-48 font-mono text-foreground"
                         />
                     </div>
-                    <Button type="submit" size="sm" className="h-7 text-[9px] font-black uppercase tracking-widest">Analyze</Button>
+                    <Button type="submit" size="sm" className="h-7 text-[10px] font-black uppercase tracking-widest">Analyze</Button>
                 </form>
             </div>
 
@@ -202,9 +202,9 @@ export default function Risk() {
             <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-q-border pb-6 shrink-0">
                 <div className="space-y-1">
                     <div className="flex items-center gap-3">
-                        <span className="text-primary font-mono text-[10px] font-black uppercase tracking-widest">Equity Intelligence</span>
+                        <span className="text-primary font-mono text-[11px] font-black uppercase tracking-widest">Equity Intelligence</span>
                         <div className="size-1 rounded-full bg-q-border" />
-                        <span className="text-muted-foreground font-mono text-[10px] font-black uppercase tracking-widest leading-none">Live Data Feed</span>
+                        <span className="text-muted-foreground font-mono text-[11px] font-black uppercase tracking-widest leading-none">Live Data Feed</span>
                     </div>
                     <h2 className="text-3xl font-black tracking-tighter uppercase text-foreground leading-none">
                         Asset: {activeTicker} | <span className={cn(
@@ -217,7 +217,7 @@ export default function Risk() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button variant="outline" size="sm" className="bg-q-surface border-q-border text-[10px] font-black uppercase tracking-[0.15em] hover:bg-muted h-9 px-4">
+                    <Button variant="outline" size="sm" className="bg-q-surface border-q-border text-[11px] font-black uppercase tracking-[0.15em] hover:bg-muted h-9 px-4">
                         <Download className="mr-2 size-3.5" />
                         Export Data
                     </Button>
@@ -225,7 +225,7 @@ export default function Risk() {
                         onClick={handleRefetch}
                         disabled={isLoading}
                         size="sm"
-                        className="bg-primary hover:brightness-110 text-primary-foreground text-[10px] font-black uppercase tracking-[0.15em] h-9 px-4"
+                        className="bg-primary hover:brightness-110 text-primary-foreground text-[11px] font-black uppercase tracking-[0.15em] h-9 px-4"
                     >
                         {isLoading ? "Recalculating..." : "Recalculate Model"}
                     </Button>
@@ -239,7 +239,7 @@ export default function Risk() {
             ) : (
                 <>
                     {riskData && riskData.assumed_inputs.length > 0 && (
-                        <div role="status" className="flex items-center gap-2 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider rounded-sm">
+                        <div role="status" className="flex items-center gap-2 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[11px] font-mono uppercase tracking-wider rounded-sm">
                             <AlertTriangle className="size-3.5 shrink-0" />
                             <span>
                                 Estimate: no data for {riskData.assumed_inputs.map(i => i.replace(/_/g, " ")).join(", ")}.
@@ -253,8 +253,8 @@ export default function Risk() {
                         {kpis.map((stat, i) => (
                             <Card key={i} className="bg-q-surface border-q-border shadow-none overflow-hidden group">
                                 <CardHeader className="p-5 pb-2 flex-row items-start justify-between space-y-0">
-                                    <CardTitle className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] leading-none">{stat.label}</CardTitle>
-                                    <Badge variant="outline" className={cn("text-[8px] font-black bg-transparent border-none p-0 leading-none", stat.status === "danger" ? "text-q-risk-high" : "text-q-risk-low")}>{stat.trend}</Badge>
+                                    <CardTitle className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] leading-none">{stat.label}</CardTitle>
+                                    <Badge variant="outline" className={cn("text-[10px] font-black bg-transparent border-none p-0 leading-none", stat.status === "danger" ? "text-q-risk-high" : "text-q-risk-low")}>{stat.trend}</Badge>
                                 </CardHeader>
                                 <CardContent className="p-5 pt-0">
                                     <div className="text-2xl font-black tabular-nums tracking-tighter text-foreground leading-none mb-4">{stat.value}</div>
@@ -283,14 +283,14 @@ export default function Risk() {
                             <CardHeader className="p-6 border-b border-q-border flex-row items-center justify-between space-y-0 bg-background/20">
                                 <div>
                                     <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Factor Risk Attribution</CardTitle>
-                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Marginal contribution to total portfolio risk</p>
+                                    <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Marginal contribution to total portfolio risk</p>
                                 </div>
-                                <Badge variant="outline" className="text-[9px] font-black font-mono text-muted-foreground border-q-border rounded-sm h-6">MODEL: MULTI-FACTOR</Badge>
+                                <Badge variant="outline" className="text-[10px] font-black font-mono text-muted-foreground border-q-border rounded-sm h-6">MODEL: MULTI-FACTOR</Badge>
                             </CardHeader>
                             <CardContent className="p-6 space-y-6 flex-1 overflow-auto custom-scrollbar">
                                 {factors.map((f, i) => (
                                     <div key={i} className="space-y-2">
-                                        <div className="flex justify-between text-[10px] font-black uppercase tracking-widest font-mono">
+                                        <div className="flex justify-between text-[11px] font-black uppercase tracking-widest font-mono">
                                             <span className="text-muted-foreground">{f.name}</span>
                                             <span className="text-foreground">{f.val}</span>
                                         </div>
@@ -305,10 +305,10 @@ export default function Risk() {
                                 <Separator className="bg-q-border mb-4" />
                                 <div className="flex justify-end">
                                     <div className="text-right">
-                                        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em] mb-1">Total Attributed Risk</p>
+                                        <p className="text-[11px] text-muted-foreground font-black uppercase tracking-[0.2em] mb-1">Total Attributed Risk</p>
                                         <div className="flex items-baseline justify-end gap-3 text-3xl font-black tabular-nums tracking-tighter text-foreground leading-none">
                                             {score(overallRiskScore)}%
-                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Residual: {overallRiskScore === undefined ? "—" : (100 - overallRiskScore).toFixed(0)}%</span>
+                                            <span className="text-[11px] font-black text-muted-foreground uppercase tracking-widest">Residual: {overallRiskScore === undefined ? "—" : (100 - overallRiskScore).toFixed(0)}%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -319,11 +319,11 @@ export default function Risk() {
                         <Card className="lg:col-span-4 bg-q-surface border-q-border shadow-none flex flex-col">
                             <CardHeader className="p-6 border-b border-q-border bg-background/20">
                                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Scenario Analysis (Shock Engine)</CardTitle>
-                                <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Projected % impact under market shocks</p>
+                                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">Projected % impact under market shocks</p>
                             </CardHeader>
                             <CardContent className="p-4 space-y-2 flex-1 overflow-auto custom-scrollbar">
                                 {allScenarios.length === 0 && (
-                                    <p className="p-3 text-[10px] text-muted-foreground uppercase tracking-widest">No stress scenarios available</p>
+                                    <p className="p-3 text-[11px] text-muted-foreground uppercase tracking-widest">No stress scenarios available</p>
                                 )}
                                 {allScenarios.slice(0, 4).map((s) => {
                                     const Icon = getScenarioIcon(s.id)
@@ -348,8 +348,8 @@ export default function Risk() {
                                                     <Icon className="size-4" />
                                                 </div>
                                                 <div>
-                                                    <p className="text-[10px] font-black uppercase tracking-tight text-foreground">{s.name}</p>
-                                                    <p className="text-[8px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.type}</p>
+                                                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground">{s.name}</p>
+                                                    <p className="text-[10px] text-muted-foreground font-black uppercase font-mono tracking-widest">{s.type}</p>
                                                 </div>
                                             </div>
                                             <span className={cn(
@@ -363,13 +363,13 @@ export default function Risk() {
                                 })}
 
                                 {activeScenario && (
-                                    <div className="p-3 rounded-md bg-background/80 border border-q-border/60 text-[10px] space-y-1.5 mt-2">
+                                    <div className="p-3 rounded-md bg-background/80 border border-q-border/60 text-[11px] space-y-1.5 mt-2">
                                         <div className="flex justify-between font-mono font-bold">
-                                            <span className="text-muted-foreground uppercase text-[9px]">Primary Driver:</span>
-                                            <span className="text-foreground text-[9px] text-right truncate ml-2 uppercase">{primaryDriver(activeScenario)}</span>
+                                            <span className="text-muted-foreground uppercase text-[10px]">Primary Driver:</span>
+                                            <span className="text-foreground text-[10px] text-right truncate ml-2 uppercase">{primaryDriver(activeScenario)}</span>
                                         </div>
                                         {activeScenario.narrative && (
-                                            <p className="text-[9px] text-muted-foreground font-mono leading-snug">{activeScenario.narrative}</p>
+                                            <p className="text-[10px] text-muted-foreground font-mono leading-snug">{activeScenario.narrative}</p>
                                         )}
                                     </div>
                                 )}
@@ -378,7 +378,7 @@ export default function Risk() {
                                 <Button
                                     variant="secondary"
                                     onClick={() => setIsAdvancedOpen(true)}
-                                    className="w-full text-[10px] font-black uppercase tracking-[0.2em] h-10 border border-q-border/50"
+                                    className="w-full text-[11px] font-black uppercase tracking-[0.2em] h-10 border border-q-border/50"
                                 >
                                     Load Advanced Scenarios ({allScenarios.length})
                                 </Button>
@@ -392,7 +392,7 @@ export default function Risk() {
                             <CardHeader className="p-6 border-b border-q-border bg-background/20 flex-row items-center justify-between space-y-0">
                                 <div>
                                     <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Historical Max Drawdown</CardTitle>
-                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
+                                    <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
                                         Historical vs. Projected Stressed Performance
                                         {riskData?.max_drawdown !== undefined && (
                                             <span className="ml-2 font-mono text-q-risk-high font-bold">
@@ -401,7 +401,7 @@ export default function Risk() {
                                         )}
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-4 text-[9px] font-black font-mono tracking-widest">
+                                <div className="flex items-center gap-4 text-[10px] font-black font-mono tracking-widest">
                                     <div className="flex items-center gap-1.5 text-primary"><div className="size-2 bg-primary rounded-full" /> HIST</div>
                                     <div className="flex items-center gap-1.5 text-q-risk-high"><div className="size-2 bg-q-risk-high rounded-full" /> PROJ STRESS</div>
                                 </div>
@@ -475,8 +475,8 @@ export default function Risk() {
                                             />
                                         </LineChart>
                                     </ResponsiveContainer>
-                                    <div className="absolute top-2 left-10 text-[9px] font-black font-mono text-muted-foreground bg-background/50 px-1">0% PEAK</div>
-                                    <div className="absolute bottom-6 left-10 text-[9px] font-black font-mono text-q-risk-high bg-q-risk-high/10 px-1 border border-q-risk-high/20">
+                                    <div className="absolute top-2 left-10 text-[10px] font-black font-mono text-muted-foreground bg-background/50 px-1">0% PEAK</div>
+                                    <div className="absolute bottom-6 left-10 text-[10px] font-black font-mono text-q-risk-high bg-q-risk-high/10 px-1 border border-q-risk-high/20">
                                         HIST MAX DD: {riskData?.max_drawdown ? `${(riskData.max_drawdown * 100).toFixed(1)}%` : "—"} | WORST SCENARIO: {allScenarios.length ? `${Math.min(...allScenarios.map(sc => sc.impact_pct)).toFixed(1)}%` : "—"}
                                     </div>
                                 </div>
@@ -488,11 +488,11 @@ export default function Risk() {
                             <CardHeader className="p-6 border-b border-q-border bg-background/20 flex-row items-center justify-between space-y-0">
                                 <div>
                                     <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Sector Peer & Cross-Asset Correlation</CardTitle>
-                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
+                                    <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-0.5">
                                         Pairwise co-movement with {activeTicker} ({corrData?.sector || "sector unknown"})
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-2 font-mono text-[9px] font-black uppercase">
+                                <div className="flex items-center gap-2 font-mono text-[10px] font-black uppercase">
                                     <span className="text-muted-foreground">{corrData?.benchmark_ticker || (isIndianAsset(activeTicker) ? "NIFTY 50" : "S&P 500")}:</span>
                                     <Badge variant="outline" className="text-primary font-mono font-bold bg-primary/10 border-primary/30">
                                         ρ = {corrData ? corrData.benchmark_correlation.toFixed(2) : "—"}
@@ -519,7 +519,7 @@ export default function Risk() {
                                                 key={peer.ticker}
                                                 onClick={() => handleSelectTicker(peer.ticker)}
                                                 className={cn(
-                                                    "p-2.5 text-[9px] font-black flex flex-col justify-between transition-all hover:scale-105 hover:z-10 cursor-pointer border rounded-sm group shadow-md",
+                                                    "p-2.5 text-[10px] font-black flex flex-col justify-between transition-all hover:scale-105 hover:z-10 cursor-pointer border rounded-sm group shadow-md",
                                                     colorClass
                                                 )}
                                             >
@@ -547,7 +547,7 @@ export default function Risk() {
                                     })}
                                 </div>
                             </CardContent>
-                            <div className="p-4 px-6 bg-q-surface flex flex-wrap justify-between items-center text-[9px] font-black font-mono text-muted-foreground uppercase tracking-[0.2em] gap-2">
+                            <div className="p-4 px-6 bg-q-surface flex flex-wrap justify-between items-center text-[10px] font-black font-mono text-muted-foreground uppercase tracking-[0.2em] gap-2">
                                 <span className="flex items-center gap-1.5 text-emerald-400"><div className="size-2 bg-emerald-500 rounded-full" /> Negative / Hedge</span>
                                 <span className="flex items-center gap-1.5 text-blue-400"><div className="size-2 bg-blue-500 rounded-full" /> Low Correlation</span>
                                 <span className="flex items-center gap-1.5 text-amber-400"><div className="size-2 bg-amber-500 rounded-full" /> Moderate</span>
@@ -574,34 +574,34 @@ export default function Risk() {
                     {/* Factor Sensitivities Summary */}
                     {riskData?.factor_sensitivities && (
                         <div className="p-3 bg-muted/40 border border-border rounded-sm space-y-2">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Estimated Factor Betas (&beta;):</span>
+                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Estimated Factor Betas (&beta;):</span>
                             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center font-mono">
                                 <div className="p-2 bg-background border border-border rounded-sm">
-                                    <div className="text-[9px] text-muted-foreground">Market Beta</div>
+                                    <div className="text-[10px] text-muted-foreground">Market Beta</div>
                                     <div className="text-xs font-bold text-foreground">
                                         {riskData.factor_sensitivities.market_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
-                                    <div className="text-[9px] text-muted-foreground">Rate Beta</div>
+                                    <div className="text-[10px] text-muted-foreground">Rate Beta</div>
                                     <div className="text-xs font-bold text-foreground">
                                         {riskData.factor_sensitivities.interest_rate_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
-                                    <div className="text-[9px] text-muted-foreground">Oil Beta</div>
+                                    <div className="text-[10px] text-muted-foreground">Oil Beta</div>
                                     <div className="text-xs font-bold text-foreground">
                                         {riskData.factor_sensitivities.oil_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
-                                    <div className="text-[9px] text-muted-foreground">Tech Mom Beta</div>
+                                    <div className="text-[10px] text-muted-foreground">Tech Mom Beta</div>
                                     <div className="text-xs font-bold text-foreground">
                                         {riskData.factor_sensitivities.tech_momentum_beta?.toFixed(2) ?? "—"}
                                     </div>
                                 </div>
                                 <div className="p-2 bg-background border border-border rounded-sm">
-                                    <div className="text-[9px] text-muted-foreground">Credit Beta</div>
+                                    <div className="text-[10px] text-muted-foreground">Credit Beta</div>
                                     <div className="text-xs font-bold text-foreground">
                                         {riskData.factor_sensitivities.credit_spread_beta?.toFixed(2) ?? "—"}
                                     </div>
@@ -630,7 +630,7 @@ export default function Risk() {
                                             </div>
                                             <div>
                                                 <div className="text-xs font-bold uppercase">{s.name}</div>
-                                                <div className="text-[10px] text-muted-foreground font-mono">{s.type}</div>
+                                                <div className="text-[11px] text-muted-foreground font-mono">{s.type}</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
@@ -643,13 +643,13 @@ export default function Risk() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono pt-1 border-t border-border/40">
+                                    <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono pt-1 border-t border-border/40">
                                         <span>Driver: <strong className="text-foreground uppercase">{primaryDriver(s)}</strong></span>
                                         {s.narrative && <span className="text-right truncate ml-2">{s.narrative}</span>}
                                     </div>
 
                                     {s.factor_breakdown && Object.keys(s.factor_breakdown).length > 0 && (
-                                        <div className="grid grid-cols-2 gap-1.5 pt-1 text-[9px] font-mono bg-muted/30 p-2 rounded">
+                                        <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono bg-muted/30 p-2 rounded">
                                             {Object.entries(s.factor_breakdown).map(([factor, val]) => (
                                                 <div key={factor} className="flex justify-between">
                                                     <span className="text-muted-foreground">{factor}:</span>

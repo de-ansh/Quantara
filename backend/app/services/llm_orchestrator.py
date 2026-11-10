@@ -57,6 +57,39 @@ class StructuredAnalysisSchema(BaseModel):
     opportunities: list[str] = Field(..., description="Market opportunities")
     threats: list[str] = Field(..., description="Market threats")
     confidence_score: float = Field(..., ge=0, le=100, description="Confidence in analysis")
+    outlook_score: float = Field(..., ge=0, le=100, description="0 clearly bearish, 50 neutral, 100 clearly bullish")
+
+
+PROMPT_HISTORY_POINTS = 5
+
+
+def prompt_raw_data(raw: dict[str, Any]) -> dict[str, Any]:
+    """raw_data as the model sees it: no price table, the last few annual values per metric.
+
+    SEC company facts hold every value reported since ~2008, and the price DataFrame is ~250 rows;
+    pasted whole they push a US stock's prompt past the model's context (AAPL: ~400k chars).
+    """
+    history = {
+        name: [
+            {"end": r.get("end"), "val": r.get("val")}
+            for r in [r for r in records if r.get("form") == "10-K"][-PROMPT_HISTORY_POINTS:]
+        ]
+        for name, records in (raw.get("historical_metrics") or {}).items()
+    }
+    return {
+        **{k: v for k, v in raw.items() if k not in ("price_df", "historical_metrics", "transcripts")},
+        "annual_history": history,
+    }
+
+
+def research_score(outlook: float | None, confidence: float | None) -> float | None:
+    """The stock's research score: the outlook, pulled toward neutral (50) by low confidence.
+
+    A bullish read on thin data shouldn't rank like a bullish read on complete data.
+    """
+    if outlook is None or confidence is None:
+        return None
+    return 50 + (outlook - 50) * confidence / 100
 
 
 async def run_risk_pipeline(db: AsyncSession, ticker: str, sec_user_agent: str | None) -> AnalysisState:
@@ -391,7 +424,7 @@ class LLMOrchestrator:
             if stock and stock.sector:
                 sector = stock.sector
         if not sector:
-            sector = "Technology"
+            sector = "Unknown"  # neutral sector risk (50); "Technology" would add tech's 65 to any stock
 
         pe_ratio = raw_data.get("pe_ratio")
         price_to_book = raw_data.get("price_to_book")
@@ -408,6 +441,7 @@ class LLMOrchestrator:
             pe_ratio=pe_ratio,
             price_to_book=price_to_book,
             price_to_sales=price_to_sales,
+            max_drawdown=computed.get("max_drawdown"),
         )
 
         drawdown_val, drawdown_series = engine.generate_drawdown_series(
@@ -468,9 +502,9 @@ class LLMOrchestrator:
                 state["transcript_chunks"] = []
                 state["qualitative_excerpts"] = []
                 return state
+            # Not copied into raw_data: the prompt pastes raw_data whole, and a full transcript can
+            # exceed the model's context (NVDA: 195k tokens). The top-K excerpts below carry it.
             state["transcripts"] = [transcript_data]
-            if "raw_data" in state:
-                state["raw_data"]["transcripts"] = [transcript_data]
 
             # 2. Chunk transcript into semantic passages
             chunks = provider.chunk_transcript(transcript_data, chunk_size=500, chunk_overlap=100)
@@ -524,6 +558,13 @@ CRITICAL RULES:
 4. If data is missing, acknowledge it in your analysis
 5. Provide confidence scores based on data completeness
 6. Synthesize executive commentary and qualitative excerpts into key insights, strengths, and risks
+7. outlook_score is your overall view of the stock from this data, weighing growth, profitability,
+   valuation, balance sheet, recent price trend and risks: 0 = clearly bearish, 50 = neutral or mixed,
+   100 = clearly bullish. It is independent of confidence_score; do not default to 50 when the data
+   points one way. Use the whole range, for example: a long price decline with weak or unstable
+   earnings 10-30; deteriorating fundamentals or stretched valuation 30-45; mixed signals 45-55;
+   solid profitable business at a fair price 60-75; strong growth, margins and balance sheet with
+   reasonable valuation 75-90.
 
 Output must be valid JSON matching this schema:
 {
@@ -534,7 +575,8 @@ Output must be valid JSON matching this schema:
     "weaknesses": ["string"],
     "opportunities": ["string"],
     "threats": ["string"],
-    "confidence_score": float (0-100)
+    "confidence_score": float (0-100),
+    "outlook_score": float (0-100)
 }"""
 
         # Format qualitative excerpts
@@ -553,7 +595,7 @@ Output must be valid JSON matching this schema:
 Ticker: {state["ticker"]}
 
 Raw Data:
-{state.get("raw_data", {})}
+{prompt_raw_data(state.get("raw_data") or {})}
 
 Computed Metrics:
 {state.get("computed_metrics", {})}
@@ -661,7 +703,7 @@ Generate a structured analysis based on this data.
             risk_classification = state.get("risk_classification", {})
             risk_score = risk_classification.get("risk_score")
             final_output = state.get("final_output") or {}
-            research_score = final_output.get("confidence_score")
+            score = research_score(final_output.get("outlook_score"), final_output.get("confidence_score"))
 
             sector = state.get("raw_data", {}).get("sector") or (
                 stock.sector if stock else "Technology"
@@ -688,7 +730,7 @@ Generate a structured analysis based on this data.
                     name=ticker,
                     sector=sector,
                     risk_score=risk_score,
-                    research_score=research_score,
+                    research_score=score,
                     pe_ratio=pe_ratio,
                     beta=beta,
                     market_cap=market_cap_val,
@@ -698,7 +740,7 @@ Generate a structured analysis based on this data.
                 db.add(stock)
             else:
                 stock.risk_score = risk_score
-                stock.research_score = research_score
+                stock.research_score = score
                 if sector and sector != "Unknown":
                     stock.sector = sector
                 stock.pe_ratio = pe_ratio

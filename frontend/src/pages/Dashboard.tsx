@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import DayChange from "@/components/DayChange"
 import AdviceNotice from "@/components/AdviceNotice"
+import TrackRecordCard from "@/components/TrackRecordCard"
 
 interface StatItem {
     label: string
@@ -99,7 +100,7 @@ export default function Dashboard() {
         <div className="p-4 space-y-4 flex flex-col h-full bg-background overflow-hidden">
             {/* Macro Alert Banner */}
             {latestAlert && (
-                <div className="flex items-center gap-3 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[10px] font-mono uppercase tracking-wider shrink-0 rounded-sm">
+                <div className="flex items-center gap-3 px-4 py-2 border border-amber-500/25 bg-amber-500/5 text-amber-500 text-[11px] font-mono uppercase tracking-wider shrink-0 rounded-sm">
                     <span className="flex items-center gap-1.5 shrink-0 font-bold">
                         <AlertTriangle className="size-3.5 animate-pulse" />
                         MACRO_ALERT
@@ -128,7 +129,7 @@ export default function Dashboard() {
                                         <span className="absolute text-lg font-bold tracking-tighter text-foreground">{stat.value}</span>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-muted-foreground text-[9px] font-medium uppercase tracking-tight">{stat.subtext}</div>
+                                        <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-tight">{stat.subtext}</div>
                                     </div>
                                 </div>
                             )}
@@ -137,7 +138,7 @@ export default function Dashboard() {
                                 <>
                                     <div className="text-lg font-bold text-foreground leading-tight mb-2">{stat.value}</div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-tighter">{stat.subtext}</span>
+                                        <span className="text-muted-foreground text-[11px] uppercase font-bold tracking-tighter">{stat.subtext}</span>
                                     </div>
                                 </>
                             )}
@@ -150,7 +151,7 @@ export default function Dashboard() {
                                             ? <ArrowDown className="text-q-risk-high size-4" />
                                             : <ArrowUpRight className="text-q-risk-low size-4" />}
                                     </div>
-                                    <div className="text-muted-foreground text-[9px] font-medium uppercase tracking-tight">vs prev close</div>
+                                    <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-tight">vs prev close</div>
                                 </>
                             )}
 
@@ -165,7 +166,7 @@ export default function Dashboard() {
                                             <div key={idx} className={cn("flex-1", idx < vixSegments ? (idx < 2 ? "bg-q-risk-low" : idx < 4 ? "bg-amber-500" : "bg-q-risk-high") : "bg-q-border")} />
                                         ))}
                                     </div>
-                                    <div className="flex justify-between mt-1 text-[9px] text-muted-foreground uppercase font-black tracking-widest">
+                                    <div className="flex justify-between mt-1 text-[10px] text-muted-foreground uppercase font-black tracking-widest">
                                         <span>Low</span>
                                         <span>High</span>
                                     </div>
@@ -182,7 +183,7 @@ export default function Dashboard() {
                     <h2 id="watchlist-heading" className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                         <Star className="size-3.5 text-amber-400 fill-current" /> Watchlist
                     </h2>
-                    <Link to="/explorer" className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline">
+                    <Link to="/explorer" className="text-[11px] font-bold uppercase tracking-wider text-primary hover:underline">
                         Browse stocks
                     </Link>
                 </div>
@@ -200,10 +201,10 @@ export default function Dashboard() {
                                 >
                                     <span className="flex items-center justify-between gap-2 font-mono">
                                         <span className="text-xs font-black text-foreground">{w.ticker}</span>
-                                        <DayChange pct={w.change_pct} className="text-[9px]" />
+                                        <DayChange pct={w.change_pct} className="text-[10px]" />
                                     </span>
                                     <span className="text-sm font-bold font-mono text-foreground">{w.price}</span>
-                                    <span className="text-[9px] uppercase text-muted-foreground font-bold">Risk {w.risk?.toFixed(0) ?? "—"} · {w.signal}</span>
+                                    <span className="text-[10px] uppercase text-muted-foreground font-bold">Risk {w.risk?.toFixed(0) ?? "—"} · {w.signal}</span>
                                 </Link>
                             </li>
                         ))}
@@ -211,12 +212,14 @@ export default function Dashboard() {
                 )}
             </section>
 
+            <TrackRecordCard />
+
             <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
                 {/* Opportunities Table */}
                 <section className="flex-1 min-w-0 bg-q-surface border border-q-border flex flex-col overflow-hidden">
                     <div className="px-4 py-3 border-b border-q-border flex items-center justify-between bg-q-surface shrink-0">
                         <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Top Risk-Aligned Opportunities</h2>
-                        <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-widest">
+                        <span className="text-muted-foreground font-medium text-[11px] uppercase tracking-widest">
                             Matched to your {profile?.risk_level ?? "Moderate"} profile
                         </span>
                     </div>
@@ -224,18 +227,18 @@ export default function Dashboard() {
                     <div className="flex-1 overflow-auto custom-scrollbar relative">
                         {isLoadingOpportunities && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
-                                <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Synchronizing_Engine...</div>
+                                <div className="text-[11px] font-black tracking-widest uppercase animate-pulse">Synchronizing_Engine...</div>
                             </div>
                         )}
                         <Table>
                             <TableHeader className="bg-q-surface sticky top-0 z-10">
                                 <TableRow className="border-q-border hover:bg-transparent">
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4">Ticker</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-right">Risk Score</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10">Research Score</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-center">Signal</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-right">Score</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 text-center">Alignment</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10 px-4">Ticker</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10 text-right">Risk Score</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10">Research Score</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10 text-center">Signal</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10 text-right">Score</TableHead>
+                                    <TableHead className="text-[11px] font-black uppercase tracking-widest h-10 text-center">Alignment</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-xs">
@@ -257,7 +260,7 @@ export default function Dashboard() {
                                                 <div className="flex-1 h-1.5 bg-q-border rounded-full overflow-hidden">
                                                     <div className="h-full bg-primary transition-all duration-700 shadow-[0_0_8px_rgba(var(--primary),0.5)]" style={{ width: `${row.research}%` }} />
                                                 </div>
-                                                <span className="w-4 text-right font-mono text-[10px] text-muted-foreground font-bold">{row.research}</span>
+                                                <span className="w-4 text-right font-mono text-[11px] text-muted-foreground font-bold">{row.research}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="px-4 py-3">
@@ -270,7 +273,7 @@ export default function Dashboard() {
                                         </TableCell>
                                         <TableCell className="px-4 py-3 text-right font-mono font-bold text-foreground">{row.score}</TableCell>
                                         <TableCell className="px-4 py-3 text-center">
-                                            <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-black text-[10px] tracking-tight">{row.alignment}</Badge>
+                                            <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-black text-[11px] tracking-tight">{row.alignment}</Badge>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -287,10 +290,10 @@ export default function Dashboard() {
                             Live Signal Feed
                         </h2>
                     </div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed p-0 relative">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[11px] leading-relaxed p-0 relative">
                         {isLoadingSignals && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-20">
-                                <div className="text-[10px] font-black tracking-widest uppercase animate-pulse">Listening_to_Market...</div>
+                                <div className="text-[11px] font-black tracking-widest uppercase animate-pulse">Listening_to_Market...</div>
                             </div>
                         )}
                         {(liveSignals.length > 0 ? liveSignals : (marketData?.alerts ?? []) as typeof liveSignals).map((item, i) => (

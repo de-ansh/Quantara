@@ -85,6 +85,46 @@ api.interceptors.response.use((response) => {
     return Promise.reject(error);
 });
 
+/**
+ * POST whose plain-text response is handed over piece by piece (axios can't stream in browsers).
+ * Uses the same in-memory token, refreshing it once on a 401 like the axios interceptor.
+ */
+export async function postStream(path: string, body: unknown, onText: (chunk: string) => void): Promise<void> {
+    const send = () => fetch(`${API_BASE_URL}${path}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        body: JSON.stringify(body),
+    });
+    let resp = await send();
+    if (resp.status === 401) {
+        await refreshAccessToken();
+        resp = await send();
+    }
+    if (!resp.ok || !resp.body) {
+        const detail = await resp.json().then(d => d?.detail).catch(() => undefined);
+        throw new Error(typeof detail === 'string' ? detail : `Request failed (${resp.status})`);
+    }
+    const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+    for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        onText(value);
+    }
+}
+
+/**
+ * The listed ticker meant by a typed symbol or name ("ITC" -> "ITC.NS", "infosys" -> "INFY.NS");
+ * null when nothing is listed under it, the input as typed if the lookup itself fails.
+ */
+export async function resolveTicker(text: string): Promise<string | null> {
+    try {
+        return (await api.get<{ ticker: string }>('/stocks/resolve', { params: { q: text.trim() } })).data.ticker;
+    } catch (err) {
+        return axios.isAxiosError(err) && err.response?.status === 404 ? null : text.trim().toUpperCase();
+    }
+}
+
 /** The API's string `detail` message from a failed request, if there is one. */
 export function apiErrorDetail(err: unknown): string | undefined {
     if (!axios.isAxiosError(err)) return undefined;

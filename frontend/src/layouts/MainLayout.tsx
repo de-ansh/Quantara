@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import CommandPalette from "@/components/CommandPalette"
 import ChatAssistant from "@/components/ChatAssistant"
+import StaleDataBanner from "@/components/StaleDataBanner"
 import AlertsBell from "@/components/AlertsBell"
 import {
     LayoutDashboard,
@@ -211,7 +212,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                 <Search className="size-4 mr-2.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                                 <span className="truncate">Universal Research Search...</span>
                             </div>
-                            <kbd className="hidden sm:inline-flex items-center gap-0.5 pointer-events-none h-5 select-none rounded border border-border bg-background px-1.5 font-mono text-[10px] font-bold text-muted-foreground">
+                            <kbd className="hidden sm:inline-flex items-center gap-0.5 pointer-events-none h-5 select-none rounded border border-border bg-background px-1.5 font-mono text-[11px] font-bold text-muted-foreground">
                                 <span className="text-xs">⌘</span>K
                             </kbd>
                         </button>
@@ -283,7 +284,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                 <DropdownMenuLabel className="font-normal">
                                     <div className="flex flex-col space-y-1">
                                         <p className="text-xs font-bold leading-none text-foreground">{user?.email || "Analyst Session"}</p>
-                                        <p className="text-[10px] leading-none text-muted-foreground font-mono">
+                                        <p className="text-[11px] leading-none text-muted-foreground font-mono">
                                             {user?.risk_level ? `${user.risk_level} Risk Tier` : "Standard Access"}
                                         </p>
                                     </div>
@@ -313,6 +314,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     </div>
                 </header>
 
+                <StaleDataBanner />
+
                 {/* Content Viewport */}
                 <main className="flex-1 overflow-y-auto bg-background/50 relative flex flex-col custom-scrollbar">
                     <div className="flex-1">
@@ -320,7 +323,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     </div>
 
                     <footer className="py-2.5 px-6 border-t border-border mt-auto bg-card/30 shrink-0">
-                        <p className="text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-medium text-center">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-medium text-center">
                             Institutional-grade financial intelligence. Disclaimer: This platform provides research insights, not financial advice.
                         </p>
                     </footer>

@@ -37,7 +37,7 @@ export default function PriceChart({ ticker }: { ticker: string }) {
                 <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-3">
                     Price History
                     {data && <DayChange pct={data.change_pct} className="text-xs normal-case" />}
-                    {data && <span className="text-[10px] text-muted-foreground font-normal normal-case">over {range}</span>}
+                    {data && <span className="text-[11px] text-muted-foreground font-normal normal-case">over {range}</span>}
                 </CardTitle>
                 <div role="group" aria-label="Chart range" className="flex border border-border rounded-sm overflow-hidden">
                     {RANGES.map(r => (
@@ -46,7 +46,7 @@ export default function PriceChart({ ticker }: { ticker: string }) {
                             type="button"
                             onClick={() => setRange(r)}
                             aria-pressed={r === range}
-                            className={cn("px-2.5 py-1 text-[10px] font-bold font-mono", r === range ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground")}
+                            className={cn("px-2.5 py-1 text-[11px] font-bold font-mono", r === range ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground")}
                         >
                             {r}
                         </button>

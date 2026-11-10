@@ -59,7 +59,7 @@ export default function ResetPassword() {
                 {done ? (
                     <div className="p-6 space-y-5">
                         <p className="text-sm text-white" role="status">{done}</p>
-                        <Link to="/login" className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
+                        <Link to="/login" className="text-[11px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit} className="p-6 space-y-5">
@@ -113,7 +113,7 @@ export default function ResetPassword() {
                         )}
 
                         {error && (
-                            <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                            <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-bold uppercase tracking-wider">
                                 {error}
                             </div>
                         )}
@@ -127,7 +127,7 @@ export default function ResetPassword() {
                         </button>
 
                         <div className="text-right">
-                            <Link to="/login" className="text-[10px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
+                            <Link to="/login" className="text-[11px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
                         </div>
                     </form>
                 )}

@@ -10,6 +10,7 @@ import yfinance as yf
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -209,3 +210,37 @@ def _build_alerts(quotes: dict[str, tuple[float, float]]) -> list[MarketAlert]:
         )
 
     return alerts
+
+
+PRICES_STALE_AFTER_HOURS = 2  # the price job stamps every stock each 15-minute pass, weekends included
+DIRECTORY_STALE_AFTER_HOURS = 48
+
+
+class DataHealthResponse(BaseModel):
+    """How old the app's own data is, so a stopped background job can't pass for live numbers."""
+
+    prices_updated_at: datetime | None
+    prices_stale: bool
+    directory_updated_at: datetime | None
+    directory_stale: bool
+
+
+@router.get("/data-health", response_model=DataHealthResponse)
+async def get_data_health(current_user: CurrentUser, db: DBSession) -> DataHealthResponse:
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from app.core.clock import utcnow
+    from app.models.listed_security import ListedSecurity
+    from app.models.stock import Stock
+
+    prices = (await db.execute(select(func.max(Stock.price_updated_at)))).scalar()
+    directory = (await db.execute(select(func.max(ListedSecurity.updated_at)))).scalar()
+    now = utcnow()
+    return DataHealthResponse(
+        prices_updated_at=prices,
+        prices_stale=prices is not None and now - prices > timedelta(hours=PRICES_STALE_AFTER_HOURS),
+        directory_updated_at=directory,
+        directory_stale=directory is not None and now - directory > timedelta(hours=DIRECTORY_STALE_AFTER_HOURS),
+    )

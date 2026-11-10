@@ -54,10 +54,10 @@ class YahooFinanceProvider:
         retries = 0
         while retries <= self.max_retries:
             try:
-                # yfinance is blocking, but we can run it in a thread pool if needed.
-                # For now, we'll call it directly as requested.
-                stock = yf.Ticker(ticker)
-                df = stock.history(start=start_date, end=end_date, interval=interval)
+                # yfinance blocks; in a thread so the event loop (requests, shutdown) isn't frozen
+                df = await asyncio.to_thread(
+                    lambda: yf.Ticker(ticker).history(start=start_date, end=end_date, interval=interval)
+                )
 
                 if df.empty:
                     logger.warning(f"No data found for {ticker}")

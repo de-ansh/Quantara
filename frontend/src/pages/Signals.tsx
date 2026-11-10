@@ -164,24 +164,24 @@ export default function Signals() {
             <div className="flex items-center justify-between px-6 py-3 border-b border-q-border bg-q-surface/50 shrink-0">
                 <div className="flex items-center gap-6">
                     <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Market Context</span>
+                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Market Context</span>
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-black text-foreground uppercase tracking-tight">
                                 {selectedSentimentTicker === "ALL" ? "All Tracked" : selectedSentimentTicker} Sentiment
                             </span>
-                            <Badge variant="secondary" className="bg-q-risk-low/10 text-q-risk-low border-none h-4 px-1.5 text-[9px] font-black font-mono">
+                            <Badge variant="secondary" className="bg-q-risk-low/10 text-q-risk-low border-none h-4 px-1.5 text-[10px] font-black font-mono">
                                 {sentimentCurve?.sentiment_trend ?? "—"}
                             </Badge>
                         </div>
                     </div>
                     <div className="h-8 w-px bg-q-border hidden sm:block" />
                     <div className="flex flex-col hidden sm:flex font-mono">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Signals</span>
+                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Active Signals</span>
                         <span className="text-sm font-black text-primary">{liveSignals.length}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mr-2 animate-pulse flex items-center gap-1.5 select-none">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mr-2 animate-pulse flex items-center gap-1.5 select-none">
                         <div className="size-1.5 rounded-full bg-q-risk-low animate-ping" /> 
                         {isAnyLoading ? "Synchronizing nodes..." : "Processing Live Feeds"}
                     </span>
@@ -201,7 +201,7 @@ export default function Signals() {
                 {/* Accumulation */}
                 <Card className="col-span-12 lg:col-span-6 flex flex-col bg-q-surface border-q-border overflow-hidden shadow-none">
                     <CardHeader className="p-4 border-b border-q-border bg-background/30 shrink-0">
-                        <CardTitle className="text-[10px] font-black uppercase tracking-[0.15em] flex items-center gap-2 text-foreground">
+                        <CardTitle className="text-[11px] font-black uppercase tracking-[0.15em] flex items-center gap-2 text-foreground">
                             <div className="size-1.5 rounded-full bg-primary" />
                             Top 13F Institutional Accumulation
                         </CardTitle>
@@ -210,16 +210,16 @@ export default function Signals() {
                         <Table>
                             <TableHeader className="bg-q-surface font-mono sticky top-0 z-10 border-b border-q-border">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Institutions</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Ownership Δ</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Date</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right text-muted-foreground">Institutions</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right text-muted-foreground">Ownership Δ</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Date</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
                                 {finalAccumulation.length === 0 && !loadingInst && (
                                     <TableRow className="hover:bg-transparent">
-                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[10px]">
+                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[11px]">
                                             No 13F accumulation signals yet
                                         </TableCell>
                                     </TableRow>
@@ -242,7 +242,7 @@ export default function Signals() {
                 {/* Insiders */}
                 <Card className="col-span-12 lg:col-span-6 flex flex-col bg-q-surface border-q-border overflow-hidden shadow-none">
                     <CardHeader className="p-4 border-b border-q-border bg-background/30 shrink-0">
-                        <CardTitle className="text-[10px] font-black uppercase tracking-[0.15em] flex items-center gap-2 text-foreground">
+                        <CardTitle className="text-[11px] font-black uppercase tracking-[0.15em] flex items-center gap-2 text-foreground">
                             <div className="size-1.5 rounded-full bg-amber-500" />
                             Recent Insider Buying Activity
                         </CardTitle>
@@ -251,16 +251,16 @@ export default function Signals() {
                         <Table>
                             <TableHeader className="bg-q-surface font-mono sticky top-0 z-10 border-b border-q-border">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="text-[9px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker / Insiders</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Bought</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right text-muted-foreground">Sold</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Net</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 px-4 text-muted-foreground">Ticker / Insiders</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right text-muted-foreground">Bought</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right text-muted-foreground">Sold</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase h-8 text-right pr-4 text-muted-foreground">Net</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="text-[11px] font-mono">
                                 {finalInsider.length === 0 && !loadingInsider && (
                                     <TableRow className="hover:bg-transparent">
-                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[10px]">
+                                        <TableCell colSpan={4} className="px-4 py-6 text-center text-muted-foreground uppercase tracking-widest text-[11px]">
                                             No Form 4 insider signals yet
                                         </TableCell>
                                     </TableRow>
@@ -269,7 +269,7 @@ export default function Signals() {
                                     <TableRow key={i} className="border-q-border hover:bg-primary/5 transition-colors cursor-crosshair">
                                         <TableCell className="px-4 py-2">
                                             <div className="font-bold text-foreground uppercase leading-none">{row.ticker}</div>
-                                            <div className="text-[9px] text-muted-foreground uppercase font-black mt-0.5">{row.insiders} insiders · {row.date}</div>
+                                            <div className="text-[10px] text-muted-foreground uppercase font-black mt-0.5">{row.insiders} insiders · {row.date}</div>
                                         </TableCell>
                                         <TableCell className="px-4 py-2 text-right font-black text-foreground">{row.buyVolume}</TableCell>
                                         <TableCell className="px-4 py-2 text-right font-black text-foreground">{row.sellVolume}</TableCell>
@@ -284,13 +284,13 @@ export default function Signals() {
                 {/* Signal Side Panel - Inlined for layout consistency across mobile/desktop */}
                 <Card className="col-span-12 flex flex-col bg-q-surface border-q-border overflow-hidden shadow-none min-h-[400px]">
                     <CardHeader className="p-4 border-b border-q-border bg-background/30 shrink-0 flex items-center justify-between flex-row">
-                        <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
+                        <CardTitle className="text-[11px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
                             <div className="size-2 rounded-full bg-q-risk-high animate-pulse shadow-[0_0_8px_rgba(var(--q-risk-high),1)]" />
                             Live Signal Feed
                         </CardTitle>
-                        {loadingLive && <span className="text-[9px] font-bold animate-pulse text-muted-foreground uppercase">Syncing...</span>}
+                        {loadingLive && <span className="text-[10px] font-bold animate-pulse text-muted-foreground uppercase">Syncing...</span>}
                     </CardHeader>
-                    <CardContent className="p-0 flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed relative">
+                    <CardContent className="p-0 flex-1 overflow-y-auto custom-scrollbar font-mono text-[11px] leading-relaxed relative">
                         {loadingLive && liveSignals.length === 0 && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10">
                                 <span className="animate-pulse tracking-widest">CONNECTING_TO_NODES...</span>
@@ -320,11 +320,11 @@ export default function Signals() {
                 <Card className="col-span-12 flex flex-col bg-q-surface border-q-border overflow-hidden min-h-[400px] shadow-none">
                     <CardHeader className="px-4 py-2 border-b border-q-border bg-background/30 shrink-0 flex-row items-center justify-between space-y-0 flex-wrap gap-2">
                         <div className="flex flex-wrap items-center gap-4 sm:gap-6">
-                            <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
+                            <CardTitle className="text-[11px] font-black uppercase tracking-[0.2em] flex items-center gap-2 text-foreground">
                                 <MessageSquare className="size-3.5 text-primary" />
                                 Quantitative Sentiment Analysis
                             </CardTitle>
-                            <div className="flex items-center gap-3 text-[9px] font-black font-mono tracking-widest text-muted-foreground">
+                            <div className="flex items-center gap-3 text-[10px] font-black font-mono tracking-widest text-muted-foreground">
                                 <div className="flex items-center gap-1.5">
                                     <div className="size-2 bg-primary rounded-full" />
                                     <span>SOCIAL: {sentimentCurve?.current_social_score?.toFixed(1) ?? "—"}%</span>
@@ -337,7 +337,7 @@ export default function Signals() {
                                     <Badge
                                         variant="outline"
                                         className={cn(
-                                            "text-[8px] font-mono font-bold uppercase border-none px-1.5 py-0",
+                                            "text-[10px] font-mono font-bold uppercase border-none px-1.5 py-0",
                                             sentimentCurve.sentiment_trend === "IMPROVING" ? "text-green-400 bg-green-500/10" :
                                             sentimentCurve.sentiment_trend === "DETERIORATING" ? "text-rose-400 bg-rose-500/10" :
                                             "text-muted-foreground bg-muted"
@@ -358,7 +358,7 @@ export default function Signals() {
                                         key={t}
                                         onClick={() => setSelectedSentimentTicker(t)}
                                         className={cn(
-                                            "px-2 py-0.5 text-[9px] font-mono font-bold rounded-sm border transition-colors",
+                                            "px-2 py-0.5 text-[10px] font-mono font-bold rounded-sm border transition-colors",
                                             selectedSentimentTicker === t
                                                 ? "bg-primary border-primary text-white"
                                                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -373,7 +373,7 @@ export default function Signals() {
                     <CardContent className="p-4 flex-1 flex flex-col bg-background/5">
                         <div className="flex-1 min-h-[280px] relative">
                             {!loadingSentiment && finalSentiment.length === 0 && (
-                                <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-muted-foreground uppercase tracking-widest z-10">
+                                <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-muted-foreground uppercase tracking-widest z-10">
                                     No sentiment data in the last 8 hours
                                 </div>
                             )}

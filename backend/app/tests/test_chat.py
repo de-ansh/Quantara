@@ -73,3 +73,55 @@ async def test_chat_rejects_a_conversation_not_ending_with_the_user(client):
         "/api/v1/chat/", json={"messages": [{"role": "assistant", "content": "hi"}]}, headers=await _headers(client)
     )
     assert resp.status_code == 422
+
+
+class FakeStreamingOpenAI:
+    """Streams a tool call split across chunks, then the answer in pieces."""
+
+    calls: list[list[dict]] = []
+
+    def __init__(self, **kwargs):
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, messages, stream=False, **kwargs):
+        assert stream
+        FakeStreamingOpenAI.calls.append(list(messages))
+        first_round = len(FakeStreamingOpenAI.calls) == 1
+
+        def chunk(content=None, tool=None):
+            return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=tool))])
+
+        def tool_piece(**kw):
+            fn = SimpleNamespace(name=kw.get("name"), arguments=kw.get("arguments"))
+            return [SimpleNamespace(index=0, id=kw.get("id"), function=fn)]
+
+        async def gen():
+            if first_round:
+                yield chunk(tool=tool_piece(id="c1", name="stock_snapshot", arguments='{"tick'))
+                yield chunk(tool=tool_piece(arguments='er": "AAPL"}'))
+            else:
+                for piece in ["**Hold**: ", "fairly ", "priced."]:
+                    yield chunk(content=piece)
+
+        return gen()
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_runs_tools_then_streams_the_answer(client, db_session, monkeypatch):
+    db_session.add(Stock(ticker="AAPL", name="Apple Inc.", sector="Technology", price=200.0, research_score=60.0, risk_score=50.0))
+    await db_session.commit()
+    FakeStreamingOpenAI.calls = []
+    monkeypatch.setattr(chat_api, "AsyncOpenAI", FakeStreamingOpenAI)
+
+    resp = await client.post(
+        "/api/v1/chat/stream",
+        json={"messages": [{"role": "user", "content": "Should I buy Apple?"}]},
+        headers=await _headers(client),
+    )
+
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/plain")
+    assert resp.text == "**Hold**: fairly priced."
+    # The split tool call was reassembled and answered from the database during the stream
+    assistant_call, tool_msg = FakeStreamingOpenAI.calls[1][-2:]
+    assert assistant_call["tool_calls"][0]["function"] == {"name": "stock_snapshot", "arguments": '{"ticker": "AAPL"}'}
+    assert json.loads(tool_msg["content"])["stock"]["name"] == "Apple Inc."
