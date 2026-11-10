@@ -1,8 +1,8 @@
 """Stock model for storing stock information and scores."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, Index, String, Text
+from sqlalchemy import Date, DateTime, Float, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.clock import utcnow
@@ -38,6 +38,15 @@ class Stock(Base):
     profit_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     dividend_yield_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     return_1y_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # From annual statements (refreshed weekly): ROCE on capital employed, 3-year compound growth
+    roce_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_cagr_3y_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_cagr_3y_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    statements_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # NSE shareholding: promoter stake and its change from the previous quarter, in percentage points
+    promoter_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    promoter_change_pp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    shareholding_quarter: Mapped[date | None] = mapped_column(Date, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Market cap in listing currency"
     )

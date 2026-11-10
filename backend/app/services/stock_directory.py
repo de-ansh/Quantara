@@ -233,6 +233,10 @@ async def run_periodic_directory_refresh(interval_seconds: int = DIRECTORY_REFRE
             if newest and utcnow() - newest < timedelta(seconds=interval_seconds):
                 return  # a restart within the day reuses the lists already loaded
             logger.info(f"Stock directory refreshed: {await refresh_directory(db)}")
+            from app.services.shareholding import refresh_shareholding
+
+            # Daily too: shareholding is filed quarterly, and the history fills in 50 stocks a run
+            logger.info(f"Promoter holding changes signalled: {await refresh_shareholding(db)}")
 
     while True:
         try:
