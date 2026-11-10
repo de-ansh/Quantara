@@ -7,6 +7,7 @@ from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.price_alert import PriceAlert
 from app.models.recommendation import Recommendation
 from app.models.research import ResearchReport
+from app.models.shareholding import Shareholding
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.user import User
@@ -27,4 +28,5 @@ __all__ = [
     "PriceAlert",
     "ListedSecurity",
     "VerdictSnapshot",
+    "Shareholding",
 ]

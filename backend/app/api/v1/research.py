@@ -52,6 +52,11 @@ class StockSearchItem(BaseModel):
     profit_margin_pct: float | None = None
     dividend_yield_pct: float | None = None
     return_1y_pct: float | None = None
+    roce_pct: float | None = None
+    revenue_cagr_3y_pct: float | None = None
+    profit_cagr_3y_pct: float | None = None
+    promoter_pct: float | None = None
+    promoter_change_pp: float | None = None
     exchange: str | None = None
     tracked: bool = True  # False: directory-only, no price or scores until someone opens it
 
@@ -122,6 +127,11 @@ def to_search_item(stock: Any) -> StockSearchItem:
         profit_margin_pct=stock.profit_margin_pct,
         dividend_yield_pct=stock.dividend_yield_pct,
         return_1y_pct=stock.return_1y_pct,
+        roce_pct=stock.roce_pct,
+        revenue_cagr_3y_pct=stock.revenue_cagr_3y_pct,
+        profit_cagr_3y_pct=stock.profit_cagr_3y_pct,
+        promoter_pct=stock.promoter_pct,
+        promoter_change_pp=stock.promoter_change_pp,
     )
 
 
@@ -151,7 +161,12 @@ async def search_stocks(
     profit_margin_min: float | None = None,
     dividend_yield_min: float | None = None,
     return_1y_min: float | None = None,
-    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|revenue_growth|profit_margin|dividend_yield|return_1y|risk)$")] = None,
+    roce_min: float | None = None,
+    revenue_cagr_3y_min: float | None = None,
+    profit_cagr_3y_min: float | None = None,
+    promoter_min: float | None = None,
+    promoter_change_min: float | None = None,
+    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|roce|revenue_growth|revenue_cagr_3y|profit_cagr_3y|profit_margin|dividend_yield|return_1y|promoter|promoter_change|risk)$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     track: bool = False,
@@ -231,6 +246,9 @@ async def search_stocks(
         (Stock.roe_pct, roe_min, True), (Stock.debt_to_equity, debt_to_equity_max, False),
         (Stock.revenue_growth_pct, revenue_growth_min, True), (Stock.profit_margin_pct, profit_margin_min, True),
         (Stock.dividend_yield_pct, dividend_yield_min, True), (Stock.return_1y_pct, return_1y_min, True),
+        (Stock.roce_pct, roce_min, True), (Stock.revenue_cagr_3y_pct, revenue_cagr_3y_min, True),
+        (Stock.profit_cagr_3y_pct, profit_cagr_3y_min, True), (Stock.promoter_pct, promoter_min, True),
+        (Stock.promoter_change_pp, promoter_change_min, True),
     ):
         if bound is not None:
             stmt = stmt.where(column >= bound if is_min else column <= bound)
@@ -240,6 +258,8 @@ async def search_stocks(
         "ticker": Stock.ticker, "market_cap": Stock.market_cap, "pe": Stock.pe_ratio, "roe": Stock.roe_pct,
         "revenue_growth": Stock.revenue_growth_pct, "profit_margin": Stock.profit_margin_pct,
         "dividend_yield": Stock.dividend_yield_pct, "return_1y": Stock.return_1y_pct, "risk": Stock.risk_score,
+        "roce": Stock.roce_pct, "revenue_cagr_3y": Stock.revenue_cagr_3y_pct, "profit_cagr_3y": Stock.profit_cagr_3y_pct,
+        "promoter": Stock.promoter_pct, "promoter_change": Stock.promoter_change_pp,
     }
     order: Any = Stock.ticker
     if sort:
@@ -251,7 +271,8 @@ async def search_stocks(
     response_items = [to_search_item(stock) for stock in db_stocks]
 
     data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals, roe_min, debt_to_equity_max,
-                    revenue_growth_min, profit_margin_min, dividend_yield_min, return_1y_min)
+                    revenue_growth_min, profit_margin_min, dividend_yield_min, return_1y_min, roce_min,
+                    revenue_cagr_3y_min, profit_cagr_3y_min, promoter_min, promoter_change_min)
     if all(f is None for f in data_filters):
         q = (query or "").strip().upper()
         directory = directory.where(~ListedSecurity.ticker.in_(select(Stock.ticker)))

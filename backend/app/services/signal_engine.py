@@ -31,6 +31,7 @@ class SignalType(StrEnum):
     SENTIMENT_SPIKE = "sentiment_spike"
     LARGE_DEAL = "large_deal"  # NSE bulk/block deals, netted per day
     PROMOTER_PLEDGE = "promoter_pledge"  # NSE promoter pledge disclosures
+    PROMOTER_HOLDING_CHANGE = "promoter_holding_change"  # NSE shareholding pattern, quarter on quarter
 
 
 @dataclass
