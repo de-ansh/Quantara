@@ -24,7 +24,9 @@ class Signal(Base):
         String(50),
         nullable=False,
         index=True,
-        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike, large_deal, promoter_pledge",
+        # Also large_deal and promoter_pledge (NSE). The DB comment below is what the migrations created;
+        # changing it would need a migration, so the full list lives in signal_engine.SignalType.
+        comment="earnings_surprise, institutional_buying, insider_buying, sentiment_spike",
     )
     strength: Mapped[float] = mapped_column(Float, nullable=False, comment="Signal strength 0-100")
     confidence: Mapped[float] = mapped_column(
