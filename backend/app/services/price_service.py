@@ -206,7 +206,10 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
             await refresh_prices(db)
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
             await score_unrated_stocks(db)
+            from app.services.statements import refresh_statements
             from app.services.verdict_tracking import snapshot_verdicts
+
+            await refresh_statements(db)  # weekly per stock, 50 per pass
 
             await snapshot_verdicts(db)  # once a day in effect: later runs that day add nothing
 
