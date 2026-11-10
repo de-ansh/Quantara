@@ -32,7 +32,8 @@ class FakeOpenAI:
     async def _create(self, messages, **kwargs):
         FakeOpenAI.calls.append(list(messages))
         if len(FakeOpenAI.calls) == 1:
-            call = SimpleNamespace(id="c1", function=SimpleNamespace(name="stock_snapshot", arguments='{"ticker": "aapl"}'))
+            call = SimpleNamespace(id="c1", type="function",
+                                   function=SimpleNamespace(name="stock_snapshot", arguments='{"ticker": "aapl"}'))
             return _completion(tool_calls=[call])
         return _completion(content="Hold: solid business, but the price already reflects it.")
 
