@@ -193,7 +193,7 @@ async def get_verdict(ticker: str, current_user: CurrentUser, db: DBSession) -> 
         missing.append("research report")
     if stock is None or stock.risk_score is None:
         missing.append("risk score")
-    if missing:
+    if stock is None or missing:
         return VerdictResponse(ticker=ticker.upper(), verdict="Unrated", final_score=None, reasons=[],
                                missing=missing, user_risk_level=user_risk_level)
 

@@ -236,12 +236,12 @@ async def search_stocks(
             stmt = stmt.where(column >= bound if is_min else column <= bound)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-    sort_columns = {
+    sort_columns: dict[str, Any] = {
         "ticker": Stock.ticker, "market_cap": Stock.market_cap, "pe": Stock.pe_ratio, "roe": Stock.roe_pct,
         "revenue_growth": Stock.revenue_growth_pct, "profit_margin": Stock.profit_margin_pct,
         "dividend_yield": Stock.dividend_yield_pct, "return_1y": Stock.return_1y_pct, "risk": Stock.risk_score,
     }
-    order = Stock.ticker
+    order: Any = Stock.ticker
     if sort:
         column = sort_columns[sort.lstrip("-")]
         order = (column.desc() if sort.startswith("-") else column.asc()).nulls_last()
