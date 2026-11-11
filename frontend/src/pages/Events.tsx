@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import apiClient from "@/lib/api"
 import { useWatchlist } from "@/hooks/useWatchlist"
 import { cleanTickerDisplay } from "@/lib/currency"
 import { cn } from "@/lib/utils"
+import IpoAnalysisPanel from "@/components/IpoAnalysisPanel"
 
 interface Earnings { ticker: string; company: string | null; date: string; detail: string | null }
 interface Action { ticker: string; company: string | null; subject: string | null; kind: string; ex_date: string | null; record_date: string | null }
@@ -21,6 +22,7 @@ const UNAVAILABLE = "Unavailable from NSE right now."
 export default function Events() {
     const [tab, setTab] = useState<(typeof TABS)[number]>("Results")
     const [mineOnly, setMineOnly] = useState(false)
+    const [openIpo, setOpenIpo] = useState<string | null>(null)
     const { data: watchlist = [] } = useWatchlist()
     const { data, isLoading, isError, refetch } = useQuery({
         queryKey: ["market", "events"],
@@ -88,9 +90,12 @@ export default function Events() {
                     ))}
                     {tab === "IPOs" && (data.ipos === null ? <Empty text={UNAVAILABLE} /> : data.ipos.length === 0 ? <Empty text="No IPOs to show." /> : (
                         <table className="w-full text-sm">
-                            <thead><tr><th scope="col" className={headCell}>Company</th><th scope="col" className={headCell}>Status</th><th scope="col" className={headCell}>Open</th><th scope="col" className={headCell}>Close</th><th scope="col" className={headCell}>Listed</th><th scope="col" className={headCell}>Price</th><th scope="col" className={headCell}>Segment</th></tr></thead>
-                            <tbody>{data.ipos.map((o, i) => (
-                                <tr key={`${o.symbol}${i}`} className="border-t border-border/50">
+                            <thead><tr><th scope="col" className={headCell}>Company</th><th scope="col" className={headCell}>Status</th><th scope="col" className={headCell}>Open</th><th scope="col" className={headCell}>Close</th><th scope="col" className={headCell}>Listed</th><th scope="col" className={headCell}>Price</th><th scope="col" className={headCell}>Segment</th><th scope="col" className={headCell}><span className="sr-only">Analysis</span></th></tr></thead>
+                            <tbody>{data.ipos.map((o, i) => {
+                                const key = `${o.symbol}${i}`
+                                const series = (o.segment ?? "").toUpperCase().includes("SME") ? "SME" : "EQ"
+                                return (<Fragment key={key}>
+                                <tr className="border-t border-border/50">
                                     <td className="p-3 text-foreground">{o.company}</td>
                                     <td className="p-3 text-muted-foreground">{o.status}{o.subscribed_times !== null && ` (${o.subscribed_times}x)`}</td>
                                     <td className="p-3 whitespace-nowrap text-muted-foreground">{day(o.start_date)}</td>
@@ -98,8 +103,18 @@ export default function Events() {
                                     <td className="p-3 whitespace-nowrap text-muted-foreground">{day(o.listing_date)}</td>
                                     <td className="p-3 whitespace-nowrap text-muted-foreground">{o.price ?? "—"}</td>
                                     <td className="p-3 text-muted-foreground">{o.segment ?? "—"}</td>
+                                    <td className="p-3">{o.symbol && (
+                                        <button type="button" aria-expanded={openIpo === key} onClick={() => setOpenIpo(openIpo === key ? null : key)}
+                                            className="whitespace-nowrap rounded-sm border border-primary/50 px-2 py-1 text-xs text-primary hover:bg-primary/10">
+                                            {openIpo === key ? "Hide" : "Analyze"}
+                                        </button>
+                                    )}</td>
                                 </tr>
-                            ))}</tbody>
+                                {openIpo === key && o.symbol && (
+                                    <tr className="bg-background/40"><td colSpan={8} className="p-4"><IpoAnalysisPanel symbol={o.symbol} series={series} /></td></tr>
+                                )}
+                                </Fragment>)
+                            })}</tbody>
                         </table>
                     ))}
                 </div>

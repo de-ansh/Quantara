@@ -105,3 +105,27 @@ test('saved screens restore their filters', async ({ page }) => {
   await page.getByRole('button', { name: 'My value', exact: true }).click();
   await expect(page.getByLabel('Min ROE %')).toHaveValue('18');
 });
+
+
+test('an IPO can be analysed with a clear call, pros and cons', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/events', route => route.fulfill({ json: {
+    earnings: [], corporate_actions: [],
+    ipos: [{ symbol: 'STEEL', company: 'Steel Co Limited', status: 'Open', start_date: '2026-11-10', end_date: '2026-11-12', listing_date: null, price: 'Rs.78 to Rs.82', segment: 'EQ', subscribed_times: 3.2 }],
+  } }));
+  let asked = '';
+  await page.route('**/api/v1/market/ipos/STEEL/analysis**', route => { asked = route.request().url(); return route.fulfill({ json: {
+    issue: { company: 'Steel Co Limited', industry: 'Steel', price_range: 'Rs. 78 to Rs. 82', lot: '182 Equity Shares', fresh_issue_crore: 183.06, offer_for_sale_crore: null, offer_for_sale_share: 0, subscription: { qib: 35.5, total: 60.8 }, rhp_url: 'https://nsearchives.nseindia.com/content/ipo/RHP_STEEL.zip' },
+    summary: 'Makes coated steel.', financials: 'Revenue up 20% a year.', valuation: '19.5x vs peers at 28x.',
+    pros: ['Institutions bid 35.5x their quota'], cons: ['Cyclical demand'],
+    recommendation: 'Apply', reasoning: 'Cheaper than peers with strong demand.', confidence: 72, read_prospectus: true,
+  } }); });
+  await page.goto('/events');
+  await page.getByRole('button', { name: 'IPOs' }).click();
+  await page.getByRole('button', { name: 'Analyze' }).click();
+  await expect(page.getByText('Cheaper than peers with strong demand.')).toBeVisible();
+  await expect(page.getByText('Institutions bid 35.5x their quota')).toBeVisible();
+  await expect(page.getByText('Qualified', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('Institutions (QIB) 35.5x · Total 60.8x')).toBeVisible();
+  expect(asked).toContain('series=EQ');
+});
