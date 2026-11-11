@@ -49,17 +49,14 @@ async def run_exclusive(lock_id: int, job: Callable[[], Awaitable[None]]) -> boo
     Session-level lock on a dedicated connection, so Postgres frees it if the worker dies.
     """
     async with AsyncSessionLocal() as lock_session:
-        acquired = (
-            await lock_session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_id})
-        ).scalar()
-        # Session-level locks outlive the transaction; end it so the connection isn't
-        # left "idle in transaction" for the whole job.
-        await lock_session.commit()
+        # Pinned, autocommit connection, never committed: a commit hands the connection back to the
+        # pool still holding the lock, and the unlock then runs on another connection and leaks it.
+        conn = await lock_session.connection(execution_options={"isolation_level": "AUTOCOMMIT"})
+        acquired = (await conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_id})).scalar()
         if not acquired:
             return False
         try:
             await job()
         finally:
-            await lock_session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_id})
-            await lock_session.commit()
+            await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_id})
     return True
