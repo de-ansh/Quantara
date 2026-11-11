@@ -489,3 +489,62 @@ async def get_ipo_analysis(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
     await redis.set(key, json.dumps(result), ex=IPO_ANALYSIS_TTL)
     return IpoAnalysisResponse(**result)
+
+
+class Filing(BaseModel):
+    ticker: str
+    company: str | None
+    category: str | None
+    summary: str | None
+    filed_at: str | None
+    pdf_url: str | None
+
+
+def parse_announcements(rows: list[dict]) -> list[Filing]:
+    """NSE corporate announcements, newest first."""
+    out = []
+    for r in rows:
+        when = r.get("sort_date") or r.get("an_dt")
+        out.append(Filing(
+            ticker=f"{r.get('symbol')}.NS", company=r.get("sm_name"), category=r.get("desc"),
+            summary=r.get("attchmntText"), filed_at=str(when) if when else None,
+            pdf_url=r.get("attchmntFile") if str(r.get("attchmntFile") or "").startswith("https://") else None,
+        ))
+    return sorted(out, key=lambda f: f.filed_at or "", reverse=True)
+
+
+@router.get("/filings", response_model=list[Filing] | None)
+async def get_filings(current_user: CurrentUser, days: int = Query(1, ge=1, le=7)) -> list[Filing] | None:
+    """Exchange announcements from every NSE company over the last `days`; None when NSE is unavailable."""
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    start = today - timedelta(days=days - 1)
+    path = f"api/corporate-announcements?index=equities&from_date={start:%d-%m-%Y}&to_date={today:%d-%m-%Y}"
+    data = await nse_market.nse_json(path, ttl=180)
+    rows = data if isinstance(data, list) else (data.get("data") if isinstance(data, dict) else None)
+    return parse_announcements(rows) if isinstance(rows, list) else None
+
+
+class DeclaredResult(BaseModel):
+    ticker: str
+    name: str | None
+    sector: str | None
+    market_cap: float | None
+    quarter_end: str
+    filed_at: str
+    consolidated: bool
+    revenue: float | None
+    profit: float | None
+    eps: float | None
+    revenue_yoy_pct: float | None
+    profit_yoy_pct: float | None
+    revenue_qoq_pct: float | None
+    profit_qoq_pct: float | None
+    pdf_url: str | None
+
+
+@router.get("/earnings", response_model=list[DeclaredResult])
+async def get_declared_results(current_user: CurrentUser, db: DBSession, days: int = Query(45, ge=1, le=120)) -> list[dict]:
+    """Results declared by tracked NSE stocks, newest first, with growth against a year and a quarter ago."""
+    from app.services.earnings import declared_results
+
+    return await declared_results(db, days)

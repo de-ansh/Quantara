@@ -62,7 +62,8 @@ async def _cached(key: str, ttl: float, fetch: Any) -> Any:
     except (httpx.HTTPError, ValueError, TimeoutError) as e:  # NSE often refuses scripts; the next request retries
         logger.warning(f"NSE feed unavailable ({key}): {e}")
         return cached[1] if cached else None
-    _cache[key] = (time.monotonic(), data)
+    if ttl > 0:  # ttl 0: per-company lookups that would only pile up in memory
+        _cache[key] = (time.monotonic(), data)
     return data
 
 
