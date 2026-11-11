@@ -30,6 +30,10 @@ const Login = lazy(() => import("@/pages/Login"))
 const Register = lazy(() => import("@/pages/Register"))
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"))
 
+const Markets = lazy(() => import("@/pages/Markets"))
+const Events = lazy(() => import("@/pages/Events"))
+const Calculators = lazy(() => import("@/pages/Calculators"))
+const SharedChat = lazy(() => import("@/pages/SharedChat"))
 const Settings = lazy(() => import("@/pages/Settings"))
 const Account = lazy(() => import("@/pages/Account"))
 
@@ -54,6 +58,10 @@ function App() {
                   <Route path="/portfolios" element={<ProtectedRoute><Portfolios /></ProtectedRoute>} />
                   <Route path="/portfolios/:id" element={<ProtectedRoute><PortfolioDetail /></ProtectedRoute>} />
                   <Route path="/compare" element={<ProtectedRoute><Compare /></ProtectedRoute>} />
+                  <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
+                  <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+                  <Route path="/calculators" element={<ProtectedRoute><Calculators /></ProtectedRoute>} />
+                  <Route path="/shared/:token" element={<SharedChat />} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
                   <Route path="/login" element={<Login />} />

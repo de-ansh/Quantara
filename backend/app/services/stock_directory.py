@@ -238,6 +238,9 @@ async def run_periodic_directory_refresh(interval_seconds: int = DIRECTORY_REFRE
 
             # Daily too: shareholding is filed quarterly, and the history fills in 50 stocks a run
             logger.info(f"Promoter holding changes signalled: {await refresh_shareholding(db)}")
+            from app.services.event_alerts import notify_upcoming_events
+
+            await notify_upcoming_events(db)
 
     while True:
         try:

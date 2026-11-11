@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { useLocation } from "react-router-dom"
-import { MessageSquare, Send, X } from "lucide-react"
-import { postStream } from "@/lib/api"
+import { Mic, MessageSquare, Send, Share2, X } from "lucide-react"
+import apiClient, { postStream } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -22,7 +22,7 @@ const inline = (text: string) =>
     )
 
 /** The assistant answers with paragraphs, "- " bullets and **bold** only (see the backend prompt). */
-function Formatted({ text }: { text: string }) {
+export function Formatted({ text }: { text: string }) {
     const blocks: ReactNode[] = []
     let bullets: string[] = []
     const flush = () => {
@@ -40,8 +40,23 @@ function Formatted({ text }: { text: string }) {
     return <div className="space-y-2">{blocks}</div>
 }
 
+interface Recognition {
+    lang: string
+    interimResults: boolean
+    onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onend: (() => void) | null
+    start: () => void
+    stop: () => void
+}
+type SpeechWindow = { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition }
+const speechApi = () => (window as unknown as SpeechWindow).SpeechRecognition ?? (window as unknown as SpeechWindow).webkitSpeechRecognition
+
 export default function ChatAssistant() {
     const [open, setOpen] = useState(false)
+    const [listening, setListening] = useState(false)
+    const recognitionRef = useRef<Recognition | null>(null)
+    const [share, setShare] = useState<"idle" | "confirm" | "busy" | { token: string }>("idle")
+    const [shareError, setShareError] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [draft, setDraft] = useState("")
     const ticker = tickerFromPath(useLocation().pathname)
@@ -74,6 +89,45 @@ export default function ChatAssistant() {
     }
 
     useEffect(() => { if (open) inputRef.current?.focus() }, [open])
+    useEffect(() => () => recognitionRef.current?.stop(), [])
+
+    const toggleVoice = () => {
+        if (listening) { recognitionRef.current?.stop(); return }
+        const Api = speechApi()
+        if (!Api) return
+        const recognition = new Api()
+        recognition.lang = "en-IN"
+        recognition.interimResults = false
+        recognition.onresult = e => {
+            const heard = e.results[0][0].transcript
+            setDraft(d => (d ? `${d} ${heard}` : heard))
+        }
+        recognition.onend = () => setListening(false)
+        recognitionRef.current = recognition
+        setListening(true)
+        recognition.start()
+    }
+
+    const createShare = async () => {
+        setShare("busy")
+        setShareError(false)
+        try {
+            const { data } = await apiClient.post<{ token: string }>("/chat/share", { messages: messages.slice(-30) })
+            setShare({ token: data.token })
+        } catch {
+            setShareError(true)
+            setShare("idle")
+        }
+    }
+    const stopSharing = async (token: string) => {
+        try {
+            await apiClient.delete(`/chat/shared/${token}`)
+            setShare("idle")
+        } catch {
+            setShareError(true)
+        }
+    }
+    const shareUrl = typeof share === "object" ? `${window.location.origin}/shared/${share.token}` : ""
     // A new answer opens at its first line (once, not on every streamed chunk); anything else at the bottom
     const lastRole = messages.at(-1)?.role
     useEffect(() => {
@@ -127,8 +181,13 @@ export default function ChatAssistant() {
                     {ticker && <p className="text-[11px] text-muted-foreground truncate">Looking at {ticker}</p>}
                 </div>
                 <div className="flex items-center gap-1">
+                    {messages.length > 0 && !pending && share === "idle" && (
+                        <Button variant="ghost" size="icon" className="size-8" onClick={() => setShare("confirm")} aria-label="Share this chat">
+                            <Share2 className="size-4" />
+                        </Button>
+                    )}
                     {messages.length > 0 && (
-                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); setError(null) }} disabled={pending}>
+                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); setError(null); setShare("idle") }} disabled={pending}>
                             New chat
                         </Button>
                     )}
@@ -180,6 +239,26 @@ export default function ChatAssistant() {
                 <div ref={endRef} />
             </div>
 
+            {shareError && <p role="alert" className="px-3 pt-2 text-xs text-q-risk-high">Sharing failed. Please try again.</p>}
+            {(share === "confirm" || share === "busy") && (
+                <div className="border-t border-border p-3 space-y-2 shrink-0 text-xs text-muted-foreground">
+                    <p>Anyone with the link will be able to read this chat, including anything about your holdings.</p>
+                    <div className="flex gap-2">
+                        <Button size="sm" className="h-7 text-xs" onClick={() => void createShare()} disabled={share === "busy"}>Create link</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShare("idle")} disabled={share === "busy"}>Cancel</Button>
+                    </div>
+                </div>
+            )}
+            {typeof share === "object" && (
+                <div className="border-t border-border p-3 space-y-2 shrink-0 text-xs text-muted-foreground">
+                    <input readOnly aria-label="Share link" value={shareUrl} onFocus={e => e.target.select()} className="w-full h-7 px-2 bg-background border border-border rounded-sm font-mono text-foreground" />
+                    <div className="flex gap-2">
+                        <Button size="sm" className="h-7 text-xs" onClick={() => void navigator.clipboard?.writeText(shareUrl)}>Copy link</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => void stopSharing(share.token)}>Stop sharing</Button>
+                    </div>
+                </div>
+            )}
+
             <form onSubmit={onSubmit} className="border-t border-border p-3 flex items-end gap-2 shrink-0">
                 <label htmlFor="assistant-input" className="sr-only">Message</label>
                 <textarea
@@ -195,6 +274,11 @@ export default function ChatAssistant() {
                     placeholder={ticker ? `Ask about ${ticker}…` : "Ask about a stock or chart…"}
                     className="flex-1 resize-none max-h-32 bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
+                {speechApi() && (
+                    <Button type="button" variant={listening ? "default" : "ghost"} size="icon" className="size-9 shrink-0" onClick={toggleVoice} aria-pressed={listening} aria-label={listening ? "Stop voice input" : "Start voice input"}>
+                        <Mic className="size-4" />
+                    </Button>
+                )}
                 <Button type="submit" size="icon" className="size-9 shrink-0" disabled={!draft.trim() || pending} aria-label="Send">
                     <Send className="size-4" />
                 </Button>

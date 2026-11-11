@@ -1,0 +1,107 @@
+import { test, expect, type Page } from '@playwright/test';
+
+async function signedIn(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('quantara_user', JSON.stringify({ id: '1', email: 'analyst@quantara.com' }));
+  });
+  await page.route('**/api/v1/**', route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/watchlist/**', route =>
+    route.fulfill({ json: route.request().url().includes('alerts') ? { alerts: [], unread_count: 0 } : { items: [{ ticker: 'TCS.NS' }] } })
+  );
+  await page.route('**/api/v1/stocks/search**', route => route.fulfill({ json: { stocks: [], total_count: 0 } }));
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: { access_token: 'tok' } }));
+}
+
+test('markets shows live sections and says when a feed is down', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/overview', route => route.fulfill({ json: {
+    indices: [{ name: 'NIFTY 50', last: 25044.65, change: 58, change_pct: 0.23 }],
+    sector_indices: [{ name: 'NIFTY IT', last: 100, change: 1, change_pct: 1 }],
+    breadth: { advances: 231, declines: 266, unchanged: 4 },
+    flows: null,
+    gainers: [{ ticker: 'TCS.NS', name: 'TCS', price: 3000, change_pct: 2.5 }],
+    losers: [], sectors: [{ sector: 'Technology', stocks: 20, avg_change_pct: 0.5, avg_pe: 28.1 }],
+  } }));
+  await page.route('**/api/v1/market/themes', route => route.fulfill({ json: [
+    { name: 'Defence', avg_change_pct: 1.1, members: [{ ticker: 'HAL.NS', name: 'HAL', change_pct: 1.1, return_1y_pct: null }] },
+  ] }));
+  await page.goto('/markets');
+  await expect(page.getByText('25,044.65')).toBeVisible();
+  await expect(page.getByText('231 up')).toBeVisible();
+  await expect(page.getByText('Institutional flows unavailable from NSE right now.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'TCS', exact: true })).toHaveAttribute('href', '/research/TCS.NS');
+  await page.getByText('Defence').click();
+  await expect(page.getByRole('link', { name: 'HAL', exact: true })).toBeVisible();
+});
+
+test('events filter to the watchlist and switch tabs', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/events', route => route.fulfill({ json: {
+    earnings: [
+      { ticker: 'TCS.NS', company: 'Tata Consultancy', date: '2026-11-20', detail: null },
+      { ticker: 'XYZ.NS', company: 'Xyz Ltd', date: '2026-11-21', detail: null },
+    ],
+    corporate_actions: [{ ticker: 'ITC.NS', company: 'ITC', subject: 'Dividend - Rs 5', kind: 'Dividend', ex_date: '2026-11-12', record_date: null }],
+    ipos: null,
+  } }));
+  await page.goto('/events');
+  await expect(page.getByText('Xyz Ltd')).toBeVisible();
+  await page.getByLabel('Watchlist only').check();
+  await expect(page.getByText('Xyz Ltd')).toHaveCount(0);
+  await expect(page.getByText('Tata Consultancy')).toBeVisible();
+  await page.getByLabel('Watchlist only').uncheck();
+  await page.getByRole('button', { name: 'Corporate actions' }).click();
+  await expect(page.getByText('Dividend - Rs 5')).toBeVisible();
+  await page.getByRole('button', { name: 'IPOs' }).click();
+  await expect(page.getByText('Unavailable from NSE right now.')).toBeVisible();
+});
+
+test('calculators compute known values and reject bad input', async ({ page }) => {
+  await signedIn(page);
+  await page.goto('/calculators');
+  await expect(page.getByText('₹23,23,391')).toBeVisible(); // 10k a month, 12%, 10 years
+  await page.getByRole('button', { name: 'Lumpsum' }).click();
+  await expect(page.getByText('₹3,10,585')).toBeVisible();
+  await page.getByLabel('Years').fill('0');
+  await expect(page.getByText('Enter valid values')).toBeVisible();
+  await page.getByRole('button', { name: 'CAGR' }).click();
+  await expect(page.getByText('20.11%')).toBeVisible();
+});
+
+test('a chat can be shared after a warning, and read without signing in', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/chat/stream', route => route.fulfill({ body: 'Moderate risk.', contentType: 'text/plain' }));
+  let shared = false;
+  await page.route('**/api/v1/chat/share', route => { shared = true; return route.fulfill({ json: { token: 'tok123', messages: [], created_at: '2026-11-10T00:00:00' } }); });
+  await page.goto('/calculators');
+  await page.getByRole('button', { name: 'Open research assistant' }).click();
+  await page.getByLabel('Message').fill('Is TCS risky?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(page.getByText('Moderate risk.')).toBeVisible();
+  await page.getByRole('button', { name: 'Share this chat' }).click();
+  expect(shared).toBe(false);
+  await expect(page.getByText('including anything about your holdings')).toBeVisible();
+  await page.getByRole('button', { name: 'Create link' }).click();
+  await expect(page.getByLabel('Share link')).toHaveValue(/\/shared\/tok123$/);
+});
+
+test('shared chat page needs no login', async ({ page }) => {
+  await page.route('**/api/v1/**', route => route.fulfill({ status: 401, json: { detail: 'no' } }));
+  await page.route('**/api/v1/chat/shared/abc', route => route.fulfill({ json: {
+    token: 'abc', created_at: '2026-11-10T00:00:00',
+    messages: [{ role: 'user', content: 'Is TCS risky?' }, { role: 'assistant', content: 'Moderate **risk**.' }],
+  } }));
+  await page.goto('/shared/abc');
+  await expect(page.getByText('Is TCS risky?')).toBeVisible();
+  await expect(page).toHaveURL(/\/shared\/abc$/);
+});
+
+test('saved screens restore their filters', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/screens/', route => route.fulfill({ json: [
+    { id: 1, name: 'My value', filters: { roe_min: '18', _market: 'india', _pe: '30', _beta: '1.5', _signals: '' }, sort: '-roe' },
+  ] }));
+  await page.goto('/explorer');
+  await page.getByRole('button', { name: 'My value', exact: true }).click();
+  await expect(page.getByLabel('Min ROE %')).toHaveValue('18');
+});

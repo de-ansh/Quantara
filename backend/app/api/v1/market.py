@@ -2,16 +2,20 @@
 
 import asyncio
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import select
 
+from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
+from app.models.stock import Stock
+from app.services import nse_market
 
 logger = get_logger(__name__)
 
@@ -244,3 +248,187 @@ async def get_data_health(current_user: CurrentUser, db: DBSession) -> DataHealt
         directory_updated_at=directory,
         directory_stale=directory is not None and now - directory > timedelta(hours=DIRECTORY_STALE_AFTER_HOURS),
     )
+
+
+class IndexQuote(BaseModel):
+    name: str
+    last: float | None
+    change: float | None
+    change_pct: float | None
+
+
+class Breadth(BaseModel):
+    advances: int
+    declines: int
+    unchanged: int
+
+
+class InstitutionalFlow(BaseModel):
+    category: str
+    date: str | None
+    buy: float | None
+    sell: float | None
+    net: float | None
+
+
+class Mover(BaseModel):
+    ticker: str
+    name: str | None
+    price: float
+    change_pct: float
+
+
+class SectorSummary(BaseModel):
+    sector: str
+    stocks: int
+    avg_change_pct: float
+    avg_pe: float | None
+
+
+class MarketOverviewResponse(BaseModel):
+    """None for a section means its source is unavailable right now."""
+
+    indices: list[IndexQuote] | None
+    sector_indices: list[IndexQuote] | None
+    breadth: Breadth | None
+    flows: list[InstitutionalFlow] | None
+    gainers: list[Mover]
+    losers: list[Mover]
+    sectors: list[SectorSummary]
+
+
+MOVERS_SHOWN = 10
+# Long enough to span a holiday weekend, short enough to drop stocks the price job no longer updates
+PRICE_MAX_AGE = timedelta(days=5)
+
+
+def summarize_stocks(stocks: list[Stock]) -> tuple[list[Mover], list[Mover], list[SectorSummary]]:
+    """Top movers and per-sector averages among stocks with a recent price and previous close."""
+    moved: list[tuple[Stock, float]] = []
+    cutoff = utcnow() - PRICE_MAX_AGE
+    for s in stocks:
+        if s.price and s.previous_close and s.price_updated_at and s.price_updated_at >= cutoff:
+            moved.append((s, round((s.price / s.previous_close - 1) * 100, 2)))
+    moved.sort(key=lambda m: m[1], reverse=True)
+
+    def mover(s: Stock, pct: float) -> Mover:
+        return Mover(ticker=s.ticker, name=s.name, price=float(s.price or 0), change_pct=pct)
+
+    gainers = [mover(s, p) for s, p in moved[:MOVERS_SHOWN] if p > 0]
+    losers = [mover(s, p) for s, p in reversed(moved[-MOVERS_SHOWN:]) if p < 0]
+
+    groups: dict[str, list[tuple[Stock, float]]] = {}
+    for s, pct in moved:
+        if s.sector:
+            groups.setdefault(s.sector, []).append((s, pct))
+    sectors = []
+    for name, members in groups.items():
+        pes = [s.pe_ratio for s, _ in members if s.pe_ratio and s.pe_ratio > 0]
+        sectors.append(SectorSummary(
+            sector=name,
+            stocks=len(members),
+            avg_change_pct=round(sum(p for _, p in members) / len(members), 2),
+            avg_pe=round(sum(pes) / len(pes), 1) if pes else None,
+        ))
+    sectors.sort(key=lambda x: x.avg_change_pct, reverse=True)
+    return gainers, losers, sectors
+
+
+async def _indian_stocks(db: DBSession) -> list[Stock]:
+    return list((await db.execute(select(Stock).where(Stock.ticker.like("%.NS")))).scalars().all())
+
+
+@router.get("/overview", response_model=MarketOverviewResponse)
+async def get_market_overview(current_user: CurrentUser, db: DBSession) -> MarketOverviewResponse:
+    """Indian market today: indices, breadth, institutional flows, movers and sectors."""
+    (feed, flows), quotes = await asyncio.gather(nse_market.market_feeds(), _get_quotes())
+    indices = feed["headline"] if feed else None
+    # Sensex is not on NSE; skip it rather than show the fallback level when Yahoo is unreachable
+    sensex = quotes["^BSESN"]
+    if indices is not None and sensex != _FALLBACK_QUOTES["^BSESN"]:
+        indices = [{"name": "SENSEX", "last": sensex[0], "change": sensex[1], "change_pct": _pct(*sensex)}, *indices]
+    gainers, losers, sectors = summarize_stocks(await _indian_stocks(db))
+    return MarketOverviewResponse(
+        indices=indices,
+        sector_indices=feed["sectors"] if feed else None,
+        breadth=feed["breadth"] if feed else None,
+        flows=flows,
+        gainers=gainers,
+        losers=losers,
+        sectors=sectors,
+    )
+
+
+class EarningsEvent(BaseModel):
+    ticker: str
+    company: str | None
+    date: str
+    detail: str | None
+
+
+class CorporateAction(BaseModel):
+    ticker: str
+    company: str | None
+    subject: str | None
+    kind: str
+    ex_date: str | None
+    record_date: str | None
+
+
+class IpoIssue(BaseModel):
+    symbol: str | None
+    company: str | None
+    status: str
+    start_date: str | None
+    end_date: str | None
+    listing_date: str | None
+    price: str | None
+    segment: str | None
+    subscribed_times: float | None
+
+
+class MarketEventsResponse(BaseModel):
+    """None for a section means its source is unavailable right now."""
+
+    earnings: list[EarningsEvent] | None
+    corporate_actions: list[CorporateAction] | None
+    ipos: list[IpoIssue] | None
+
+
+@router.get("/events", response_model=MarketEventsResponse)
+async def get_market_events(current_user: CurrentUser) -> MarketEventsResponse:
+    """Upcoming results, corporate actions and IPOs from NSE."""
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    return MarketEventsResponse(**await nse_market.event_feeds(today))
+
+
+class ThemeMember(BaseModel):
+    ticker: str
+    name: str | None
+    change_pct: float | None
+    return_1y_pct: float | None
+
+
+class Theme(BaseModel):
+    name: str
+    members: list[ThemeMember]
+    avg_change_pct: float | None
+
+
+@router.get("/themes", response_model=list[Theme])
+async def get_market_themes(current_user: CurrentUser, db: DBSession) -> list[Theme]:
+    """Theme baskets from NSE index constituents, with today's move for the stocks we track."""
+    baskets = await nse_market.theme_members()
+    tracked = {s.ticker: s for s in await _indian_stocks(db)}
+    themes = []
+    for name, members in baskets.items():
+        rows = []
+        for m in members:
+            s = tracked.get(m["ticker"])
+            pct = round((s.price / s.previous_close - 1) * 100, 2) if s and s.price and s.previous_close else None
+            rows.append(ThemeMember(ticker=m["ticker"], name=m["name"], change_pct=pct,
+                                    return_1y_pct=s.return_1y_pct if s else None))
+        moves = [r.change_pct for r in rows if r.change_pct is not None]
+        themes.append(Theme(name=name, members=rows,
+                            avg_change_pct=round(sum(moves) / len(moves), 2) if moves else None))
+    return themes
