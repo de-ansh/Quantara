@@ -31,6 +31,7 @@ const Register = lazy(() => import("@/pages/Register"))
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"))
 
 const Markets = lazy(() => import("@/pages/Markets"))
+const Filings = lazy(() => import("@/pages/Filings"))
 const Events = lazy(() => import("@/pages/Events"))
 const Calculators = lazy(() => import("@/pages/Calculators"))
 const SharedChat = lazy(() => import("@/pages/SharedChat"))
@@ -60,6 +61,7 @@ function App() {
                   <Route path="/compare" element={<ProtectedRoute><Compare /></ProtectedRoute>} />
                   <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
                   <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+                  <Route path="/filings" element={<ProtectedRoute><Filings /></ProtectedRoute>} />
                   <Route path="/calculators" element={<ProtectedRoute><Calculators /></ProtectedRoute>} />
                   <Route path="/shared/:token" element={<SharedChat />} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

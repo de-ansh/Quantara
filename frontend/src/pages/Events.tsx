@@ -6,13 +6,14 @@ import { useWatchlist } from "@/hooks/useWatchlist"
 import { cleanTickerDisplay } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 import IpoAnalysisPanel from "@/components/IpoAnalysisPanel"
+import DeclaredResults from "@/components/DeclaredResults"
 
 interface Earnings { ticker: string; company: string | null; date: string; detail: string | null }
 interface Action { ticker: string; company: string | null; subject: string | null; kind: string; ex_date: string | null; record_date: string | null }
 interface Ipo { symbol: string | null; company: string | null; status: string; start_date: string | null; end_date: string | null; listing_date: string | null; price: string | null; segment: string | null; subscribed_times: number | null }
 interface MarketEvents { earnings: Earnings[] | null; corporate_actions: Action[] | null; ipos: Ipo[] | null }
 
-const TABS = ["Results", "Corporate actions", "IPOs"] as const
+const TABS = ["Upcoming results", "Declared results", "Corporate actions", "IPOs"] as const
 const day = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—")
 const Stock = ({ ticker }: { ticker: string }) => <Link to={`/research/${ticker}`} className="font-mono font-bold text-foreground hover:text-primary">{cleanTickerDisplay(ticker)}</Link>
 const Empty = ({ text }: { text: string }) => <p className="p-4 text-sm text-muted-foreground">{text}</p>
@@ -20,7 +21,7 @@ const headCell = "p-3 text-left font-normal text-xs text-muted-foreground"
 const UNAVAILABLE = "Unavailable from NSE right now."
 
 export default function Events() {
-    const [tab, setTab] = useState<(typeof TABS)[number]>("Results")
+    const [tab, setTab] = useState<(typeof TABS)[number]>("Upcoming results")
     const [mineOnly, setMineOnly] = useState(false)
     const [openIpo, setOpenIpo] = useState<string | null>(null)
     const { data: watchlist = [] } = useWatchlist()
@@ -63,7 +64,8 @@ export default function Events() {
             )}
             {data && (
                 <div className="bg-q-surface border border-q-border rounded-lg overflow-x-auto">
-                    {tab === "Results" && (data.earnings === null ? <Empty text={UNAVAILABLE} /> : earnings.length === 0 ? <Empty text="No upcoming results." /> : (
+                    {tab === "Declared results" && <DeclaredResults only={mineOnly ? watched : null} />}
+                    {tab === "Upcoming results" && (data.earnings === null ? <Empty text={UNAVAILABLE} /> : earnings.length === 0 ? <Empty text="No upcoming results." /> : (
                         <table className="w-full text-sm">
                             <thead><tr><th scope="col" className={headCell}>Date</th><th scope="col" className={headCell}>Stock</th><th scope="col" className={headCell}>Company</th></tr></thead>
                             <tbody>{earnings.map(e => (
