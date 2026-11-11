@@ -28,6 +28,7 @@ export interface StockSearchItem {
     exchange?: string | null
     /** false: listed but nobody has opened it yet, so no price or scores */
     tracked?: boolean
+    call?: "Buy" | "Hold" | "Avoid" | null
 }
 
 /** Signal metadata varies by signal type; these are the keys the UI reads. */
