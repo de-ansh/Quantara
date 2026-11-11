@@ -136,8 +136,8 @@ async def link_new_transcripts(db: AsyncSession) -> int:
                 if xbrl_url not in _reported_unreadable:
                     _reported_unreadable.add(xbrl_url)
                     await notify_slack(
-                        f"New {info['symbol']} earnings-call transcript, but no readable PDF yet. "
-                        f"Quantara will keep checking; or paste a PDF link on the stock page: {info['url']}"
+                        f"New {info['symbol']} earnings-call transcript, but no readable PDF or recording yet. "
+                        f"Quantara will keep checking; or paste a link on the stock page: {info['url']}"
                     )
                 continue
             _seen_xbrl.add(xbrl_url)
