@@ -129,3 +129,34 @@ test('an IPO can be analysed with a clear call, pros and cons', async ({ page })
   await expect(page.getByText('Institutions (QIB) 35.5x · Total 60.8x')).toBeVisible();
   expect(asked).toContain('series=EQ');
 });
+
+
+test('filings feed filters by category and search', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/filings**', route => route.fulfill({ json: [
+    { ticker: 'COCHINSHIP.NS', company: 'Cochin Shipyard Limited', category: 'Updates', summary: 'Receipt of order for refit of a naval vessel.', filed_at: '2026-11-11 14:20:42', pdf_url: 'https://nsearchives.nseindia.com/a.pdf' },
+    { ticker: 'TCS.NS', company: 'Tata Consultancy Services', category: 'Press Release', summary: 'Partnership announced.', filed_at: '2026-11-11 13:00:00', pdf_url: null },
+  ] }));
+  await page.goto('/filings');
+  await expect(page.getByText('Receipt of order for refit of a naval vessel.')).toBeVisible();
+  await page.getByRole('button', { name: /Press Release/ }).click();
+  await expect(page.getByText('Receipt of order for refit')).toHaveCount(0);
+  await expect(page.getByText('Partnership announced.')).toBeVisible();
+  await page.getByRole('button', { name: /Press Release/ }).click();
+  await page.getByLabel('Search filings').fill('naval');
+  await expect(page.getByText('Partnership announced.')).toHaveCount(0);
+});
+
+test('declared results show growth and leaderboards', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/events', route => route.fulfill({ json: { earnings: [], corporate_actions: [], ipos: [] } }));
+  const r = (ticker: string, profit: number, yoy: number) => ({ ticker, name: ticker, sector: 'Technology', market_cap: 1e12, quarter_end: '2026-09-30', filed_at: '2026-10-09T06:36:12', consolidated: true,
+    revenue: 7.3188e11, profit, eps: 38.4, revenue_yoy_pct: 8.2, profit_yoy_pct: yoy, revenue_qoq_pct: 1.2, profit_qoq_pct: 2.0, pdf_url: null });
+  await page.route('**/api/v1/market/earnings**', route => route.fulfill({ json: [r('TCS.NS', 1.3934e11, 12.5), r('WEAK.NS', 2e9, -30), r('TINY.NS', 1e6, 900)] }));
+  await page.goto('/events');
+  await page.getByRole('button', { name: 'Declared results' }).click();
+  await expect(page.getByText('₹73,188 Cr').first()).toBeVisible();
+  const growth = page.locator('div', { has: page.getByRole('heading', { name: 'Biggest profit growth (YoY)' }) }).last();
+  await expect(growth.getByRole('link', { name: 'TCS' })).toBeVisible();
+  await expect(growth.getByRole('link', { name: 'TINY' })).toHaveCount(0); // profit under ₹10 Cr
+});

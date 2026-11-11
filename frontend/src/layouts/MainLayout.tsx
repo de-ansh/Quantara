@@ -26,6 +26,7 @@ import {
     Globe,
     CalendarDays,
     Calculator,
+    FileText,
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
@@ -49,6 +50,7 @@ const navigation: NavItem[] = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Markets", href: "/markets", icon: Globe },
     { name: "Events", href: "/events", icon: CalendarDays },
+    { name: "Filings", href: "/filings", icon: FileText },
     { name: "Stock Detail", href: "/research", icon: BarChart3 },
     { name: "Research Explorer", href: "/explorer", icon: Search },
     { name: "Signal Monitor", href: "/signals", icon: Activity },
