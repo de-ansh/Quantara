@@ -20,6 +20,11 @@ logger = get_logger(__name__)
 # Arbitrary app-wide key for the Postgres advisory lock guarding the price refresh.
 PRICE_REFRESH_LOCK_ID = 7_301_002
 PRICE_REFRESH_INTERVAL_SECONDS = 15 * 60
+# With every NSE share tracked (~2,600), one Yahoo request for all of them gets throttled
+PRICE_BATCH = 250
+PRICE_BATCH_PAUSE_SECONDS = 2.0
+FUNDAMENTALS_PER_PASS = 150  # ~2,600 stocks refresh daily in about 18 passes
+RISK_SCORES_PER_PASS = 50
 
 
 def fetch_quotes(tickers: list[str]) -> dict[str, tuple[float, float | None]]:
@@ -76,10 +81,16 @@ async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> 
     if not stocks:
         return 0
 
-    try:
-        quotes = await asyncio.to_thread(fetch_quotes, [s.ticker for s in stocks])
-    except Exception as e:
-        logger.warning(f"Price refresh download failed: {e}")
+    tickers_all = [s.ticker for s in stocks]
+    quotes: dict[str, tuple[float, float | None]] = {}
+    for start in range(0, len(tickers_all), PRICE_BATCH):
+        if start:
+            await asyncio.sleep(PRICE_BATCH_PAUSE_SECONDS)
+        try:
+            quotes.update(await asyncio.to_thread(fetch_quotes, tickers_all[start:start + PRICE_BATCH]))
+        except Exception as e:  # one failed batch keeps the rest of the pass
+            logger.warning(f"Price refresh batch {start // PRICE_BATCH + 1} failed: {e}")
+    if not quotes:
         return 0
 
     now = utcnow()
@@ -142,17 +153,20 @@ def _scaled(value: Any, factor: float) -> float | None:
     return round(result, 2) if result == result and abs(result) != float("inf") else None
 
 
-async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTALS_MAX_AGE) -> int:
-    """Refresh fundamentals for stocks not updated within `max_age`; returns how many changed.
+async def refresh_fundamentals(
+    db: AsyncSession, max_age: timedelta = FUNDAMENTALS_MAX_AGE, limit: int = FUNDAMENTALS_PER_PASS
+) -> int:
+    """Refresh fundamentals for up to `limit` stocks not updated within `max_age`, never-fetched first.
 
     Only fields Yahoo returns are overwritten, so a missing P/E never erases a known one.
     """
     cutoff = utcnow() - max_age
     due = (
         await db.execute(
-            select(Stock).where(
-                or_(Stock.fundamentals_updated_at.is_(None), Stock.fundamentals_updated_at < cutoff)
-            )
+            select(Stock)
+            .where(or_(Stock.fundamentals_updated_at.is_(None), Stock.fundamentals_updated_at < cutoff))
+            .order_by(Stock.fundamentals_updated_at.asc().nulls_first())
+            .limit(limit)
         )
     ).scalars().all()
     updated = 0
@@ -171,7 +185,7 @@ async def refresh_fundamentals(db: AsyncSession, max_age: timedelta = FUNDAMENTA
     return updated
 
 
-async def score_unrated_stocks(db: AsyncSession, limit: int = 25) -> int:
+async def score_unrated_stocks(db: AsyncSession, limit: int = RISK_SCORES_PER_PASS) -> int:
     """Compute a real risk score for stocks that have none yet; returns how many were scored.
 
     Picks a random few per pass so a ticker whose data keeps failing can't starve the rest.
@@ -180,7 +194,11 @@ async def score_unrated_stocks(db: AsyncSession, limit: int = 25) -> int:
     from app.services.llm_orchestrator import has_price_history, run_risk_pipeline
 
     unrated = (
-        await db.execute(select(Stock).where(Stock.risk_score.is_(None)).order_by(func.random()).limit(limit))
+        await db.execute(
+            select(Stock).where(Stock.risk_score.is_(None))
+            .order_by(Stock.price.is_(None), func.random())  # stocks with a price first: those can be scored
+            .limit(limit)
+        )
     ).scalars().all()
     scored = 0
     for stock in unrated:

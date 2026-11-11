@@ -10,7 +10,7 @@ import asyncio
 import csv
 import io
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 import sentry_sdk
@@ -150,6 +150,33 @@ async def track_index_members(db: AsyncSession, text: str) -> int:
     return len(added.all())
 
 
+async def track_listed_equities(db: AsyncSession, nse_rows: list[dict]) -> int:
+    """Track every NSE-listed share (not ETFs); new ones start with the exchange's last close.
+
+    The background jobs then fill in Yahoo prices, fundamentals and risk a batch at a time.
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    rows = [
+        {
+            "ticker": r["ticker"],
+            "name": r["name"],
+            "price": r.get("close"),
+            "previous_close": r.get("prev_close"),
+            "price_updated_at": datetime.combine(r["price_date"], datetime.min.time()) if r.get("price_date") else None,
+        }
+        for r in nse_rows
+        if not r.get("is_etf") and not r["ticker"].removesuffix(".NS").startswith("DUMMY")
+    ]
+    added = 0
+    for start in range(0, len(rows), 1000):  # keeps each INSERT's parameter count well under Postgres's limit
+        result = await db.execute(
+            pg_insert(Stock).values(rows[start:start + 1000]).on_conflict_do_nothing(index_elements=["ticker"]).returning(Stock.ticker)
+        )
+        added += len(result.all())
+    return added
+
+
 async def _get(client: httpx.AsyncClient, url: str) -> str | None:
     try:
         resp = await client.get(url)
@@ -210,8 +237,10 @@ async def refresh_directory(db: AsyncSession) -> dict[str, int]:
     if us:
         await _replace(db, us, sorted({*_US_EXCHANGES.values(), "US"}))
         counts["US"] = len(us)
-    if nifty500_text:
-        counts["newly_tracked"] = await track_index_members(db, nifty500_text)
+    newly = await track_index_members(db, nifty500_text) if nifty500_text else 0
+    newly += await track_listed_equities(db, nse) if nse else 0
+    if nifty500_text or nse:
+        counts["newly_tracked"] = newly
     # Stocks tracked before they had a name (saved as the bare ticker) take the exchange's name
     listed_name = select(ListedSecurity.name).where(ListedSecurity.ticker == Stock.ticker).scalar_subquery()
     await db.execute(

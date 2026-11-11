@@ -158,6 +158,13 @@ export default function ResearchExplorer() {
     const results = data?.stocks || []
     const latestPriceAt = results.map(r => r.price_updated_at).filter((t): t is string => !!t).sort().at(-1)
     const totalCount = data?.total_count || 0
+    const { data: health } = useQuery({
+        queryKey: ["dataHealth"],
+        queryFn: async () => (await apiClient.get<{ tracked?: number; with_fundamentals?: number }>("/market/data-health")).data,
+        staleTime: 5 * 60 * 1000,
+    })
+    // Newly tracked stocks have no call until their fundamentals arrive (about 600 an hour)
+    const stillLoading = health?.tracked && health.with_fundamentals !== undefined ? health.tracked - health.with_fundamentals : 0
 
     const handleSignalToggle = (signal: string) => {
         setSelectedSignals(prev =>
@@ -438,6 +445,11 @@ export default function ResearchExplorer() {
                             <h2 className="text-sm font-semibold text-foreground select-none">
                                 {isLoading ? "Syncing..." : `${totalCount.toLocaleString()} results`}
                             </h2>
+                            {stillLoading > 25 && (
+                                <span role="status" className="hidden lg:inline text-[11px] text-muted-foreground whitespace-nowrap" title="New stocks get their fundamentals and call over the next few hours">
+                                    Data still loading for {stillLoading.toLocaleString()} stocks
+                                </span>
+                            )}
                             <span className="h-4 w-px bg-border" />
                             <div className="relative flex-1 group">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
