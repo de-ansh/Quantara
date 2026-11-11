@@ -233,6 +233,7 @@ from app.api.v1 import (
     recommendations,
     research,
     risk,
+    screens,
     signals,
     users,
     watchlist,
@@ -251,6 +252,7 @@ app.include_router(risk.router, prefix="/api/v1", tags=["risk"])
 app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
 app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
 app.include_router(watchlist.router, prefix="/api/v1/watchlist", tags=["watchlist"])
+app.include_router(screens.router, prefix="/api/v1/screens", tags=["screens"])
 app.include_router(price_alerts.router, prefix="/api/v1/alerts/price", tags=["alerts"])
 
 

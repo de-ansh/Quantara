@@ -512,6 +512,23 @@ def _download_history(ticker: str, range_: str) -> list[PricePoint]:
     ]
 
 
+class TechnicalsResponse(BaseModel):
+    """Latest technical indicators from one year of daily closes."""
+
+    ticker: str
+    price: float
+    rsi_14: float | None
+    sma_20: float | None
+    sma_50: float | None
+    sma_200: float | None
+    macd: float | None
+    macd_signal: float | None
+    high_1y: float
+    low_1y: float
+    pct_from_high: float | None
+    notes: list[str]
+
+
 @router.get("/stocks/{ticker}/history", response_model=PriceHistoryResponse)
 async def get_price_history(
     ticker: str,
@@ -543,3 +560,18 @@ async def get_price_history(
     return PriceHistoryResponse(
         ticker=key[0], range=range, points=points, change_pct=round(change, 2)
     )
+
+
+@router.get("/stocks/{ticker}/technicals", response_model=TechnicalsResponse)
+async def get_technicals(ticker: str, current_user: CurrentUser) -> TechnicalsResponse:
+    """RSI, moving averages and MACD, from the cached 1-year price history."""
+    from app.services.technicals import indicators
+
+    history = await get_price_history(ticker, current_user, "1Y")
+    values = indicators([p.close for p in history.points])
+    if values is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Not enough price history for {history.ticker}",
+        )
+    return TechnicalsResponse(ticker=history.ticker, **values)
