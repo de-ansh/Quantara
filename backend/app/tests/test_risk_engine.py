@@ -364,6 +364,7 @@ async def test_risk_endpoint_reports_assumed_inputs_when_data_unavailable(monkey
     )
 
     assert resp.assumed_inputs == ["price_history", "beta", "pe_ratio", "debt_to_equity", "sector"]
+    assert sum(resp.component_weights.values()) == pytest.approx(1.0)
     assert resp.factor_sensitivities == {}
 
 
