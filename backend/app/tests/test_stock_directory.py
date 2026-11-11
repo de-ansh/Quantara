@@ -5,7 +5,13 @@ import pytest
 from app.models.listed_security import ListedSecurity
 from app.models.stock import Stock
 from app.services import stock_directory
-from app.services.stock_directory import parse_bse, parse_nse, parse_nse_etfs, parse_us
+from app.services.stock_directory import (
+    parse_bse,
+    parse_index_members,
+    parse_nse,
+    parse_nse_etfs,
+    parse_us,
+)
 
 NSE = """SYMBOL,NAME OF COMPANY, SERIES, DATE OF LISTING, PAID UP VALUE, MARKET LOT, ISIN NUMBER, FACE VALUE
 TCS,Tata Consultancy Services Limited,EQ,25-AUG-2004,1,1,INE467B01029,1
@@ -54,6 +60,11 @@ def test_parsers_map_to_yahoo_tickers_and_dedupe_bse_by_isin():
     assert us["AAPL"]["exchange"] == "NASDAQ" and us["SPY"]["is_etf"]
     assert us["AAPL"]["name"] == "Apple Inc." and us["PFBC"]["name"] == "Preferred Bank"
     assert us["BRK-A"]["name"] == "Berkshire Hathaway Inc. Class A" != us["BRK-B"]["name"]
+
+
+def test_index_members_skip_placeholder_symbols():
+    text = "Company Name,Industry,Symbol,Series,ISIN Code\nTCS Ltd.,IT,TCS,EQ,INE467B01029\nDummy HEG Ltd.,X,DUMMYHEG,EQ,X\n"
+    assert parse_index_members(text) == [{"ticker": "TCS.NS", "name": "TCS Ltd."}]
 
 
 async def _headers(client):

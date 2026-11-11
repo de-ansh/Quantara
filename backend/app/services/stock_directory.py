@@ -132,8 +132,9 @@ def parse_bse_prices(text: str) -> dict[str, dict]:
 
 
 def parse_index_members(text: str) -> list[dict]:
+    # NSE's index files can hold DUMMY* placeholders (DUMMYHEG) that never trade
     return [{"ticker": f"{r['Symbol']}.NS", "name": r.get("Company Name") or r["Symbol"]}
-            for r in _rows(text) if r.get("Symbol")]
+            for r in _rows(text) if r.get("Symbol") and not r["Symbol"].startswith("DUMMY")]
 
 
 async def track_index_members(db: AsyncSession, text: str) -> int:
