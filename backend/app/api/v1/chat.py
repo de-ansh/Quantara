@@ -5,7 +5,9 @@ functions as the pages (risk, price history, verdict, research report, signals, 
 """
 
 import json
+import secrets
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
@@ -18,12 +20,14 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_rate_limit
 from app.core.logging import get_logger
+from app.models.shared_chat import SharedChat
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 MAX_TOOL_ROUNDS = 4
 CHAT_LIMIT_PER_HOUR = 40
+SHARES_PER_HOUR = 20
 
 SYSTEM_PROMPT = """You are Quantara's research assistant. The user is an individual investor looking at \
 Quantara's pages: price charts, risk breakdowns (volatility, beta, leverage, earnings stability, sector, \
@@ -81,6 +85,16 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     tickers: list[str]  # stocks the answer looked up
+
+
+class ShareRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=30)
+
+
+class SharedChatResponse(BaseModel):
+    token: str
+    messages: list[ChatMessage]
+    created_at: datetime
 
 
 def _move(points: list, days_back: int) -> float | None:
@@ -259,3 +273,37 @@ async def chat_stream(
             yield "\n\nThe assistant is unavailable right now. Please try again."
 
     return StreamingResponse(answer(), media_type="text/plain; charset=utf-8")
+
+
+@router.post("/share", response_model=SharedChatResponse)
+async def share_chat(
+    body: ShareRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> SharedChatResponse:
+    """Publish a chat at an unguessable link anyone holding it can read."""
+    await enforce_rate_limit(redis, f"chat-share:{current_user['id']}", SHARES_PER_HOUR, 3600)
+    shared = SharedChat(
+        token=secrets.token_urlsafe(32),
+        user_id=int(current_user["id"]),
+        messages=[m.model_dump() for m in body.messages],
+    )
+    db.add(shared)
+    await db.commit()
+    return SharedChatResponse(token=shared.token, messages=body.messages, created_at=shared.created_at)
+
+
+# No auth on purpose: holding the link is what grants access
+@router.get("/shared/{token}", response_model=SharedChatResponse)
+async def read_shared_chat(token: str, db: DBSession) -> SharedChatResponse:
+    shared = await db.get(SharedChat, token)
+    if shared is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This shared chat doesn't exist or was removed")
+    return SharedChatResponse(token=shared.token, messages=shared.messages, created_at=shared.created_at)
+
+
+@router.delete("/shared/{token}", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_sharing_chat(token: str, current_user: CurrentUser, db: DBSession) -> None:
+    shared = await db.get(SharedChat, token)
+    if shared is None or shared.user_id != int(current_user["id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared chat not found")
+    await db.delete(shared)
+    await db.commit()

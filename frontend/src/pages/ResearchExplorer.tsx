@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import { useNavigate } from "react-router-dom"
 import {
@@ -22,6 +22,8 @@ import type { StockSearchItem } from "@/types/api"
 import DayChange from "@/components/DayChange"
 
 const PAGE_SIZE = 25
+
+interface SavedScreen { id: number; name: string; filters: Record<string, string>; sort: string }
 
 /** Fundamental screens: API parameter -> label; all percents except debt/equity (a ratio). */
 const FUNDAMENTALS = [
@@ -93,6 +95,37 @@ export default function ResearchExplorer() {
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
     const [fundamentals, setFundamentals] = useState<Fundamentals>({})
     const [sort, setSort] = useState("")
+    const [screenName, setScreenName] = useState("")
+    const queryClient = useQueryClient()
+    const { data: savedScreens = [] } = useQuery({
+        queryKey: ["screens"],
+        queryFn: async () => (await apiClient.get<SavedScreen[]>("/screens/")).data,
+    })
+    const refreshScreens = () => queryClient.invalidateQueries({ queryKey: ["screens"] })
+    const saveScreen = useMutation({
+        mutationFn: () => apiClient.post("/screens/", {
+            name: screenName,
+            sort,
+            filters: {
+                ...Object.fromEntries(Object.entries(fundamentals).filter(([, v]) => v)),
+                _market: selectedMarket, _pe: String(peLimit), _beta: String(betaLimit), _signals: selectedSignals.join(","),
+            },
+        }),
+        onSuccess: () => { setScreenName(""); void refreshScreens() },
+    })
+    const deleteScreen = useMutation({
+        mutationFn: (id: number) => apiClient.delete(`/screens/${id}`),
+        onSuccess: () => { void refreshScreens() },
+    })
+    const loadScreen = (s: SavedScreen) => {
+        const { _market, _pe, _beta, _signals, ...rest } = s.filters
+        setFundamentals(rest as Fundamentals)
+        setSort(s.sort)
+        if (_market) setSelectedMarket(_market as "all" | "us" | "india")
+        if (_pe) setPeLimit(Number(_pe))
+        if (_beta) setBetaLimit(Number(_beta))
+        setSelectedSignals(_signals ? _signals.split(",") : [])
+    }
     const activeFundamentals = Object.entries(fundamentals).filter(([, v]) => v !== undefined && v.trim() !== "" && !Number.isNaN(Number(v)))
     const [filtersOpen, setFiltersOpen] = useState(false)
     // Page resets whenever the filters change (derived during render, no effect needed)
@@ -259,6 +292,31 @@ export default function ResearchExplorer() {
                             <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
                         </summary>
                         <div className="px-4 pb-4 space-y-3">
+                            <form
+                                className="flex gap-1.5"
+                                onSubmit={e => { e.preventDefault(); if (screenName.trim()) saveScreen.mutate() }}
+                            >
+                                <input
+                                    aria-label="Name for this screen"
+                                    value={screenName}
+                                    maxLength={60}
+                                    onChange={e => setScreenName(e.target.value)}
+                                    placeholder="Save these filters as…"
+                                    className="h-8 flex-1 min-w-0 px-2 bg-background border border-border rounded-sm text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                                <Button type="submit" size="sm" variant="outline" className="h-8 text-xs" disabled={!screenName.trim() || saveScreen.isPending}>Save</Button>
+                            </form>
+                            {saveScreen.isError && <p role="alert" className="text-[11px] text-q-risk-high">Could not save this screen.</p>}
+                            {savedScreens.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Saved screens">
+                                    {savedScreens.map(s => (
+                                        <span key={s.id} className="inline-flex items-center border border-primary/40 rounded-sm text-[11px]">
+                                            <button type="button" onClick={() => loadScreen(s)} className="px-2 py-1 hover:bg-muted">{s.name}</button>
+                                            <button type="button" aria-label={`Delete ${s.name}`} onClick={() => deleteScreen.mutate(s.id)} className="px-1 py-1 text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Preset screens">
                                 {PRESETS.map(p => (
                                     <button

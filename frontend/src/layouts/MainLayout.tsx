@@ -22,7 +22,10 @@ import {
     TrendingUp,
     AlertTriangle,
     Briefcase,
-    Columns3
+    Columns3,
+    Globe,
+    CalendarDays,
+    Calculator,
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
@@ -44,6 +47,8 @@ const PUBLIC_ROUTES = ["/login", "/register"]
 
 const navigation: NavItem[] = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    { name: "Markets", href: "/markets", icon: Globe },
+    { name: "Events", href: "/events", icon: CalendarDays },
     { name: "Stock Detail", href: "/research", icon: BarChart3 },
     { name: "Research Explorer", href: "/explorer", icon: Search },
     { name: "Signal Monitor", href: "/signals", icon: Activity },
@@ -51,6 +56,7 @@ const navigation: NavItem[] = [
     { name: "Simulation", href: "/simulation", icon: TrendingUp },
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Compare", href: "/compare", icon: Columns3 },
+    { name: "Calculators", href: "/calculators", icon: Calculator },
 ]
 
 const adminNavigation: NavItem[] = [
@@ -89,7 +95,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [])
 
-    const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
+    const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname) || location.pathname.startsWith("/shared/")
 
     // Live market status feed
     const { data: marketData } = useQuery({
