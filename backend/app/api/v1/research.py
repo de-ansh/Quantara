@@ -59,6 +59,7 @@ class StockSearchItem(BaseModel):
     promoter_change_pp: float | None = None
     exchange: str | None = None
     tracked: bool = True  # False: directory-only, no price or scores until someone opens it
+    call: str | None = None  # Buy / Hold / Avoid from the stock's numbers (moderate profile, no signals)
 
 
 def _currency(ticker: str) -> str:
@@ -93,6 +94,9 @@ def _directory_item(d: Any) -> StockSearchItem:
 
 def to_search_item(stock: Any) -> StockSearchItem:
     """Explorer row for a Stock record."""
+    from app.services.stock_call import data_call
+
+    call = data_call(stock).verdict
     sig_str = "Unrated"
     if stock.research_score is not None:
         sig_str = "Neutral"
@@ -132,6 +136,7 @@ def to_search_item(stock: Any) -> StockSearchItem:
         profit_cagr_3y_pct=stock.profit_cagr_3y_pct,
         promoter_pct=stock.promoter_pct,
         promoter_change_pp=stock.promoter_change_pp,
+        call=None if call == "Unrated" else call,
     )
 
 

@@ -178,13 +178,21 @@ class VerdictResponse(BaseModel):
     verdict: str  # Buy | Hold | Avoid | Unrated
     final_score: float | None
     reasons: list[str]
-    missing: list[str]  # what has to be computed before a verdict is possible
+    missing: list[str]  # what has to be computed before the AI verdict is possible
     user_risk_level: str
+    basis: str = "ai"  # ai: research report + risk + signals; data: the stock's numbers only
+    pros: list[str] = []
+    cons: list[str] = []
 
 
 @router.get("/{ticker}/verdict", response_model=VerdictResponse)
 async def get_verdict(ticker: str, current_user: CurrentUser, db: DBSession) -> VerdictResponse:
-    """Buy / Hold / Avoid for one stock, from the same score that ranks recommendations."""
+    """Buy / Hold / Avoid for one stock: the AI verdict when it has research, else a call from its numbers."""
+    from app.models.research import ResearchReport
+    from app.models.signal import Signal
+    from app.services.recommendation_engine import signal_score
+    from app.services.stock_call import data_call
+
     user_risk_level = current_user.get("risk_level") or "Moderate"
     tolerance = current_user.get("volatility_tolerance")
     stock = await db.get(Stock, ticker.upper())
@@ -193,16 +201,31 @@ async def get_verdict(ticker: str, current_user: CurrentUser, db: DBSession) -> 
         missing.append("research report")
     if stock is None or stock.risk_score is None:
         missing.append("risk score")
-    if stock is None or missing:
+    if stock is None:
         return VerdictResponse(ticker=ticker.upper(), verdict="Unrated", final_score=None, reasons=[],
                                missing=missing, user_risk_level=user_risk_level)
+    signals = (await db.execute(select(Signal.strength, Signal.data).where(Signal.ticker == stock.ticker))).all()
+    signal = signal_score([tuple(r) for r in signals])
+    if missing:
+        call = data_call(stock, user_risk_level, signal)
+        return VerdictResponse(ticker=stock.ticker, verdict=call.verdict, final_score=call.score, reasons=[],
+                               missing=missing, user_risk_level=user_risk_level, basis="data",
+                               pros=call.pros, cons=call.cons)
 
     from app.services.verdict_tracking import verdict_for
 
     v = await verdict_for(db, stock, user_risk_level, float(tolerance) if tolerance is not None else None)
     assert v is not None  # both scores were checked above
+    report = (await db.execute(select(ResearchReport.structured_json).where(ResearchReport.ticker == stock.ticker))).scalar()
+    report = report if isinstance(report, dict) else {}
+    pros = [str(x) for x in report.get("strengths") or []][:4]
+    cons = [str(x) for x in (report.get("weaknesses") or []) + (report.get("threats") or [])][:4]
+    if not pros and not cons:  # an older report without them: fall back to what the numbers say
+        call = data_call(stock, user_risk_level, signal)
+        pros, cons = call.pros, call.cons
     return VerdictResponse(ticker=stock.ticker, verdict=v.verdict, final_score=round(v.final_score, 1),
-                           reasons=v.reasons, missing=[], user_risk_level=user_risk_level)
+                           reasons=v.reasons, missing=[], user_risk_level=user_risk_level,
+                           pros=pros, cons=cons)
 
 
 class VerdictOutcome(BaseModel):
