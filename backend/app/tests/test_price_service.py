@@ -121,3 +121,36 @@ def test_fetch_fundamentals_normalises_screening_units(monkeypatch):
     assert (data["roe_pct"], data["debt_to_equity"], data["revenue_growth_pct"]) == (45.57, 0.1, 11.2)
     assert (data["profit_margin_pct"], data["dividend_yield_pct"], data["return_1y_pct"]) == (18.22, 1.94, -17.4)
     assert data["pe_ratio"] is None  # "Infinity" would fail the whole row's update
+
+
+@pytest.mark.asyncio
+async def test_prices_download_in_batches_and_one_failed_batch_keeps_the_rest(db_session, monkeypatch):
+    db_session.add_all([Stock(ticker=f"S{i}.NS", name=f"S{i}") for i in range(5)])
+    await db_session.commit()
+    batches: list[list[str]] = []
+
+    def fetch(tickers):
+        batches.append(tickers)
+        if len(batches) == 2:
+            raise ConnectionError("throttled")
+        return dict.fromkeys(tickers, (10.0, 9.0))
+
+    monkeypatch.setattr(price_service, "fetch_quotes", fetch)
+    monkeypatch.setattr(price_service, "PRICE_BATCH", 2)
+    monkeypatch.setattr(price_service, "PRICE_BATCH_PAUSE_SECONDS", 0)
+    assert await price_service.refresh_prices(db_session) == 3  # batches of 2, 2, 1; the second failed
+    assert [len(b) for b in batches] == [2, 2, 1]
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_refresh_is_capped_and_never_fetched_go_first(db_session, monkeypatch):
+    from datetime import timedelta
+
+    old = utcnow() - timedelta(days=3)
+    db_session.add_all([Stock(ticker="OLD.NS", name="Old", fundamentals_updated_at=old),
+                        Stock(ticker="NEW1.NS", name="New1"), Stock(ticker="NEW2.NS", name="New2")])
+    await db_session.commit()
+    calls: list[str] = []
+    monkeypatch.setattr(price_service, "fetch_fundamentals", lambda t: calls.append(t) or {"name": t})
+    assert await price_service.refresh_fundamentals(db_session, limit=2) == 2
+    assert sorted(calls) == ["NEW1.NS", "NEW2.NS"]

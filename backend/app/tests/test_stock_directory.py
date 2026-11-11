@@ -155,7 +155,9 @@ async def test_refresh_loads_every_list_and_names_bare_ticker_stocks(db_session,
     db_session.add(Stock(ticker="AAPL", name="AAPL"))  # tracked from a watchlist before it had a name
     await db_session.commit()
 
-    assert await stock_directory.refresh_directory(db_session) == {"NSE": 4, "BSE": 3, "US": 5, "newly_tracked": 1}
+    # TCS from the Nifty 500 file, then every other NSE share (TMPV); ETFs aren't tracked
+    assert await stock_directory.refresh_directory(db_session) == {"NSE": 4, "BSE": 3, "US": 5, "newly_tracked": 2}
+    assert await db_session.get(Stock, "TMPV.NS") is not None and await db_session.get(Stock, "NIFTYBEES.NS") is None
     stock = await db_session.get(Stock, "AAPL")
     await db_session.refresh(stock)
     assert stock.name == "Apple Inc."

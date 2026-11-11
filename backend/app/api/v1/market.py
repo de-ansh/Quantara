@@ -228,6 +228,8 @@ class DataHealthResponse(BaseModel):
     prices_stale: bool
     directory_updated_at: datetime | None
     directory_stale: bool
+    tracked: int = 0  # stocks the background jobs maintain
+    with_fundamentals: int = 0  # of those, how many have fundamentals so far (a call needs them)
 
 
 @router.get("/data-health", response_model=DataHealthResponse)
@@ -242,12 +244,17 @@ async def get_data_health(current_user: CurrentUser, db: DBSession) -> DataHealt
 
     prices = (await db.execute(select(func.max(Stock.price_updated_at)))).scalar()
     directory = (await db.execute(select(func.max(ListedSecurity.updated_at)))).scalar()
+    tracked, with_fundamentals = (await db.execute(
+        select(func.count(), func.count(Stock.fundamentals_updated_at))
+    )).one()
     now = utcnow()
     return DataHealthResponse(
         prices_updated_at=prices,
         prices_stale=prices is not None and now - prices > timedelta(hours=PRICES_STALE_AFTER_HOURS),
         directory_updated_at=directory,
         directory_stale=directory is not None and now - directory > timedelta(hours=DIRECTORY_STALE_AFTER_HOURS),
+        tracked=tracked,
+        with_fundamentals=with_fundamentals,
     )
 
 
