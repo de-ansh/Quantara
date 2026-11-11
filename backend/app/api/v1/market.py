@@ -1,18 +1,19 @@
 """Market data API endpoints."""
 
 import asyncio
+import re
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.clock import utcnow
-from app.core.dependencies import CurrentUser, DBSession
+from app.core.dependencies import CurrentUser, DBSession, RedisClient, enforce_rate_limit
 from app.core.logging import get_logger
 from app.models.stock import Stock
 from app.services import nse_market
@@ -432,3 +433,52 @@ async def get_market_themes(current_user: CurrentUser, db: DBSession) -> list[Th
         themes.append(Theme(name=name, members=rows,
                             avg_change_pct=round(sum(moves) / len(moves), 2) if moves else None))
     return themes
+
+
+class IpoAnalysisResponse(BaseModel):
+    """AI read of an IPO from NSE's issue data and its prospectus. Not investment advice."""
+
+    issue: dict[str, Any]
+    summary: str
+    financials: str
+    valuation: str
+    pros: list[str]
+    cons: list[str]
+    recommendation: str | None  # Apply | Apply for listing gains | Avoid
+    reasoning: str
+    confidence: float | None
+    read_prospectus: bool
+    cached: bool = False
+
+
+IPO_ANALYSIS_TTL = 6 * 3600  # demand changes daily while bidding; the prospectus doesn't
+IPO_ANALYSES_PER_HOUR = 10  # each fresh one is a paid model call on the server's key
+
+
+@router.get("/ipos/{symbol}/analysis", response_model=IpoAnalysisResponse)
+async def get_ipo_analysis(
+    symbol: str,
+    current_user: CurrentUser,
+    redis: RedisClient,
+    series: Literal["EQ", "SME"] = Query("EQ"),
+) -> IpoAnalysisResponse:
+    """Pros, cons and Apply / Apply for listing gains / Avoid for one NSE IPO (cached for 6 hours)."""
+    import json
+
+    from app.services.ipo_analysis import analyze_ipo
+
+    symbol = symbol.upper()
+    if not re.fullmatch(r"[A-Z0-9&-]{1,20}", symbol):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Not an NSE symbol")
+    key = f"ipo-analysis:{symbol}:{series}"
+    if cached := await redis.get(key):
+        return IpoAnalysisResponse(**json.loads(cached), cached=True)
+    await enforce_rate_limit(redis, f"ipo-analysis:{current_user['id']}", IPO_ANALYSES_PER_HOUR, 3600)
+    try:
+        result = await analyze_ipo(symbol, series)
+    except LookupError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    await redis.set(key, json.dumps(result), ex=IPO_ANALYSIS_TTL)
+    return IpoAnalysisResponse(**result)
