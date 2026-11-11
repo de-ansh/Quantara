@@ -71,12 +71,60 @@ async def test_fetch_filing_text_rejects_bad_input(serve):
     serve["https://x.example.com/gone.pdf"] = httpx.Response(403)
 
     for url, message in [
-        ("https://x.example.com/page", "not a PDF"),
+        ("https://x.example.com/page", "no transcript PDF or call recording"),
         ("https://x.example.com/tiny.pdf", "almost no text"),
         ("https://x.example.com/gone.pdf", "HTTP 403"),
     ]:
         with pytest.raises(FilingError, match=message):
             await fetch_filing_text(url)
+
+
+BLS_PAGE = """<html><body>
+<a href="/assets/pdf/BLS-Sustainability-Report.pdf">Sustainability</a>
+<a href="/assets/pdf/transcript/Audio-Recording-of-Earnings Call Audio_Q2FY27.mp3">Q2 audio</a>
+<a href="/assets/pdf/transcript/Transcript of Earnings call held on August 11 2026.pdf">Q1 transcript</a>
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_company_page_resolves_to_its_newest_recording_and_transcribes_it(serve, monkeypatch):
+    heard: list[str] = []
+
+    async def transcribe(audio: bytes, filename: str) -> str:
+        heard.append(filename)
+        assert audio == b"ID3fake-mp3"
+        return SENTENCE * 10
+
+    monkeypatch.setattr(filing, "_transcribe", transcribe)
+    serve["https://www.bls.example.com/transcript"] = httpx.Response(
+        200, headers={"content-type": "text/html"}, content=BLS_PAGE.encode()
+    )
+    audio = "https://www.bls.example.com/assets/pdf/transcript/Audio-Recording-of-Earnings%20Call%20Audio_Q2FY27.mp3"
+    serve[audio] = httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=b"ID3fake-mp3")
+
+    text = await fetch_filing_text("https://www.bls.example.com/transcript")
+    assert "strong digital demand" in text
+    assert heard == ["Audio-Recording-of-Earnings%20Call%20Audio_Q2FY27.mp3"]
+    # A recording served as a generic download is recognised by its extension
+    serve[audio] = httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"ID3fake-mp3")
+    assert "strong digital demand" in await fetch_filing_text(audio)
+
+
+@pytest.mark.asyncio
+async def test_recordings_without_speech_and_pages_without_calls_are_refused(serve, monkeypatch):
+    async def silent(audio: bytes, filename: str) -> str:
+        return "Thank you."
+
+    monkeypatch.setattr(filing, "_transcribe", silent)
+    serve["https://x.example.com/call.mp3"] = httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=b"ID3")
+    with pytest.raises(FilingError, match="almost no speech"):
+        await fetch_filing_text("https://x.example.com/call.mp3")
+    # A page is followed one level only, so a page linking pages can't loop
+    serve["https://x.example.com/ir"] = httpx.Response(
+        200, headers={"content-type": "text/html"}, content=b'<html><a href="/annual-report-2026.pdf">AR</a></html>'
+    )
+    with pytest.raises(FilingError, match="no transcript PDF or call recording"):
+        await fetch_filing_text("https://x.example.com/ir")
 
 
 @pytest.mark.asyncio
@@ -208,7 +256,7 @@ async def test_watch_skips_cover_letters_and_retries(db_session, serve, watch):
 
     assert await filing_watch.link_new_transcripts(db_session) == 0
     assert await filing_watch.link_new_transcripts(db_session) == 0
-    assert len(posted) == 1 and "no readable PDF" in posted[0]  # reported once, not every pass
+    assert len(posted) == 1 and "no readable PDF or recording" in posted[0]  # reported once, not every pass
 
     # The full transcript turns up later and is picked up
     serve[pdf] = httpx.Response(200, content=_pdf(SENTENCE * 80))

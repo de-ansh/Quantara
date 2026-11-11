@@ -12,7 +12,7 @@ interface Filing {
     chars: number
 }
 
-/** Link an earnings filing PDF (NSE/BSE announcement or company IR page) as research context. */
+/** Link an earnings filing (PDF, call recording, or a company page listing them) as research context. */
 export default function FilingCard({ ticker }: { ticker: string }) {
     const queryClient = useQueryClient()
     const refreshReport = useRefreshResearch(ticker)
@@ -51,7 +51,7 @@ export default function FilingCard({ ticker }: { ticker: string }) {
             <div className="p-4 space-y-3 text-xs">
                 <p className="text-muted-foreground">
                     Research uses this filing as context. New NSE/BSE earnings-call transcripts are linked
-                    automatically; paste a PDF link (transcript or results) to add or replace one yourself.
+                    automatically. To add or replace one, paste a PDF, a call recording (MP3), or the company's transcript page. Recordings are transcribed, which can take a minute.
                 </p>
                 {filing?.url && (
                     <div className="space-y-1">
@@ -78,12 +78,12 @@ export default function FilingCard({ ticker }: { ticker: string }) {
                     }}
                     className="flex gap-2"
                 >
-                    <label htmlFor="filing-url" className="sr-only">Filing PDF URL</label>
+                    <label htmlFor="filing-url" className="sr-only">Filing, recording or transcript page URL</label>
                     <input
                         id="filing-url"
                         type="url"
                         required
-                        placeholder="https://…/transcript.pdf"
+                        placeholder="https://…/transcript.pdf or .mp3"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         className="min-w-0 flex-1 bg-background border border-border px-3 py-2 rounded-sm text-foreground focus:border-primary outline-none"
@@ -94,6 +94,7 @@ export default function FilingCard({ ticker }: { ticker: string }) {
                 </form>
                 <p role="status" className="text-muted-foreground">
                     {save.isError && <span className="text-red-400">{apiErrorDetail(save.error) ?? "Could not add that filing"}</span>}
+                    {save.isPending && "Reading the filing (transcribing if it is a recording)…"}
                     {refreshReport.isPending && "Regenerating research with the filing…"}
                 </p>
             </div>
