@@ -47,6 +47,7 @@ class Stock(Base):
     promoter_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     promoter_change_pp: Mapped[float | None] = mapped_column(Float, nullable=True)
     shareholding_quarter: Mapped[date | None] = mapped_column(Date, nullable=True)
+    results_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Market cap in listing currency"
     )

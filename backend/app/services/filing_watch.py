@@ -250,6 +250,9 @@ async def run_periodic_filing_watch(interval_seconds: int = FILING_WATCH_INTERVA
             linked = await link_new_transcripts(db)
             if linked:
                 logger.info(f"Linked {linked} new earnings-call transcript(s)")
+            from app.services.earnings import refresh_results
+
+            await refresh_results(db)
 
     while True:
         try:

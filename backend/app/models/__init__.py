@@ -5,6 +5,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.listed_security import ListedSecurity
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.price_alert import PriceAlert
+from app.models.quarterly_result import QuarterlyResult
 from app.models.recommendation import Recommendation
 from app.models.research import ResearchReport
 from app.models.saved_screen import SavedScreen
@@ -21,6 +22,7 @@ __all__ = [
     "Stock",
     "Signal",
     "ResearchReport",
+    "QuarterlyResult",
     "Recommendation",
     "AuditLog",
     "Portfolio",
