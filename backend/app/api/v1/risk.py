@@ -59,6 +59,7 @@ class RiskAnalysisResponse(BaseModel):
     risk_level: str
     risk_band: str
     components: RiskComponentsResponse
+    component_weights: dict[str, float] = RiskEngine.WEIGHTS
     explanation: str
     max_drawdown: float = 0.0
     drawdown_series: list[DrawdownPoint] = []

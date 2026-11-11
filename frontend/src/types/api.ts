@@ -79,6 +79,7 @@ export interface RiskAnalysis {
     risk_level: string
     risk_band: string
     components: RiskComponents
+    component_weights: Record<string, number>
     explanation: string
     max_drawdown: number
     drawdown_series: { time: string; historical?: number | null; projected?: number | null; drawdown_pct?: number | null }[]
