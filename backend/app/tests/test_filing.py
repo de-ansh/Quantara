@@ -261,3 +261,98 @@ async def test_watch_skips_cover_letters_and_retries(db_session, serve, watch):
     # The full transcript turns up later and is picked up
     serve[pdf] = httpx.Response(200, content=_pdf(SENTENCE * 80))
     assert await filing_watch.link_new_transcripts(db_session) == 1
+
+
+def _recording_xbrl(symbol: str, link: str, call_date: str) -> str:
+    return f"""<xbrli:xbrl><in-capmkt:NSESymbol contextRef="MainI">{symbol}</in-capmkt:NSESymbol>
+<in-capmkt:ScripCode contextRef="MainI">500209</in-capmkt:ScripCode>
+<in-capmkt:PurposeOfDisclosure contextRef="MainI">Audio Recording/Video Recording</in-capmkt:PurposeOfDisclosure>
+<in-capmkt:DateOfCallForAudioRecording contextRef="MainI">{call_date}</in-capmkt:DateOfCallForAudioRecording>
+<in-capmkt:WeblinkOfAudioRecording contextRef="MainI">{link}</in-capmkt:WeblinkOfAudioRecording></xbrli:xbrl>"""
+
+
+CALLS_FEED = """<rss><channel>
+<item><title>Infosys Limited</title><link>https://nsearchives.nseindia.com/corporate/INFY_11112026130442_Transcript.pdf</link>
+<description>INFOSYS LIMITED has informed the Exchange about Transcript |SUBJECT: Analysts/Institutional Investor Meet/Con. Call Updates</description></item>
+<item><title>Wipro Limited</title><link>https://nse.example.com/xbrl/WIPRO-audio.xml</link>
+<description>WIPRO LIMITED has informed the Exchange about Audio Recording/Video Recording |SUBJECT: Analyst/Investor Meet</description></item>
+<item><title>Other Co</title><link>https://nse.example.com/xbrl/OTHER-audio.xml</link>
+<description>OTHER CO has informed the Exchange about Audio Recording/Video Recording |SUBJECT: Analyst/Investor Meet</description></item>
+</channel></rss>"""
+
+
+@pytest.mark.asyncio
+async def test_watch_reads_transcript_pdfs_and_transcribes_recordings_for_held_stocks(db_session, serve, watch, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy import select
+
+    from app.models.user import User
+    from app.models.watchlist import WatchlistItem
+
+    filing_watch, posted = watch
+    transcribed: list[str] = []
+
+    async def transcribe(audio: bytes, filename: str) -> str:
+        transcribed.append(filename)
+        return SENTENCE * 80
+
+    monkeypatch.setattr(filing, "_transcribe", transcribe)
+    serve[filing_watch.NSE_ANNOUNCEMENTS_RSS] = httpx.Response(200, text=CALLS_FEED)
+    serve["https://nsearchives.nseindia.com/corporate/INFY_11112026130442_Transcript.pdf"] = httpx.Response(
+        200, content=_pdf(SENTENCE * 80)
+    )
+    serve["https://nse.example.com/xbrl/WIPRO-audio.xml"] = httpx.Response(
+        200, text=_recording_xbrl("WIPRO", "https://wipro.example.com/q2.mp3", "2026-11-05")
+    )
+    serve["https://nse.example.com/xbrl/OTHER-audio.xml"] = httpx.Response(
+        200, text=_recording_xbrl("OTHER", "https://other.example.com/q2.mp3", "2026-11-05")
+    )
+    serve["https://wipro.example.com/q2.mp3"] = httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=b"ID3")
+    serve["https://other.example.com/q2.mp3"] = httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=b"ID3")
+
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    db_session.add_all([
+        Stock(ticker="INFY.NS", name="Infosys", price=1500.0),
+        Stock(ticker="WIPRO.NS", name="Wipro", price=250.0),
+        Stock(ticker="OTHER.NS", name="Other", price=10.0),  # tracked, but nobody watches or holds it
+    ])
+    await db_session.flush()
+    db_session.add(WatchlistItem(user_id=user.id, ticker="WIPRO.NS"))
+    await db_session.commit()
+
+    assert await filing_watch.link_new_transcripts(db_session) == 2
+    infy, wipro, other = [await db_session.get(Stock, t) for t in ("INFY.NS", "WIPRO.NS", "OTHER.NS")]
+    for s in (infy, wipro, other):
+        await db_session.refresh(s)
+    assert infy.filing_url.endswith("INFY_11112026130442_Transcript.pdf")
+    assert wipro.filing_url == "https://wipro.example.com/q2.mp3"
+    assert other.filing_url is None
+    assert transcribed == ["q2.mp3"]  # only the watched stock's recording was paid for
+    assert any("recording transcribed for WIPRO.NS" in p for p in posted)
+
+    # A recording for a call that already has a newer filing is skipped, so a PDF transcript is never replaced
+    filing_watch._seen_xbrl.clear()
+    wipro.filing_url, wipro.filing_updated_at = "https://wipro.example.com/transcript.pdf", datetime(2026, 11, 9)
+    await db_session.commit()
+    transcribed.clear()
+    await filing_watch.link_new_transcripts(db_session)
+    await db_session.refresh(wipro)
+    assert wipro.filing_url == "https://wipro.example.com/transcript.pdf" and transcribed == []
+
+
+@pytest.mark.asyncio
+async def test_pdf_symbol_drops_nse_digit_suffix_only_when_the_company_matches(db_session):
+    from app.services.filing_watch import pdf_announcement_symbol
+
+    db_session.add_all([
+        Stock(ticker="BSE.NS", name="BSE Limited", price=1.0),
+        Stock(ticker="INFY.NS", name="Infosys Limited", price=1.0),
+    ])
+    await db_session.commit()
+    base = "https://nsearchives.nseindia.com/corporate/"
+    assert await pdf_announcement_symbol(db_session, base + "INFY_11112026130442_T.pdf", "Infosys Limited") == "INFY"
+    assert await pdf_announcement_symbol(db_session, base + "BSE1_11112026130442_T.pdf", "BSE Limited") == "BSE"
+    # Same stripped symbol, different company: not linked
+    assert await pdf_announcement_symbol(db_session, base + "BSE1_11112026130442_T.pdf", "Bharat Steel Exports") is None
+    assert await pdf_announcement_symbol(db_session, base + "UNKNOWN_11112026130442_T.pdf", "Unknown Ltd") is None
