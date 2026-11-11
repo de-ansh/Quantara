@@ -8,6 +8,9 @@ interface Verdict {
     reasons: string[]
     missing: string[]
     user_risk_level: string
+    basis?: "ai" | "data"
+    pros?: string[]
+    cons?: string[]
 }
 
 const TONE: Record<Verdict["verdict"], string> = {
@@ -17,7 +20,7 @@ const TONE: Record<Verdict["verdict"], string> = {
     Unrated: "text-muted-foreground border-border bg-muted/30",
 }
 
-/** Buy / Hold / Avoid for the viewer's risk profile; `version` refetches once research or risk lands. */
+/** Buy / Hold / Avoid for the viewer's risk profile, with pros and cons; `version` refetches once research or risk lands. */
 export default function VerdictCard({ ticker, version }: { ticker: string; version?: string | number | null }) {
     const { data, isLoading } = useQuery({
         queryKey: ["verdict", ticker, version],
@@ -25,9 +28,10 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
     })
     // Unknown values (an older or failing API) fall back to Unrated instead of crashing the page
     const verdict = data?.verdict && data.verdict in TONE ? data.verdict : "Unrated"
+    const fromData = data?.basis === "data"
 
     return (
-        <section aria-label="Verdict" className="bg-card border border-border p-4 px-5 min-w-[240px] max-w-sm">
+        <section aria-label="Verdict" className="bg-card border border-border p-4 px-5 min-w-[240px] max-w-md">
             <div className="flex items-center justify-between gap-3">
                 <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
                     Verdict{data?.user_risk_level ? ` · ${data.user_risk_level} profile` : ""}
@@ -39,13 +43,34 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
             <div className={cn("mt-2 inline-block border px-3 py-1 text-xl font-black uppercase tracking-wider", TONE[verdict])}>
                 {isLoading ? "…" : verdict}
             </div>
-            {data?.missing?.length ? (
-                <p className="mt-2 text-xs text-muted-foreground">Needs a {data.missing.join(" and ")} first.</p>
-            ) : null}
+            {data && verdict !== "Unrated" && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                    {fromData ? "From the stock's numbers. The AI verdict replaces this once research is generated." : "From AI research, risk and signals."}
+                </p>
+            )}
+            {data && verdict === "Unrated" && (
+                <p className="mt-2 text-xs text-muted-foreground">Not enough data on this stock yet to make a call.</p>
+            )}
             {data?.reasons?.length ? (
                 <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground list-disc pl-4">
                     {data.reasons.map(r => <li key={r}>{r}</li>)}
                 </ul>
+            ) : null}
+            {(data?.pros?.length || data?.cons?.length) ? (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <h4 className="font-bold text-green-500">Pros</h4>
+                        {data.pros?.length ? (
+                            <ul className="mt-1 space-y-0.5 list-disc pl-4 text-muted-foreground">{data.pros.map(p => <li key={p}>{p}</li>)}</ul>
+                        ) : <p className="mt-1 text-muted-foreground">None stand out.</p>}
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-red-500">Cons</h4>
+                        {data.cons?.length ? (
+                            <ul className="mt-1 space-y-0.5 list-disc pl-4 text-muted-foreground">{data.cons.map(c => <li key={c}>{c}</li>)}</ul>
+                        ) : <p className="mt-1 text-muted-foreground">None stand out.</p>}
+                    </div>
+                </div>
             ) : null}
         </section>
     )
