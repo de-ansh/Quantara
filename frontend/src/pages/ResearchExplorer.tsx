@@ -208,6 +208,7 @@ export default function ResearchExplorer() {
             market_cap: r.cap,
             risk_score: r.risk ?? "",
             signal: r.signal,
+            call: r.call ?? "",
             sector: r.sector || "",
             pe_ratio: r.pe ?? "",
             beta: r.beta ?? "",
@@ -661,6 +662,7 @@ export default function ResearchExplorer() {
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Buy / Hold / Avoid from the stock's numbers; open the stock for the full call">Call</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROE</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROCE</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Change in promoter holding from the previous quarter">Promoter Δ</th>
@@ -707,6 +709,7 @@ export default function ResearchExplorer() {
                                                     : <>{row.price} <DayChange pct={row.change_pct} className="text-[11px] ml-1" /></>}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.cap}</td>
+                                            <td className="px-6 py-4">{row.call ? <span className={cn("font-bold", row.call === "Buy" ? "text-green-500" : row.call === "Avoid" ? "text-red-500" : "text-amber-500")}>{row.call}</span> : "—"}</td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.roe_pct == null ? "—" : `${row.roe_pct.toFixed(1)}%`}</td>
                                             <td className="px-6 py-4 text-muted-foreground">{row.roce_pct == null ? "—" : `${row.roce_pct.toFixed(1)}%`}</td>
                                             <td className="px-6 py-4">{row.promoter_change_pp == null ? "—" : <span className={row.promoter_change_pp > 0 ? "text-green-500" : row.promoter_change_pp < 0 ? "text-red-500" : ""}>{row.promoter_change_pp > 0 ? "+" : ""}{row.promoter_change_pp.toFixed(2)} pts</span>}</td>
