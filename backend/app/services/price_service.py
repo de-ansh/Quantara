@@ -215,6 +215,58 @@ async def score_unrated_stocks(db: AsyncSession, limit: int = RISK_SCORES_PER_PA
     return scored
 
 
+TECHNICALS_MAX_AGE = timedelta(hours=20)  # once a day, after the previous session's close is in
+
+
+def fetch_year_history(tickers: list[str]) -> dict[str, tuple[list[float], list[float]]]:
+    """{ticker: (closes, volumes)} over a year from one batched Yahoo download; missing tickers omitted."""
+    frame = yf.download(tickers, period="1y", interval="1d", auto_adjust=False, progress=False)
+    out: dict[str, tuple[list[float], list[float]]] = {}
+    for t in tickers:
+        if ("Close", t) not in frame or ("Volume", t) not in frame:
+            continue
+        rows = frame[[("Close", t), ("Volume", t)]].dropna(subset=[("Close", t)])
+        if not rows.empty:
+            out[t] = (rows[("Close", t)].astype(float).tolist(), rows[("Volume", t)].astype(float).tolist())
+    return out
+
+
+async def refresh_technicals(db: AsyncSession, max_age: timedelta = TECHNICALS_MAX_AGE) -> int:
+    """Daily RSI, moving-average gaps, 52-week position and turnover for stale stocks; returns how many updated."""
+    from app.services.technicals import screener_snapshot
+
+    cutoff = utcnow() - max_age
+    stocks = (await db.execute(
+        select(Stock).where(Stock.price.is_not(None))
+        .where((Stock.technicals_updated_at.is_(None)) | (Stock.technicals_updated_at < cutoff))
+    )).scalars().all()
+    if not stocks:
+        return 0
+    by_ticker = {s.ticker: s for s in stocks}
+    tickers = list(by_ticker)
+    updated = 0
+    for start in range(0, len(tickers), PRICE_BATCH):
+        if start:
+            await asyncio.sleep(PRICE_BATCH_PAUSE_SECONDS)
+        batch = tickers[start:start + PRICE_BATCH]
+        try:
+            history = await asyncio.to_thread(fetch_year_history, batch)
+        except Exception as e:  # one failed batch keeps the rest of the pass
+            logger.warning(f"Technicals batch {start // PRICE_BATCH + 1} failed: {e}")
+            continue
+        now = utcnow()
+        for ticker in batch:
+            stock = by_ticker[ticker]
+            snapshot = screener_snapshot(*history[ticker]) if ticker in history else None
+            for key, value in (snapshot or {}).items():
+                setattr(stock, key, value)
+            stock.technicals_updated_at = now  # also when Yahoo had too little history: retry tomorrow
+            updated += snapshot is not None
+        await db.commit()
+    logger.info(f"Refreshed technicals for {updated}/{len(stocks)} stocks")
+    return updated
+
+
 async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTERVAL_SECONDS) -> None:
     """Background loop; one worker refreshes at a time via an advisory lock."""
     from app.core.database import AsyncSessionLocal, run_exclusive
@@ -223,6 +275,7 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
         async with AsyncSessionLocal() as db:
             await refresh_prices(db)
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
+            await refresh_technicals(db)  # no-op until a day has passed
             await score_unrated_stocks(db)
             from app.services.statements import refresh_statements
             from app.services.verdict_tracking import snapshot_verdicts
