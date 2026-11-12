@@ -14,9 +14,11 @@ from datetime import datetime
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.models.large_deal import LargeDeal
 from app.models.listed_security import ListedSecurity
 from app.models.stock import Stock
 from app.services.signal_engine import Signal, SignalType, save_signal_to_db
@@ -54,6 +56,38 @@ def parse_deals(*texts: str) -> dict[str, dict]:
             agg["deals"] += 1
             agg["date"] = datetime.strptime(row["Date"], "%d-%b-%Y")
     return dict(out)
+
+
+def deal_rows(text: str, kind: str) -> list[dict]:
+    """One row per trade from NSE's bulk.csv or block.csv, ready for the large_deals table."""
+    rows = []
+    for row in csv.DictReader(io.StringIO(text)):
+        row = {(k or "").strip(): (v or "").strip() for k, v in row.items()}
+        side, qty, price = row.get("Buy/Sell", "").upper(), _num(row.get("Quantity Traded")), _num(row.get("Trade Price / Wght. Avg. Price"))
+        if not row.get("Symbol") or side not in ("BUY", "SELL") or qty <= 0 or not row.get("Date"):
+            continue
+        rows.append({
+            "deal_date": datetime.strptime(row["Date"], "%d-%b-%Y").date(), "kind": kind, "symbol": row["Symbol"][:20],
+            "company": row.get("Security Name", "")[:200] or None, "client": row.get("Client Name", "")[:200] or "Unknown",
+            "side": side, "quantity": qty, "price": price,
+        })
+    return rows
+
+
+async def store_deals(db: AsyncSession, bulk: str | None, block: str | None) -> int:
+    """Keep the day's trades; re-reading the same file adds nothing. Returns how many rows were offered."""
+    rows = (deal_rows(bulk, "bulk") if bulk else []) + (deal_rows(block, "block") if block else [])
+    if rows:
+        await db.execute(insert(LargeDeal).values(rows).on_conflict_do_nothing(constraint="uq_large_deal"))
+        await db.commit()
+    return len(rows)
+
+
+async def refresh_deals(db: AsyncSession) -> int:
+    """Download today's bulk and block deal files and keep their trades."""
+    async with httpx.AsyncClient(timeout=30.0, headers=_HEADERS) as client:
+        bulk, block = [await _fetch(client, u) for u in (BULK_DEALS, BLOCK_DEALS)]
+    return await store_deals(db, bulk.text if bulk else None, block.text if block else None)
 
 
 def deal_signal(ticker: str, agg: dict, shares_outstanding: float) -> Signal | None:

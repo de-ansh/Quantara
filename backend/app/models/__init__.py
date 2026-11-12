@@ -2,6 +2,7 @@
 
 from app.models.audit import AuditLog
 from app.models.document_chunk import DocumentChunk
+from app.models.large_deal import LargeDeal
 from app.models.listed_security import ListedSecurity
 from app.models.portfolio import Portfolio, PortfolioPosition
 from app.models.price_alert import PriceAlert
@@ -23,6 +24,7 @@ __all__ = [
     "Signal",
     "ResearchReport",
     "QuarterlyResult",
+    "LargeDeal",
     "Recommendation",
     "AuditLog",
     "Portfolio",
