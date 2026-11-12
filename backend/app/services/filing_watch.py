@@ -21,7 +21,7 @@ import sentry_sdk
 from sqlalchemy import delete, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.clock import utcnow
+from app.core.clock import sleep_wall, utcnow
 from app.core.logging import get_logger
 from app.models.portfolio import PortfolioPosition
 from app.models.research import ResearchReport
@@ -264,4 +264,4 @@ async def run_periodic_filing_watch(interval_seconds: int = FILING_WATCH_INTERVA
         except Exception as e:
             logger.error(f"Error in filing watch: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
-        await asyncio.sleep(interval_seconds)
+        await sleep_wall(interval_seconds)
