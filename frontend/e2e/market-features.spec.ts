@@ -204,3 +204,30 @@ test('deals filter by investor and side, with totals', async ({ page }) => {
   await expect(page.getByText('CPPLUS Ltd')).toHaveCount(0);
   await expect(page.getByText('1 deals')).toBeVisible();
 });
+
+test('tax calculators match hand-worked FY 2025-26 figures', async ({ page }) => {
+  await signedIn(page);
+  await page.goto('/calculators');
+  await page.getByRole('button', { name: 'Income tax' }).click();
+  // ₹15L salary: new regime 93,750 + cess; old regime (₹2L deductions) 1,87,500 + cess
+  await expect(page.getByText('New regime, saves ₹97,500')).toBeVisible();
+  await expect(page.getByText('₹1,95,000')).toBeVisible();
+  await page.getByLabel('Old-regime deductions: 80C, 80D, HRA, home loan (₹)').fill('0');
+  await page.getByLabel('Salary for the year (₹)').fill('1275000');  // taxable ₹12L: 87A rebate, no tax
+  await expect(page.getByText('New regime, saves ₹1,87,200')).toBeVisible();
+  await page.getByLabel('Salary for the year (₹)').fill('1285000');  // ₹10,000 over: marginal relief caps tax at 10,000
+  await expect(page.getByText('₹10,400', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Capital gains' }).click();
+  await expect(page.getByText('₹22,750', { exact: true })).toBeVisible();  // (3L - 1.25L) x 12.5% + cess
+  await page.getByLabel('Months held').fill('6');
+  await expect(page.getByText('₹62,400', { exact: true })).toBeVisible();  // 3L x 20% + cess
+
+  await page.getByRole('button', { name: 'HRA exemption' }).click();
+  await expect(page.getByText('₹1,80,000', { exact: true })).toBeVisible();  // rent - 10% of basic is lowest
+  await page.getByLabel(/Metro city/).fill('2');
+  await expect(page.getByText('Enter valid values')).toBeVisible();
+
+  await page.getByRole('button', { name: 'EPF' }).click();
+  await expect(page.getByText('EPF balance', { exact: true })).toBeVisible();
+});

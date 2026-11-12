@@ -47,6 +47,17 @@ THEMES = {
     "Auto": "ind_niftyautolist.csv",
     "Banks": "ind_niftybanklist.csv",
     "Realty": "ind_niftyrealtylist.csv",
+    "IT": "ind_niftyitlist.csv",
+    "Pharma": "ind_niftypharmalist.csv",
+    "FMCG": "ind_niftyfmcglist.csv",
+    "Metals": "ind_niftymetallist.csv",
+    "Media": "ind_niftymedialist.csv",
+    "PSU banks": "ind_niftypsubanklist.csv",
+    "Oil & gas": "ind_niftyoilgaslist.csv",
+    "Consumer durables": "ind_niftyconsumerdurableslist.csv",
+    "Commodities": "ind_niftycommoditieslist.csv",
+    "MNCs": "ind_niftymnclist.csv",
+    "Mobility": "ind_niftymobility_list.csv",
 }
 
 _cache: dict[str, tuple[float, Any]] = {}

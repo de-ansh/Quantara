@@ -16,7 +16,7 @@ export default function Calculators() {
         <div className="flex flex-col flex-1 p-6 bg-background space-y-6 overflow-y-auto custom-scrollbar">
             <header>
                 <h1 className="text-2xl font-bold text-foreground">Calculators</h1>
-                <p className="text-sm text-muted-foreground">Projections assume a constant rate. Actual returns will vary.</p>
+                <p className="text-sm text-muted-foreground">Projections assume a constant rate; actual returns will vary. Tax results are estimates, not tax advice.</p>
             </header>
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Calculator">
                 {CALCULATORS.map(c => (
@@ -58,6 +58,7 @@ export default function Calculators() {
                                 <p className={cn("font-mono font-bold text-foreground", i === 0 ? "text-3xl" : "text-lg")}>{r.value}</p>
                             </div>
                         )) : <p className="text-sm text-muted-foreground">Enter valid values to see the result.</p>}
+                        {calc.note && <p className="text-xs text-muted-foreground border-t border-border pt-3">{calc.note}</p>}
                     </CardContent>
                 </Card>
             </div>
