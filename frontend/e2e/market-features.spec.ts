@@ -316,3 +316,31 @@ test('a chat answer charts the stocks it looked up, without showing the stream m
   await expect(chart.getByRole('link', { name: 'TCS' })).toHaveAttribute('href', '/research/TCS.NS');
   await expect(page.getByText('"tickers"')).toHaveCount(0);
 });
+
+test('sharing can opt into the gallery, which lists chats without authors', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/chat/stream', route => route.fulfill({ body: 'Hold.', contentType: 'text/plain' }));
+  let body: { listed?: boolean } = {};
+  await page.route('**/api/v1/chat/share', route => {
+    body = route.request().postDataJSON();
+    return route.fulfill({ json: { token: 'tok9', messages: [], created_at: '2026-11-12T00:00:00', listed: true } });
+  });
+  await page.route('**/api/v1/chat/gallery', route => route.fulfill({ json: [
+    { token: 'tok9', question: 'Is TCS a buy?', tickers: ['TCS.NS'], messages: 2, created_at: '2026-11-12T10:00:00' },
+  ] }));
+  await page.goto('/calculators');
+  await page.getByRole('button', { name: 'Open research assistant' }).click();
+  await page.getByLabel('Message').fill('Is TCS a buy?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(page.getByText('Hold.')).toBeVisible();
+  await page.getByRole('button', { name: 'Share this chat' }).click();
+  await page.getByLabel(/Also list in the gallery/).check();
+  await page.getByRole('button', { name: 'Create link' }).click();
+  await expect(page.getByLabel('Share link')).toHaveValue(/\/shared\/tok9$/);
+  expect(body.listed).toBe(true);
+
+  await page.goto('/gallery');
+  const card = page.getByRole('link', { name: /Is TCS a buy\?/ });
+  await expect(card).toHaveAttribute('href', '/shared/tok9');
+  await expect(card).toContainText('TCS · 2 messages');
+});

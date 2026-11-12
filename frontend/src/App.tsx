@@ -32,6 +32,7 @@ const ResetPassword = lazy(() => import("@/pages/ResetPassword"))
 
 const Markets = lazy(() => import("@/pages/Markets"))
 const Filings = lazy(() => import("@/pages/Filings"))
+const ChatGallery = lazy(() => import("@/pages/ChatGallery"))
 const IndicesEtfs = lazy(() => import("@/pages/IndicesEtfs"))
 const Concalls = lazy(() => import("@/pages/Concalls"))
 const Deals = lazy(() => import("@/pages/Deals"))
@@ -65,6 +66,7 @@ function App() {
                   <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
                   <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
                   <Route path="/filings" element={<ProtectedRoute><Filings /></ProtectedRoute>} />
+                  <Route path="/gallery" element={<ProtectedRoute><ChatGallery /></ProtectedRoute>} />
                   <Route path="/indices" element={<ProtectedRoute><IndicesEtfs /></ProtectedRoute>} />
                   <Route path="/concalls" element={<ProtectedRoute><Concalls /></ProtectedRoute>} />
                   <Route path="/deals" element={<ProtectedRoute><Deals /></ProtectedRoute>} />
