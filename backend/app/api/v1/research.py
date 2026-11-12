@@ -297,6 +297,9 @@ async def search_stocks(
         "promoter": Stock.promoter_pct, "promoter_change": Stock.promoter_change_pp,
         "rsi": Stock.rsi_14, "turnover": Stock.turnover_1d, "from_high": Stock.from_high_52w_pct,
     }
+    # Traded value is in the listing currency, so rupee filters and rankings cover Indian listings only
+    if turnover_min_cr is not None or (sort or "").lstrip("-") == "turnover":
+        stmt = stmt.where(or_(Stock.ticker.ilike("%.NS"), Stock.ticker.ilike("%.BO")))
     order: Any = Stock.ticker
     if sort:
         column = sort_columns[sort.lstrip("-")]

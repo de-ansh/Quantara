@@ -90,8 +90,10 @@ async def _headers(client):
 async def test_overview_movers_skip_stale_prices_and_report_a_missing_feed(client, db_session, monkeypatch):
     now = utcnow()
     db_session.add_all([
-        Stock(ticker="UP.NS", name="Up", sector="IT", price=110, previous_close=100, price_updated_at=now, pe_ratio=20),
-        Stock(ticker="DOWN.NS", name="Down", sector="IT", price=90, previous_close=100, price_updated_at=now),
+        Stock(ticker="UP.NS", name="Up", sector="IT", price=110, previous_close=100, price_updated_at=now, pe_ratio=20, turnover_1d=5e7),
+        Stock(ticker="DOWN.NS", name="Down", sector="IT", price=90, previous_close=100, price_updated_at=now, turnover_1d=2e7),
+        # A penny stock up 40% on ₹10 lakh of trades isn't a top gainer
+        Stock(ticker="PENNY.NS", name="Penny", price=3.5, previous_close=2.5, price_updated_at=now, turnover_1d=1e6),
         Stock(ticker="STALE.NS", name="Stale", sector="IT", price=500, previous_close=100, price_updated_at=now - timedelta(days=30)),
     ])
     await db_session.commit()

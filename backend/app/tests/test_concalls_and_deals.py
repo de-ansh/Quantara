@@ -61,8 +61,11 @@ async def test_deals_are_stored_once_and_listed_largest_first(client, db_session
              f"{datetime.now(ZoneInfo('Asia/Kolkata')):%d-%b-%Y},SMALL,Small Ltd,FUND A,BUY,100,10\n"
              f"{datetime.now(ZoneInfo('Asia/Kolkata')):%d-%b-%Y},BIG,Big Ltd,FUND B,SELL,1000,500\n")
     assert await store_deals(db_session, None, block) == 2
+    # The BIG block trade is also in the bulk file; it must show once, as a block deal
+    bulk = block.replace("Trade Price / Wght. Avg. Price\n", "Trade Price / Wght. Avg. Price,Remarks\n").splitlines()
+    await store_deals(db_session, "\n".join([bulk[0], bulk[2] + ",-"]) + "\n", None)
     await store_deals(db_session, None, block)  # the hourly re-read adds nothing
-    assert (await db_session.execute(select(func.count()).select_from(LargeDeal))).scalar() == 2
+    assert (await db_session.execute(select(func.count()).select_from(LargeDeal))).scalar() == 3  # both files kept; the page merges
 
     login = await client.post("/api/v1/auth/login", json={"email": "test@quantara.com", "password": "password"})
     resp = await client.get("/api/v1/market/deals", headers={"Authorization": f"Bearer {login.json()['access_token']}"})

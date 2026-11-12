@@ -106,7 +106,7 @@ export default function Deals() {
                                         <td className={cn("p-3 font-semibold", d.side === "BUY" ? "text-green-500" : "text-red-500")}>{d.side === "BUY" ? "Buy" : "Sell"}</td>
                                         <td className="p-3 text-right font-mono">{d.quantity.toLocaleString("en-IN")}</td>
                                         <td className="p-3 text-right font-mono">₹{d.price.toLocaleString("en-IN")}</td>
-                                        <td className="p-3 text-right font-mono text-foreground">{crore(d.value)}</td>
+                                        <td className="p-3 text-right font-mono text-foreground whitespace-nowrap">{crore(d.value)}</td>
                                     </tr>
                                 ))}
                             </tbody>
