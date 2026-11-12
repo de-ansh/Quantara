@@ -48,6 +48,15 @@ class Stock(Base):
     promoter_change_pp: Mapped[float | None] = mapped_column(Float, nullable=True)
     shareholding_quarter: Mapped[date | None] = mapped_column(Date, nullable=True)
     results_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Daily technical snapshot from a year of closes (screener filters); gaps are % from the level
+    rsi_14: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sma50_gap_pct: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price vs 50-day average, %")
+    sma200_gap_pct: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price vs 200-day average, %")
+    from_high_52w_pct: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price vs 52-week high, % (<= 0)")
+    from_low_52w_pct: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price vs 52-week low, % (>= 0)")
+    turnover_1d: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Last session's traded value, listing currency")
+    turnover_20d: Mapped[float | None] = mapped_column(Float, nullable=True, comment="20-session average traded value")
+    technicals_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Market cap in listing currency"
     )

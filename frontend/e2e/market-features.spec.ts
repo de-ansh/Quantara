@@ -204,3 +204,35 @@ test('deals filter by investor and side, with totals', async ({ page }) => {
   await expect(page.getByText('CPPLUS Ltd')).toHaveCount(0);
   await expect(page.getByText('1 deals')).toBeVisible();
 });
+
+test('technical presets send their filters and the table shows RSI and traded value', async ({ page }) => {
+  await signedIn(page);
+  const seen: URLSearchParams[] = [];
+  await page.route('**/api/v1/stocks/search**', route => {
+    seen.push(new URL(route.request().url()).searchParams);
+    return route.fulfill({ json: { total_count: 1, stocks: [{
+      ticker: 'HOT.NS', name: 'Hot Ltd', price: '₹100.00', cap: '₹1,000 Cr', risk: 50, signal: 'Neutral', status: 'up',
+      pe: 20, beta: 1, rsi_14: 76.4, from_high_52w_pct: -1.2, turnover_1d: 9.5e9, tracked: true,
+    }] } });
+  });
+  await page.goto('/explorer');
+  await page.getByRole('button', { name: 'Most traded', exact: true }).click();
+  await expect(page.getByLabel('Min avg traded value (₹ Cr/day)')).toHaveValue('100');
+  await expect.poll(() => seen.some(p => p.get('turnover_min_cr') === '100' && p.get('sort') === '-turnover')).toBe(true);
+  const row = page.getByRole('row', { name: /HOT\.NS/ });
+  await expect(row).toContainText('76');
+  await expect(row).toContainText('-1.2%');
+  await expect(row).toContainText('₹950 Cr');
+});
+
+test('markets lists the most traded stocks', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/market/overview', route => route.fulfill({ json: {
+    indices: null, sector_indices: null, breadth: null, flows: null, gainers: [], losers: [], sectors: [],
+    most_traded: [{ ticker: 'HDFCBANK.NS', name: 'HDFC Bank', price: 980, change_pct: 0.5, turnover: 2.1e10 }],
+  } }));
+  await page.route('**/api/v1/market/themes', route => route.fulfill({ json: [] }));
+  await page.goto('/markets');
+  await expect(page.getByText('Most traded')).toBeVisible();
+  await expect(page.getByText('₹2,100 Cr')).toBeVisible();
+});
