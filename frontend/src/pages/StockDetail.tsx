@@ -31,6 +31,7 @@ import AdviceNotice from "@/components/AdviceNotice"
 import FilingCard from "@/components/FilingCard"
 import VerdictCard from "@/components/VerdictCard"
 import TechnicalsCard from "@/components/TechnicalsCard"
+import ShareholdingCard from "@/components/ShareholdingCard"
 
 const TABS = [
     { id: "thesis", label: "Investment Thesis" },
@@ -209,6 +210,7 @@ export default function StockDetail() {
             </div>
             <PriceChart ticker={activeTicker} />
             <TechnicalsCard ticker={activeTicker} />
+            <ShareholdingCard ticker={activeTicker} />
 
             {/* Navigation Tabs */}
             <section className="mb-6 flex gap-1 border-b border-border overflow-x-auto no-scrollbar">
