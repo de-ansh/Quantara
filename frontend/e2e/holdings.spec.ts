@@ -68,3 +68,17 @@ test('stock detail shows a price chart with range switching', async ({ page }) =
   await expect(page.getByText('+140.10%')).toBeVisible();
   expect(ranges).toEqual(['1Y', '5Y']);
 });
+
+test('an NSE stock shows its shareholding pattern with quarter-on-quarter change', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/stocks/TCS.NS/shareholding', route => route.fulfill({ json: [
+    { quarter: '2026-09-30', promoter_pct: 71.77, fii_pct: 9.01, dii_pct: 13.57, mf_pct: 5.65, retail_pct: 5.65, shareholders: 2579099 },
+    { quarter: '2026-06-30', promoter_pct: 71.77, fii_pct: 10.11, dii_pct: 12.4, mf_pct: 5.1, retail_pct: 5.72, shareholders: 2600000 },
+  ] }));
+  await page.goto('/research/TCS.NS');
+  const card = page.getByRole('region', { name: 'Shareholding pattern' });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('row', { name: /Foreign institutions/ })).toContainText('-1.10');
+  await expect(card.getByRole('row', { name: /Domestic institutions/ })).toContainText('+1.17');
+  await expect(card).toContainText('25,79,099 shareholders');
+});
