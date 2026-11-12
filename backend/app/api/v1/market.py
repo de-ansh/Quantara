@@ -638,3 +638,90 @@ async def get_deals(current_user: CurrentUser, db: DBSession, days: int = Query(
              client=d.client, side=d.side, quantity=d.quantity, price=d.price, value=d.quantity * d.price)
         for d in rows
     ]
+
+
+class IndexSummary(BaseModel):
+    name: str
+    category: str
+    last: float | None
+    change_pct: float | None
+    pe: float | None
+    pb: float | None
+    dividend_yield: float | None
+    year_high: float | None
+    year_low: float | None
+    return_30d: float | None
+    return_1y: float | None
+    advances: int | None
+    declines: int | None
+
+
+class IndexMember(BaseModel):
+    ticker: str
+    name: str | None
+    sector: str | None
+    price: float | None
+    change_pct: float | None
+    pe: float | None
+    market_cap: float | None
+    return_1y_pct: float | None
+
+
+class IndexDetail(BaseModel):
+    index: IndexSummary | None
+    members: list[IndexMember] | None  # None: NSE publishes no constituent list for this index
+
+
+class Etf(BaseModel):
+    symbol: str
+    underlying: str | None
+    category: str
+    price: float | None
+    change_pct: float | None
+    nav: float | None
+    premium_pct: float | None
+    traded_value: float | None
+    year_high: float | None
+    year_low: float | None
+    return_30d: float | None
+    return_1y: float | None
+
+
+@router.get("/indices", response_model=list[IndexSummary] | None)
+async def get_indices(current_user: CurrentUser) -> list[dict] | None:
+    """Every NSE index: level, P/E, P/B, dividend yield, 52-week range, returns, breadth; None when NSE is down."""
+    return await nse_market.index_list()
+
+
+@router.get("/indices/{name}", response_model=IndexDetail)
+async def get_index(name: str, current_user: CurrentUser, db: DBSession) -> IndexDetail:
+    """One index with its constituents and our data for each (price, P/E, 1-year return)."""
+    name = name.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9 &:/().-]{2,60}", name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Not an index name")
+    summaries, members = await asyncio.gather(nse_market.index_list(), nse_market.index_members(name))
+    summary = next((i for i in summaries or [] if i["name"].upper() == name), None)
+    if summary is None and summaries is not None and members is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"NSE has no index called {name}")
+    rows = None
+    if members is not None:
+        stocks = {s.ticker: s for s in (await db.execute(
+            select(Stock).where(Stock.ticker.in_([m["ticker"] for m in members]))
+        )).scalars()}
+        rows = []
+        for m in members:
+            s = stocks.get(m["ticker"])
+            rows.append(IndexMember(
+                ticker=m["ticker"], name=m["name"], sector=s.sector if s else None, price=s.price if s else None,
+                change_pct=round((s.price / s.previous_close - 1) * 100, 2) if s and s.price and s.previous_close else None,
+                pe=s.pe_ratio if s else None, market_cap=s.market_cap if s else None,
+                return_1y_pct=s.return_1y_pct if s else None,
+            ))
+        rows.sort(key=lambda r: r.market_cap or 0, reverse=True)
+    return IndexDetail(index=IndexSummary(**summary) if summary else None, members=rows)
+
+
+@router.get("/etfs", response_model=list[Etf] | None)
+async def get_etfs(current_user: CurrentUser) -> list[dict] | None:
+    """Every NSE ETF, most traded first; None when NSE is unavailable."""
+    return await nse_market.etf_list()
