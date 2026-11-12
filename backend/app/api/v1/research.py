@@ -1,6 +1,7 @@
 """Research API endpoints."""
 
 
+import re
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
@@ -580,3 +581,29 @@ async def get_technicals(ticker: str, current_user: CurrentUser) -> TechnicalsRe
             detail=f"Not enough price history for {history.ticker}",
         )
     return TechnicalsResponse(ticker=history.ticker, **values)
+
+
+class ShareholdingQuarter(BaseModel):
+    quarter: str
+    promoter_pct: float
+    fii_pct: float | None
+    dii_pct: float | None
+    mf_pct: float | None
+    retail_pct: float | None
+    shareholders: int | None
+
+
+@router.get("/stocks/{ticker}/shareholding", response_model=list[ShareholdingQuarter])
+async def get_shareholding(ticker: str, current_user: CurrentUser, db: DBSession) -> list[ShareholdingQuarter]:
+    """Promoter, FII, DII, mutual fund and retail holding for the last 8 quarters, newest first (NSE stocks)."""
+    from app.services.shareholding import shareholding_pattern
+
+    ticker = ticker.upper()
+    if not ticker.endswith(".NS") or not re.fullmatch(r"[A-Z0-9&-]{1,20}\.NS", ticker):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shareholding is available for NSE stocks")
+    rows = await shareholding_pattern(db, ticker)
+    return [
+        ShareholdingQuarter(quarter=r.quarter.isoformat(), promoter_pct=r.promoter_pct, fii_pct=r.fii_pct, dii_pct=r.dii_pct,
+                            mf_pct=r.mf_pct, retail_pct=r.retail_pct, shareholders=r.shareholders)
+        for r in rows
+    ]
