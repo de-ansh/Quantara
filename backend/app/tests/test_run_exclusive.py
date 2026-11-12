@@ -40,3 +40,23 @@ async def test_lock_held_during_job_and_released_after(monkeypatch):
         assert await database.run_exclusive(LOCK, job)  # and the next pass runs
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sleep_wall_ends_when_the_wall_clock_jumps(monkeypatch):
+    """A host sleep stops the monotonic clock but not the wall clock; the job must run on wake."""
+    import asyncio
+
+    from app.core import clock
+
+    now = {"t": 1_000.0}
+    naps: list[float] = []
+
+    async def nap(seconds):
+        naps.append(seconds)
+        now["t"] += 3_600 if len(naps) == 1 else seconds  # the first nap spans an hour of host sleep
+
+    monkeypatch.setattr("time.time", lambda: now["t"])
+    monkeypatch.setattr(asyncio, "sleep", nap)
+    await clock.sleep_wall(900)
+    assert naps == [60.0]

@@ -10,7 +10,7 @@ import sentry_sdk
 from sqlalchemy import func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.clock import utcnow
+from app.core.clock import sleep_wall, utcnow
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.portfolio import PortfolioPosition
@@ -73,4 +73,4 @@ async def run_periodic_held_research(interval_seconds: int = HELD_RESEARCH_INTER
         except Exception as e:
             logger.error(f"Error in nightly research: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
-        await asyncio.sleep(interval_seconds)
+        await sleep_wall(interval_seconds)
