@@ -135,7 +135,8 @@ async def test_saved_screens_replace_by_name_and_stay_private(client):
 @pytest.mark.asyncio
 async def test_shared_chat_is_public_by_link_and_can_be_withdrawn(client):
     headers = await _headers(client)
-    messages = [{"role": "user", "content": "Is TCS risky?"}, {"role": "assistant", "content": "Moderately."}]
+    messages = [{"role": "user", "content": "Is TCS risky?", "tickers": []},
+                {"role": "assistant", "content": "Moderately.", "tickers": ["TCS.NS"]}]  # kept, so the shared page charts it
     created = await client.post("/api/v1/chat/share", headers=headers, json={"messages": messages})
     assert created.status_code == 200
     token = created.json()["token"]

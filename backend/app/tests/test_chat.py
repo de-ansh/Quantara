@@ -121,7 +121,9 @@ async def test_chat_stream_runs_tools_then_streams_the_answer(client, db_session
     )
 
     assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/plain")
-    assert resp.text == "**Hold**: fairly priced."
+    text, trailer = resp.text.split(chat_api.STREAM_TRAILER)
+    assert text == "**Hold**: fairly priced."
+    assert json.loads(trailer) == {"tickers": ["AAPL"]}  # the client draws a price chart for each
     # The split tool call was reassembled and answered from the database during the stream
     assistant_call, tool_msg = FakeStreamingOpenAI.calls[1][-2:]
     assert assistant_call["tool_calls"][0]["function"] == {"name": "stock_snapshot", "arguments": '{"ticker": "AAPL"}'}
