@@ -548,3 +548,93 @@ async def get_declared_results(current_user: CurrentUser, db: DBSession, days: i
     from app.services.earnings import declared_results
 
     return await declared_results(db, days)
+
+
+class Concall(BaseModel):
+    ticker: str
+    company: str | None
+    kind: Literal["transcript", "recording", "schedule"]
+    summary: str | None
+    filed_at: str | None
+    pdf_url: str | None
+
+
+class ConcallSummary(Concall):
+    quarter: str
+    tone: Literal["Positive", "Neutral", "Cautious"] | None
+    guidance: str
+    highlights: list[str]
+    concerns: list[str]
+    cached: bool = False
+
+
+CONCALL_SUMMARY_TTL = 30 * 24 * 3600  # a transcript never changes; a newer one gets a new key
+CONCALL_SUMMARIES_PER_HOUR = 10  # each fresh one is a paid model call on the server's key
+
+
+@router.get("/concalls", response_model=list[Concall] | None)
+async def get_concalls(current_user: CurrentUser, days: int = Query(7, ge=1, le=30)) -> list[dict] | None:
+    """Earnings-call schedules, recordings and transcripts from every NSE company; None when NSE is unavailable."""
+    from app.services.concalls import recent_concalls
+
+    return await recent_concalls(days)
+
+
+@router.get("/concalls/{symbol}/summary", response_model=ConcallSummary)
+async def get_concall_summary(symbol: str, current_user: CurrentUser, redis: RedisClient) -> ConcallSummary:
+    """AI summary of the company's newest transcript: tone, guidance, highlights and concerns."""
+    import hashlib
+    import json
+
+    from app.services.concalls import WINDOW_DAYS, latest_transcript, summarize_call
+
+    symbol = symbol.upper().removesuffix(".NS")
+    if not re.fullmatch(r"[A-Z0-9&-]{1,20}", symbol):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Not an NSE symbol")
+    try:
+        call = await latest_transcript(symbol)
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    if call is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No transcript from {symbol} in the last {WINDOW_DAYS} days")
+    key = "concall-summary:" + hashlib.sha256(call["pdf_url"].encode()).hexdigest()[:32]
+    if cached := await redis.get(key):
+        return ConcallSummary(**json.loads(cached), cached=True)
+    await enforce_rate_limit(redis, f"concall-summary:{current_user['id']}", CONCALL_SUMMARIES_PER_HOUR, 3600)
+    try:
+        result = await summarize_call(call)
+    except LookupError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    await redis.set(key, json.dumps(result), ex=CONCALL_SUMMARY_TTL)
+    return ConcallSummary(**result)
+
+
+class Deal(BaseModel):
+    ticker: str
+    company: str | None
+    deal_date: str
+    kind: Literal["bulk", "block"]
+    client: str
+    side: Literal["BUY", "SELL"]
+    quantity: float
+    price: float
+    value: float
+
+
+@router.get("/deals", response_model=list[Deal])
+async def get_deals(current_user: CurrentUser, db: DBSession, days: int = Query(7, ge=1, le=90)) -> list[Deal]:
+    """NSE bulk and block deals kept since tracking began, newest and largest first."""
+    from app.models.large_deal import LargeDeal
+
+    since = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=days - 1)
+    rows = (await db.execute(
+        select(LargeDeal).where(LargeDeal.deal_date >= since)
+        .order_by(LargeDeal.deal_date.desc(), (LargeDeal.quantity * LargeDeal.price).desc())
+    )).scalars().all()
+    return [
+        Deal(ticker=f"{d.symbol}.NS", company=d.company, deal_date=d.deal_date.isoformat(), kind=d.kind,
+             client=d.client, side=d.side, quantity=d.quantity, price=d.price, value=d.quantity * d.price)
+        for d in rows
+    ]

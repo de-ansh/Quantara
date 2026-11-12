@@ -251,8 +251,10 @@ async def run_periodic_filing_watch(interval_seconds: int = FILING_WATCH_INTERVA
             if linked:
                 logger.info(f"Linked {linked} new earnings-call transcript(s)")
             from app.services.earnings import refresh_results
+            from app.services.india_signals import refresh_deals
 
             await refresh_results(db)
+            await refresh_deals(db)  # NSE's deal files hold one day, so keep them for the deals page
 
     while True:
         try:
