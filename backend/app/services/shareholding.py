@@ -6,6 +6,7 @@ capped per run to go easy on NSE).
 """
 
 import asyncio
+import re
 from datetime import date, datetime
 
 import httpx
@@ -124,3 +125,84 @@ async def refresh_shareholding(db: AsyncSession) -> int:
     for signal in signals:
         await save_signal_to_db(db, signal)  # one per stock per quarter
     return len(signals)
+
+
+# The institutional split, from each filing's XBRL. Filings from 2022 on name contexts "X_ContextI" and
+# give fractions; older ones "XI" and percents, so each value is scaled by the filing's own 100% total.
+BREAKDOWN_QUARTERS = 8
+HISTORY_PATH = "api/corporate-share-holdings-master?index=equities&symbol={symbol}"
+_CATEGORIES = {
+    "total": "ShareholdingPattern",
+    "promoter": "ShareholdingOfPromoterAndPromoterGroup",
+    "fii": "InstitutionsForeign",
+    "dii": "InstitutionsDomestic",
+    "mf": "MutualFundsOrUTI",
+    "retail": "NonInstitutions",
+}
+
+
+def _fact(xbrl: str, element: str, context: str) -> float | None:
+    match = re.search(
+        rf'<[\w-]+:{element} contextRef="{context}(?:_Context)?I"[^>]*>([^<]*)<', xbrl, re.I
+    )
+    try:
+        return float(match.group(1)) if match else None
+    except ValueError:
+        return None
+
+
+def parse_pattern_xbrl(xbrl: str) -> dict | None:
+    """Promoter, FII, DII, mutual fund and retail %, and shareholder count; None if it isn't a pattern."""
+    pct = {k: _fact(xbrl, "ShareholdingAsAPercentageOfTotalNumberOfShares", ctx) for k, ctx in _CATEGORIES.items()}
+    total = pct.pop("total")
+    if not total:  # a company with no promoters (HDFC Bank) files no promoter value, so only the total is required
+        return None
+    holders = _fact(xbrl, "NumberOfShareholders", _CATEGORIES["total"])
+    return {
+        **{f"{k}_pct": round(v / total * 100, 2) if v is not None else None for k, v in pct.items()},
+        "shareholders": int(holders) if holders is not None else None,
+    }
+
+
+async def _fetch_pattern(client: httpx.AsyncClient, url: str) -> dict | None:
+    try:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return parse_pattern_xbrl(resp.text)
+    except httpx.HTTPError as e:
+        logger.warning(f"Shareholding XBRL unavailable ({url}): {e}")
+        return None
+
+
+async def shareholding_pattern(db: AsyncSession, ticker: str) -> list[Shareholding]:
+    """The last BREAKDOWN_QUARTERS quarters, newest first, reading any filing whose split isn't stored yet."""
+    from app.services import nse_market
+
+    query = select(Shareholding).where(Shareholding.ticker == ticker).order_by(Shareholding.quarter.desc()).limit(BREAKDOWN_QUARTERS)
+    rows = (await db.execute(query)).scalars().all()
+    if len(rows) == BREAKDOWN_QUARTERS and all(r.fii_pct is not None for r in rows):
+        return list(rows)
+    history = await nse_market.nse_json(HISTORY_PATH.format(symbol=ticker.removesuffix(".NS")), ttl=24 * 3600)
+    if not isinstance(history, list):
+        return list(rows)
+    links: dict[date, str] = {}
+    for raw in history:  # NSE lists a revised filing before the original, so the first per quarter wins
+        try:
+            quarter = datetime.strptime(raw["date"], "%d-%b-%Y").date()
+        except (KeyError, TypeError, ValueError):
+            continue
+        url = str(raw.get("xbrl") or "")
+        links.setdefault(quarter, url if url.startswith("https://nsearchives.nseindia.com/") else "")
+    await _store(db, parse_rows(history))
+    rows = (await db.execute(query)).scalars().all()
+    missing = [r for r in rows if r.fii_pct is None and links.get(r.quarter)]
+    if missing:
+        async with httpx.AsyncClient(timeout=60.0, headers=_HEADERS) as client:
+            parsed = await asyncio.gather(*(_fetch_pattern(client, links[r.quarter]) for r in missing))
+        for row, values in zip(missing, parsed, strict=True):
+            if values:
+                values.pop("promoter_pct")  # NSE's list is authoritative for promoter % (and has 0 where the XBRL has none)
+                for key, value in values.items():
+                    setattr(row, key, value)
+    await db.commit()
+    return list(rows)
