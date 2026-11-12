@@ -160,3 +160,47 @@ test('declared results show growth and leaderboards', async ({ page }) => {
   await expect(growth.getByRole('link', { name: 'TCS' })).toBeVisible();
   await expect(growth.getByRole('link', { name: 'TINY' })).toHaveCount(0); // profit under ₹10 Cr
 });
+
+test('concalls list transcripts and open an AI summary', async ({ page }) => {
+  await signedIn(page);
+  const call = (ticker: string, kind: string, summary: string) => ({
+    ticker, company: `${ticker.replace(".NS", "")} Ltd`, kind, summary, filed_at: '2026-11-12 11:20:33', pdf_url: `https://nsearchives.nseindia.com/corporate/${ticker}.pdf`,
+  });
+  await page.route('**/api/v1/market/concalls?**', route => route.fulfill({ json: [
+    call('SBCL.NS', 'transcript', 'Transcript of earnings call -Q2 FY 2026-27'),
+    call('SHILCTECH.NS', 'schedule', 'Schedule of meet'),
+  ] }));
+  await page.route('**/api/v1/market/concalls/SBCL/summary', route => route.fulfill({ json: {
+    ...call('SBCL.NS', 'transcript', 'Revenue grew on export demand.'), quarter: 'Q2 FY27', tone: 'Positive',
+    guidance: '20% revenue growth next year.', highlights: ['Exports up 30%'], concerns: ['Copper prices'],
+  } }));
+  await page.goto('/concalls');
+  await expect(page.getByText('SBCL Ltd')).toBeVisible();
+  await expect(page.getByText('SHILCTECH Ltd')).toHaveCount(0);  // transcripts tab by default
+  await page.getByRole('button', { name: /^All/ }).click();
+  await expect(page.getByText('SHILCTECH Ltd')).toBeVisible();
+  await page.getByRole('button', { name: 'AI summary' }).click();
+  await expect(page.getByText('Positive tone')).toBeVisible();
+  await expect(page.getByText('20% revenue growth next year.')).toBeVisible();
+  await expect(page.getByText('Copper prices')).toBeVisible();
+});
+
+test('deals filter by investor and side, with totals', async ({ page }) => {
+  await signedIn(page);
+  const deal = (ticker: string, client: string, side: string, value: number) => ({
+    ticker, company: `${ticker.replace(".NS", "")} Ltd`, deal_date: '2026-11-11', kind: 'block', client, side, quantity: 1000, price: value / 1000, value,
+  });
+  await page.route('**/api/v1/market/deals?**', route => route.fulfill({ json: [
+    deal('CPPLUS.NS', 'MOTILAL OSWAL MUTUAL FUND', 'BUY', 349_000_000),
+    deal('COHANCE.NS', 'JASUB PROPERTY HOLDINGS LLP', 'SELL', 94_000_000),
+  ] }));
+  await page.goto('/deals');
+  await expect(page.getByText('bought ₹34.9 Cr')).toBeVisible();
+  await page.getByLabel('Search deals').fill('motilal');
+  await expect(page.getByText('COHANCE Ltd')).toHaveCount(0);
+  await expect(page.getByText('CPPLUS Ltd')).toBeVisible();
+  await page.getByLabel('Search deals').fill('');
+  await page.getByRole('button', { name: 'Sells', exact: true }).click();
+  await expect(page.getByText('CPPLUS Ltd')).toHaveCount(0);
+  await expect(page.getByText('1 deals')).toBeVisible();
+});

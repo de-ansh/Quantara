@@ -27,6 +27,8 @@ import {
     CalendarDays,
     Calculator,
     FileText,
+    Mic,
+    Handshake,
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
@@ -51,6 +53,8 @@ const navigation: NavItem[] = [
     { name: "Markets", href: "/markets", icon: Globe },
     { name: "Events", href: "/events", icon: CalendarDays },
     { name: "Filings", href: "/filings", icon: FileText },
+    { name: "Concalls", href: "/concalls", icon: Mic },
+    { name: "Deals", href: "/deals", icon: Handshake },
     { name: "Stock Detail", href: "/research", icon: BarChart3 },
     { name: "Research Explorer", href: "/explorer", icon: Search },
     { name: "Signal Monitor", href: "/signals", icon: Activity },
