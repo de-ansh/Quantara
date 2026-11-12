@@ -50,6 +50,8 @@ async def test_screener_filters_and_sorts_on_technicals(client, db_session):
         Stock(ticker="HOT.NS", name="Hot", price=100, rsi_14=78, sma200_gap_pct=25, from_high_52w_pct=-1, turnover_1d=9e9, turnover_20d=8e9, price_updated_at=now),
         Stock(ticker="COLD.NS", name="Cold", price=100, rsi_14=25, sma200_gap_pct=-12, from_high_52w_pct=-40, turnover_1d=5e8, turnover_20d=4e8, price_updated_at=now),
         Stock(ticker="FLAT.NS", name="Flat", price=100, rsi_14=50, sma200_gap_pct=2, from_high_52w_pct=-10, turnover_1d=1e9, turnover_20d=2e9, price_updated_at=now),
+        # Dollar turnover: never compared with rupee filters or rankings
+        Stock(ticker="USBIG", name="US Big", price=100, rsi_14=60, turnover_1d=5e10, turnover_20d=5e10, price_updated_at=now),
     ])
     await db_session.commit()
     login = await client.post("/api/v1/auth/login", json={"email": "test@quantara.com", "password": "password"})
@@ -62,6 +64,7 @@ async def test_screener_filters_and_sorts_on_technicals(client, db_session):
 
     assert await tickers(rsi_max=30) == ["COLD.NS"]
     assert await tickers(sma200_gap_min=0, sort="-rsi") == ["HOT.NS", "FLAT.NS"]
+    assert await tickers(sort="-turnover") == ["HOT.NS", "FLAT.NS", "COLD.NS"]
     assert await tickers(from_high_min=-5) == ["HOT.NS"]
     assert await tickers(turnover_min_cr=100, sort="-turnover") == ["HOT.NS", "FLAT.NS"]  # ₹100 Cr = 1e9
 

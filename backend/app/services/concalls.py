@@ -72,6 +72,7 @@ Use only the transcript. Reply as JSON with keys:
 "summary" (3-4 plain sentences: what happened this quarter and what management expects),
 "guidance" (one or two sentences on any revenue, margin, capex or growth guidance; "" if none was given),
 "highlights" (up to 5 short points, with numbers where the call gave them),
+Keep quarterly and half-year or year-to-date figures apart, and label each one (e.g. "Q2 revenue", "H1 revenue").
 "concerns" (up to 5 short points: risks, weak segments, analyst pushback, hedged answers)."""
 
 
