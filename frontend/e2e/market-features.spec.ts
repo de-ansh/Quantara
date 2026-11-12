@@ -205,6 +205,40 @@ test('deals filter by investor and side, with totals', async ({ page }) => {
   await expect(page.getByText('1 deals')).toBeVisible();
 });
 
+test('indices open their constituents and ETFs filter by category', async ({ page }) => {
+  await signedIn(page);
+  const index = (name: string, category: string) => ({
+    name, category, last: 25240.6, change_pct: -0.06, pe: 20.59, pb: 3.1, dividend_yield: 1.35, year_high: 26373.2,
+    year_low: 22179.9, return_30d: 12.87, return_1y: -2.45, advances: 20, declines: 30,
+  });
+  await page.route('**/api/v1/market/indices', route => route.fulfill({ json: [
+    index('NIFTY 50', 'Broad Market Indices'), index('NIFTY BANK', 'Sectoral Indices'),
+  ] }));
+  await page.route('**/api/v1/market/indices/NIFTY%2050', route => route.fulfill({ json: { index: null, members: [
+    { ticker: 'TCS.NS', name: 'Tata Consultancy', sector: 'IT', price: 3100, change_pct: 3.33, pe: 24, market_cap: 1e13, return_1y_pct: -20 },
+  ] } }));
+  await page.route('**/api/v1/market/etfs', route => route.fulfill({ json: [
+    { symbol: 'SILVERBEES', underlying: 'Domestic price of Silver', category: 'Silver', price: 171.78, change_pct: -2.86, nav: 176.66,
+      premium_pct: -2.76, traded_value: 4.185e9, year_high: 360, year_low: 143.65, return_30d: -15.24, return_1y: 19.45 },
+    { symbol: 'NIFTYBEES', underlying: 'Nifty 50 Index', category: 'Broad market', price: 280, change_pct: 0.1, nav: 280.4,
+      premium_pct: -0.15, traded_value: 1.71e9, year_high: 300, year_low: 240, return_30d: 5, return_1y: -2 },
+  ] }));
+  await page.goto('/indices');
+  await page.getByRole('button', { name: 'Sectoral Indices' }).click();
+  await expect(page.getByRole('button', { name: 'NIFTY 50', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await page.getByRole('button', { name: 'NIFTY 50', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'TCS', exact: true })).toBeVisible();
+  await expect(page.getByText('1 stocks, largest first')).toBeVisible();
+
+  await page.getByRole('tab', { name: 'ETFs' }).click();
+  await expect(page.getByText('₹419 Cr')).toBeVisible();
+  await expect(page.getByText('-2.76%')).toBeVisible();
+  await page.getByRole('button', { name: /^Broad market/ }).click();
+  await expect(page.getByText('SILVERBEES')).toHaveCount(0);
+  await expect(page.getByText('NIFTYBEES')).toBeVisible();
+});
+
 test('technical presets send their filters and the table shows RSI and traded value', async ({ page }) => {
   await signedIn(page);
   const seen: URLSearchParams[] = [];
