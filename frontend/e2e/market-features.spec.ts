@@ -278,7 +278,7 @@ test('technical presets send their filters and the table shows RSI and traded va
   });
   await page.goto('/explorer');
   await page.getByRole('button', { name: 'Most traded', exact: true }).click();
-  await expect(page.getByLabel('Min avg traded value (₹ Cr/day)')).toHaveValue('100');
+  await expect(page.getByLabel('Min avg traded value (₹ Cr/day, Indian stocks)')).toHaveValue('100');
   await expect.poll(() => seen.some(p => p.get('turnover_min_cr') === '100' && p.get('sort') === '-turnover')).toBe(true);
   const row = page.getByRole('row', { name: /HOT\.NS/ });
   await expect(row).toContainText('76');

@@ -49,7 +49,7 @@ const FUNDAMENTALS = [
     { key: "sma200_gap_max", label: "Max % vs 200-day avg" },
     { key: "from_high_min", label: "Within % of 52-wk high (e.g. -5)" },
     { key: "from_low_max", label: "Max % above 52-wk low" },
-    { key: "turnover_min_cr", label: "Min avg traded value (₹ Cr/day)" },
+    { key: "turnover_min_cr", label: "Min avg traded value (₹ Cr/day, Indian stocks)" },
 ] as const
 type FundamentalKey = (typeof FUNDAMENTALS)[number]["key"]
 type Fundamentals = Partial<Record<FundamentalKey, string>>
@@ -571,7 +571,7 @@ export default function ResearchExplorer() {
 
                     {dataFiltersOn && (
                         <p role="note" className="px-6 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
-                            These filters cover tracked stocks only: the Nifty 500 plus any stock you've opened. Clear them to browse
+                            These filters cover tracked stocks: every NSE share plus any other stock you've opened. Clear them to browse
                             every {selectedMarket === "india" ? "Indian " : selectedMarket === "us" ? "US " : ""}listing.
                         </p>
                     )}
