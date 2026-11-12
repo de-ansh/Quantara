@@ -16,7 +16,7 @@ from typing import Any
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.clock import utcnow
+from app.core.clock import sleep_wall, utcnow
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -783,5 +783,5 @@ async def run_periodic_signal_processing(interval_seconds: int = 3600) -> None:
             logger.error(f"Error in background signal processing: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
 
-        await asyncio.sleep(interval_seconds)
+        await sleep_wall(interval_seconds)
 

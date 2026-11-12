@@ -10,7 +10,7 @@ import yfinance as yf
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.clock import utcnow
+from app.core.clock import sleep_wall, utcnow
 from app.core.logging import get_logger
 from app.models.stock import Stock
 from app.services.notify import notify_slack
@@ -239,4 +239,4 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
         except Exception as e:
             logger.error(f"Error in price refresh: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
-        await asyncio.sleep(interval_seconds)
+        await sleep_wall(interval_seconds)

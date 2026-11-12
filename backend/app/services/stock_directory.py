@@ -17,7 +17,7 @@ import sentry_sdk
 from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.clock import utcnow
+from app.core.clock import sleep_wall, utcnow
 from app.core.logging import get_logger
 from app.models.listed_security import ListedSecurity
 from app.models.stock import Stock
@@ -279,4 +279,4 @@ async def run_periodic_directory_refresh(interval_seconds: int = DIRECTORY_REFRE
         except Exception as e:
             logger.error(f"Error in stock directory refresh: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)  # no-op when Sentry is not configured
-        await asyncio.sleep(interval_seconds)
+        await sleep_wall(interval_seconds)
