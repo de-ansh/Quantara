@@ -8,7 +8,7 @@ import { cleanTickerDisplay } from "@/lib/currency"
 
 interface IndexQuote { name: string; last: number | null; change: number | null; change_pct: number | null }
 interface Flow { category: string; date: string | null; buy: number | null; sell: number | null; net: number | null }
-interface Mover { ticker: string; name: string | null; price: number; change_pct: number }
+interface Mover { ticker: string; name: string | null; price: number; change_pct: number; turnover?: number | null }
 interface Sector { sector: string; stocks: number; avg_change_pct: number; avg_pe: number | null }
 interface Overview {
     indices: IndexQuote[] | null
@@ -18,6 +18,7 @@ interface Overview {
     gainers: Mover[]
     losers: Mover[]
     sectors: Sector[]
+    most_traded?: Mover[]
 }
 interface ThemeMember { ticker: string; name: string | null; change_pct: number | null; return_1y_pct: number | null }
 interface Theme { name: string; members: ThemeMember[]; avg_change_pct: number | null }
@@ -40,15 +41,15 @@ function Panel({ title, note, children }: { title: string; note?: string; childr
     )
 }
 
-function Movers({ title, rows }: { title: string; rows: Mover[] }) {
+function Movers({ title, rows, note = "Among tracked NSE stocks" }: { title: string; rows: Mover[]; note?: string }) {
     return (
-        <Panel title={title} note="Among tracked NSE stocks">
+        <Panel title={title} note={note}>
             {rows.length === 0 && <p className="text-sm text-muted-foreground">No recent prices.</p>}
             <ul className="divide-y divide-border/50">
                 {rows.map(m => (
                     <li key={m.ticker} className="flex items-center justify-between gap-3 py-1.5 text-sm">
                         <span className="min-w-0"><StockLink ticker={m.ticker} /> <span className="text-xs text-muted-foreground truncate">{m.name}</span></span>
-                        <span className="shrink-0 font-mono text-xs"><span className="mr-3 text-muted-foreground">₹{number(m.price)}</span><DayChange pct={m.change_pct} /></span>
+                        <span className="shrink-0 font-mono text-xs">{m.turnover != null && <span className="mr-3 text-foreground">₹{(m.turnover / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr</span>}<span className="mr-3 text-muted-foreground">₹{number(m.price)}</span><DayChange pct={m.change_pct} /></span>
                     </li>
                 ))}
             </ul>
@@ -137,6 +138,9 @@ export default function Markets() {
                         </Panel>
                         <Movers title="Top gainers" rows={data.gainers} />
                         <Movers title="Top losers" rows={data.losers} />
+                        {data.most_traded && data.most_traded.length > 0 && (
+                            <Movers title="Most traded" rows={data.most_traded} note="Traded value in the last session, among tracked NSE stocks" />
+                        )}
                         <Panel title="Sector indices" note="NSE sector indices, best first">
                             {data.sector_indices ? (
                                 <ul className="divide-y divide-border/50">
