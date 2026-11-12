@@ -308,6 +308,8 @@ class MarketOverviewResponse(BaseModel):
 
 
 MOVERS_SHOWN = 10
+# Gainers/losers skip shares that barely traded (a ₹3 stock up 40% on ₹10 lakh of trades)
+MOVER_MIN_TURNOVER = 1e7  # ₹1 crore in the last session
 # Long enough to span a holiday weekend, short enough to drop stocks the price job no longer updates
 PRICE_MAX_AGE = timedelta(days=5)
 
@@ -324,8 +326,9 @@ def summarize_stocks(stocks: list[Stock]) -> tuple[list[Mover], list[Mover], lis
     def mover(s: Stock, pct: float) -> Mover:
         return Mover(ticker=s.ticker, name=s.name, price=float(s.price or 0), change_pct=pct)
 
-    gainers = [mover(s, p) for s, p in moved[:MOVERS_SHOWN] if p > 0]
-    losers = [mover(s, p) for s, p in reversed(moved[-MOVERS_SHOWN:]) if p < 0]
+    liquid = [(s, p) for s, p in moved if (s.turnover_1d or 0) >= MOVER_MIN_TURNOVER]
+    gainers = [mover(s, p) for s, p in liquid[:MOVERS_SHOWN] if p > 0]
+    losers = [mover(s, p) for s, p in reversed(liquid[-MOVERS_SHOWN:]) if p < 0]
 
     groups: dict[str, list[tuple[Stock, float]]] = {}
     for s, pct in moved:
@@ -651,10 +654,16 @@ async def get_deals(current_user: CurrentUser, db: DBSession, days: int = Query(
         select(LargeDeal).where(LargeDeal.deal_date >= since)
         .order_by(LargeDeal.deal_date.desc(), (LargeDeal.quantity * LargeDeal.price).desc())
     )).scalars().all()
+    # A block trade big enough to be a bulk deal is in both NSE files: show it once, as a block deal
+    seen: dict[tuple, LargeDeal] = {}
+    for d in rows:
+        key = (d.deal_date, d.symbol, d.client, d.side, d.quantity, d.price)
+        if key not in seen or d.kind == "block":
+            seen[key] = d
     return [
         Deal(ticker=f"{d.symbol}.NS", company=d.company, deal_date=d.deal_date.isoformat(), kind=d.kind,
              client=d.client, side=d.side, quantity=d.quantity, price=d.price, value=d.quantity * d.price)
-        for d in rows
+        for d in seen.values()
     ]
 
 
