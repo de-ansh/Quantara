@@ -297,3 +297,22 @@ test('markets lists the most traded stocks', async ({ page }) => {
   await expect(page.getByText('Most traded')).toBeVisible();
   await expect(page.getByText('₹2,100 Cr')).toBeVisible();
 });
+
+test('a chat answer charts the stocks it looked up, without showing the stream marker', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/chat/stream', route => route.fulfill({
+    body: 'TCS looks **fairly priced**.\x1e{"tickers": ["TCS.NS"]}', contentType: 'text/plain',
+  }));
+  await page.route('**/api/v1/stocks/TCS.NS/history**', route => route.fulfill({ json: {
+    ticker: 'TCS.NS', range: '6M', change_pct: -8.4, points: [{ date: '2026-05-12', close: 3400 }, { date: '2026-11-12', close: 3114.4 }],
+  } }));
+  await page.goto('/calculators');
+  await page.getByRole('button', { name: 'Open research assistant' }).click();
+  await page.getByLabel('Message').fill('Is TCS a buy?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(page.getByText('fairly priced')).toBeVisible();
+  const chart = page.getByRole('figure', { name: 'TCS price, last 6 months' });
+  await expect(chart).toContainText('-8.40% in 6 months');
+  await expect(chart.getByRole('link', { name: 'TCS' })).toHaveAttribute('href', '/research/TCS.NS');
+  await expect(page.getByText('"tickers"')).toHaveCount(0);
+});
