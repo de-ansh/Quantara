@@ -30,6 +30,7 @@ import {
     Mic,
     Handshake,
     Layers,
+    MessagesSquare,
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,7 @@ const navigation: NavItem[] = [
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Compare", href: "/compare", icon: Columns3 },
     { name: "Calculators", href: "/calculators", icon: Calculator },
+    { name: "Chat gallery", href: "/gallery", icon: MessagesSquare },
 ]
 
 const adminNavigation: NavItem[] = [

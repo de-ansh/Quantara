@@ -93,12 +93,25 @@ class ChatResponse(BaseModel):
 
 class ShareRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=30)
+    listed: bool = False  # also show it in the gallery to other signed-in users
 
 
 class SharedChatResponse(BaseModel):
     token: str
     messages: list[ChatMessage]
     created_at: datetime
+    listed: bool = False
+
+
+class GalleryItem(BaseModel):
+    token: str
+    question: str  # the chat's first question
+    tickers: list[str]
+    messages: int
+    created_at: datetime
+
+
+GALLERY_SIZE = 50
 
 
 def _move(points: list, days_back: int) -> float | None:
@@ -296,10 +309,11 @@ async def share_chat(
         token=secrets.token_urlsafe(32),
         user_id=int(current_user["id"]),
         messages=[m.model_dump() for m in body.messages],
+        listed=body.listed,
     )
     db.add(shared)
     await db.commit()
-    return SharedChatResponse(token=shared.token, messages=body.messages, created_at=shared.created_at)
+    return SharedChatResponse(token=shared.token, messages=body.messages, created_at=shared.created_at, listed=shared.listed)
 
 
 # No auth on purpose: holding the link is what grants access
@@ -308,7 +322,22 @@ async def read_shared_chat(token: str, db: DBSession) -> SharedChatResponse:
     shared = await db.get(SharedChat, token)
     if shared is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This shared chat doesn't exist or was removed")
-    return SharedChatResponse(token=shared.token, messages=shared.messages, created_at=shared.created_at)
+    return SharedChatResponse(token=shared.token, messages=shared.messages, created_at=shared.created_at, listed=shared.listed)
+
+
+@router.get("/gallery", response_model=list[GalleryItem])
+async def chat_gallery(current_user: CurrentUser, db: DBSession) -> list[GalleryItem]:
+    """Chats their owners chose to list, newest first; no author is shown."""
+    rows = (await db.execute(
+        select(SharedChat).where(SharedChat.listed.is_(True)).order_by(SharedChat.created_at.desc()).limit(GALLERY_SIZE)
+    )).scalars().all()
+    items = []
+    for chat in rows:
+        question = next((m["content"] for m in chat.messages if m.get("role") == "user"), "")
+        tickers = list(dict.fromkeys(t for m in chat.messages for t in m.get("tickers") or []))
+        items.append(GalleryItem(token=chat.token, question=question[:200], tickers=tickers[:6],
+                                 messages=len(chat.messages), created_at=chat.created_at))
+    return items
 
 
 @router.delete("/shared/{token}", status_code=status.HTTP_204_NO_CONTENT)

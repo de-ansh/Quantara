@@ -162,3 +162,22 @@ def test_event_digest_covers_only_held_stocks_on_that_day():
     assert "TCS.NS: results" in text and "ITC.NS: ex-date for Dividend - Rs 5" in text and "OTHER" not in text
     assert digest(events, {"TCS.NS"}, date(2026, 11, 20)) is None
     assert digest({"earnings": None, "corporate_actions": None}, {"TCS.NS"}, date(2026, 11, 11)) is None
+
+
+@pytest.mark.asyncio
+async def test_gallery_shows_only_chats_their_owners_listed(client):
+    headers = await _headers(client)
+    chat = [{"role": "user", "content": "Is TCS a buy?"}, {"role": "assistant", "content": "Hold.", "tickers": ["TCS.NS"]}]
+    private = await client.post("/api/v1/chat/share", headers=headers, json={"messages": chat})
+    listed = await client.post("/api/v1/chat/share", headers=headers, json={"messages": chat, "listed": True})
+    assert private.json()["listed"] is False and listed.json()["listed"] is True
+
+    gallery = await client.get("/api/v1/chat/gallery", headers=headers)
+    assert gallery.status_code == 200
+    [item] = gallery.json()
+    assert item["token"] == listed.json()["token"]
+    assert item["question"] == "Is TCS a buy?" and item["tickers"] == ["TCS.NS"] and item["messages"] == 2
+    assert (await client.get("/api/v1/chat/gallery")).status_code in (401, 403)  # signed-in users only
+
+    await client.delete(f"/api/v1/chat/shared/{item['token']}", headers=headers)
+    assert (await client.get("/api/v1/chat/gallery", headers=headers)).json() == []  # stop sharing also unlists
