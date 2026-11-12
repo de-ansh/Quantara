@@ -68,6 +68,7 @@ export default function ChatAssistant() {
     const recognitionRef = useRef<Recognition | null>(null)
     const [share, setShare] = useState<"idle" | "confirm" | "busy" | { token: string }>("idle")
     const [shareError, setShareError] = useState(false)
+    const [listInGallery, setListInGallery] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [draft, setDraft] = useState("")
     const ticker = tickerFromPath(useLocation().pathname)
@@ -124,7 +125,7 @@ export default function ChatAssistant() {
         setShare("busy")
         setShareError(false)
         try {
-            const { data } = await apiClient.post<{ token: string }>("/chat/share", { messages: messages.slice(-30) })
+            const { data } = await apiClient.post<{ token: string }>("/chat/share", { messages: messages.slice(-30), listed: listInGallery })
             setShare({ token: data.token })
         } catch {
             setShareError(true)
@@ -256,6 +257,10 @@ export default function ChatAssistant() {
             {(share === "confirm" || share === "busy") && (
                 <div className="border-t border-border p-3 space-y-2 shrink-0 text-xs text-muted-foreground">
                     <p>Anyone with the link will be able to read this chat, including anything about your holdings.</p>
+                    <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={listInGallery} onChange={e => setListInGallery(e.target.checked)} disabled={share === "busy"} />
+                        Also list in the gallery, so other Quantara users can find it (your name isn't shown)
+                    </label>
                     <div className="flex gap-2">
                         <Button size="sm" className="h-7 text-xs" onClick={() => void createShare()} disabled={share === "busy"}>Create link</Button>
                         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShare("idle")} disabled={share === "busy"}>Cancel</Button>
