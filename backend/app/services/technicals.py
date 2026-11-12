@@ -55,3 +55,29 @@ def indicators(closes: list[float]) -> dict | None:
         "pct_from_high": round((price / high - 1) * 100, 2) if high else None,
         "notes": notes,
     }
+
+
+TURNOVER_SESSIONS = 20
+
+
+def screener_snapshot(closes: list[float], volumes: list[float]) -> dict | None:
+    """Screener columns from a year of daily closes and volumes; None with too little history."""
+    values = indicators(closes)
+    if values is None:
+        return None
+    price = values["price"]
+
+    def gap(level: float | None) -> float | None:
+        return round((price / level - 1) * 100, 2) if level else None
+
+    traded = [c * v for c, v in zip(closes, volumes, strict=True) if v == v]  # v == v drops NaN volumes
+    recent = traded[-TURNOVER_SESSIONS:]
+    return {
+        "rsi_14": values["rsi_14"],
+        "sma50_gap_pct": gap(values["sma_50"]),
+        "sma200_gap_pct": gap(values["sma_200"]),
+        "from_high_52w_pct": values["pct_from_high"],
+        "from_low_52w_pct": gap(values["low_1y"]),
+        "turnover_1d": round(traded[-1], 2) if traded else None,
+        "turnover_20d": round(sum(recent) / len(recent), 2) if recent else None,
+    }

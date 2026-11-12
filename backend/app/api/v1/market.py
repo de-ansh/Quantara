@@ -284,6 +284,7 @@ class Mover(BaseModel):
     name: str | None
     price: float
     change_pct: float
+    turnover: float | None = None  # last session's traded value (most-traded list)
 
 
 class SectorSummary(BaseModel):
@@ -303,6 +304,7 @@ class MarketOverviewResponse(BaseModel):
     gainers: list[Mover]
     losers: list[Mover]
     sectors: list[SectorSummary]
+    most_traded: list[Mover] = []
 
 
 MOVERS_SHOWN = 10
@@ -342,6 +344,20 @@ def summarize_stocks(stocks: list[Stock]) -> tuple[list[Mover], list[Mover], lis
     return gainers, losers, sectors
 
 
+def most_traded(stocks: list[Stock]) -> list[Mover]:
+    """Highest traded value in the last session, from the daily technicals snapshot."""
+    cutoff = utcnow() - PRICE_MAX_AGE
+    ranked = sorted(
+        (s for s in stocks if s.turnover_1d and s.price and s.price_updated_at and s.price_updated_at >= cutoff),
+        key=lambda s: s.turnover_1d or 0, reverse=True,
+    )[:MOVERS_SHOWN]
+    return [
+        Mover(ticker=s.ticker, name=s.name, price=float(s.price or 0), turnover=s.turnover_1d,
+              change_pct=round((s.price / s.previous_close - 1) * 100, 2) if s.price and s.previous_close else 0.0)
+        for s in ranked
+    ]
+
+
 async def _indian_stocks(db: DBSession) -> list[Stock]:
     return list((await db.execute(select(Stock).where(Stock.ticker.like("%.NS")))).scalars().all())
 
@@ -355,7 +371,8 @@ async def get_market_overview(current_user: CurrentUser, db: DBSession) -> Marke
     sensex = quotes["^BSESN"]
     if indices is not None and sensex != _FALLBACK_QUOTES["^BSESN"]:
         indices = [{"name": "SENSEX", "last": sensex[0], "change": sensex[1], "change_pct": _pct(*sensex)}, *indices]
-    gainers, losers, sectors = summarize_stocks(await _indian_stocks(db))
+    stocks = await _indian_stocks(db)
+    gainers, losers, sectors = summarize_stocks(stocks)
     return MarketOverviewResponse(
         indices=indices,
         sector_indices=feed["sectors"] if feed else None,
@@ -364,6 +381,7 @@ async def get_market_overview(current_user: CurrentUser, db: DBSession) -> Marke
         gainers=gainers,
         losers=losers,
         sectors=sectors,
+        most_traded=most_traded(stocks),
     )
 
 
@@ -638,3 +656,90 @@ async def get_deals(current_user: CurrentUser, db: DBSession, days: int = Query(
              client=d.client, side=d.side, quantity=d.quantity, price=d.price, value=d.quantity * d.price)
         for d in rows
     ]
+
+
+class IndexSummary(BaseModel):
+    name: str
+    category: str
+    last: float | None
+    change_pct: float | None
+    pe: float | None
+    pb: float | None
+    dividend_yield: float | None
+    year_high: float | None
+    year_low: float | None
+    return_30d: float | None
+    return_1y: float | None
+    advances: int | None
+    declines: int | None
+
+
+class IndexMember(BaseModel):
+    ticker: str
+    name: str | None
+    sector: str | None
+    price: float | None
+    change_pct: float | None
+    pe: float | None
+    market_cap: float | None
+    return_1y_pct: float | None
+
+
+class IndexDetail(BaseModel):
+    index: IndexSummary | None
+    members: list[IndexMember] | None  # None: NSE publishes no constituent list for this index
+
+
+class Etf(BaseModel):
+    symbol: str
+    underlying: str | None
+    category: str
+    price: float | None
+    change_pct: float | None
+    nav: float | None
+    premium_pct: float | None
+    traded_value: float | None
+    year_high: float | None
+    year_low: float | None
+    return_30d: float | None
+    return_1y: float | None
+
+
+@router.get("/indices", response_model=list[IndexSummary] | None)
+async def get_indices(current_user: CurrentUser) -> list[dict] | None:
+    """Every NSE index: level, P/E, P/B, dividend yield, 52-week range, returns, breadth; None when NSE is down."""
+    return await nse_market.index_list()
+
+
+@router.get("/indices/{name}", response_model=IndexDetail)
+async def get_index(name: str, current_user: CurrentUser, db: DBSession) -> IndexDetail:
+    """One index with its constituents and our data for each (price, P/E, 1-year return)."""
+    name = name.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9 &:/().-]{2,60}", name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Not an index name")
+    summaries, members = await asyncio.gather(nse_market.index_list(), nse_market.index_members(name))
+    summary = next((i for i in summaries or [] if i["name"].upper() == name), None)
+    if summary is None and summaries is not None and members is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"NSE has no index called {name}")
+    rows = None
+    if members is not None:
+        stocks = {s.ticker: s for s in (await db.execute(
+            select(Stock).where(Stock.ticker.in_([m["ticker"] for m in members]))
+        )).scalars()}
+        rows = []
+        for m in members:
+            s = stocks.get(m["ticker"])
+            rows.append(IndexMember(
+                ticker=m["ticker"], name=m["name"], sector=s.sector if s else None, price=s.price if s else None,
+                change_pct=round((s.price / s.previous_close - 1) * 100, 2) if s and s.price and s.previous_close else None,
+                pe=s.pe_ratio if s else None, market_cap=s.market_cap if s else None,
+                return_1y_pct=s.return_1y_pct if s else None,
+            ))
+        rows.sort(key=lambda r: r.market_cap or 0, reverse=True)
+    return IndexDetail(index=IndexSummary(**summary) if summary else None, members=rows)
+
+
+@router.get("/etfs", response_model=list[Etf] | None)
+async def get_etfs(current_user: CurrentUser) -> list[dict] | None:
+    """Every NSE ETF, most traded first; None when NSE is unavailable."""
+    return await nse_market.etf_list()

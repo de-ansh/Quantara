@@ -23,6 +23,10 @@ import DayChange from "@/components/DayChange"
 
 const PAGE_SIZE = 25
 
+/** Traded value: ₹ crore for Indian listings, $ millions otherwise. */
+const traded = (value: number, ticker: string) =>
+    isIndianAsset(ticker) ? `₹${(value / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr` : `$${(value / 1e6).toFixed(0)}M`
+
 interface SavedScreen { id: number; name: string; filters: Record<string, string>; sort: string }
 
 /** Fundamental screens: API parameter -> label; all percents except debt/equity (a ratio). */
@@ -38,6 +42,14 @@ const FUNDAMENTALS = [
     { key: "return_1y_min", label: "Min 1-year return %" },
     { key: "promoter_min", label: "Min promoter holding %" },
     { key: "promoter_change_min", label: "Min promoter change (pts)" },
+    { key: "rsi_min", label: "Min RSI (14)" },
+    { key: "rsi_max", label: "Max RSI (14)" },
+    { key: "sma50_gap_min", label: "Min % vs 50-day avg" },
+    { key: "sma200_gap_min", label: "Min % vs 200-day avg" },
+    { key: "sma200_gap_max", label: "Max % vs 200-day avg" },
+    { key: "from_high_min", label: "Within % of 52-wk high (e.g. -5)" },
+    { key: "from_low_max", label: "Max % above 52-wk low" },
+    { key: "turnover_min_cr", label: "Min avg traded value (₹ Cr/day)" },
 ] as const
 type FundamentalKey = (typeof FUNDAMENTALS)[number]["key"]
 type Fundamentals = Partial<Record<FundamentalKey, string>>
@@ -48,6 +60,10 @@ const PRESETS: { label: string; filters: Fundamentals; sort: string }[] = [
     { label: "Dividend payers", filters: { dividend_yield_min: "2.5", debt_to_equity_max: "1" }, sort: "-dividend_yield" },
     { label: "Momentum", filters: { return_1y_min: "20", revenue_growth_min: "5" }, sort: "-return_1y" },
     { label: "Promoters buying", filters: { promoter_change_min: "1" }, sort: "-promoter_change" },
+    { label: "Oversold (RSI < 30)", filters: { rsi_max: "30", turnover_min_cr: "5" }, sort: "rsi" },
+    { label: "Near 52-week high", filters: { from_high_min: "-5", sma200_gap_min: "0" }, sort: "-from_high" },
+    { label: "Above 200-day average", filters: { sma200_gap_min: "0", sma50_gap_min: "0" }, sort: "-return_1y" },
+    { label: "Most traded", filters: { turnover_min_cr: "100" }, sort: "-turnover" },
 ]
 
 const SORTS = [
@@ -61,6 +77,9 @@ const SORTS = [
     { value: "-revenue_growth", label: "Revenue growth" },
     { value: "-return_1y", label: "1-year return" },
     { value: "-dividend_yield", label: "Dividend yield" },
+    { value: "-turnover", label: "Traded value (last session)" },
+    { value: "-from_high", label: "Closest to 52-week high" },
+    { value: "rsi", label: "RSI (low first)" },
     { value: "pe", label: "P/E (low first)" },
     { value: "risk", label: "Risk (low first)" },
 ]
@@ -230,6 +249,13 @@ export default function ResearchExplorer() {
             profit_cagr_3y_pct: r.profit_cagr_3y_pct ?? "",
             promoter_pct: r.promoter_pct ?? "",
             promoter_change_pp: r.promoter_change_pp ?? "",
+            rsi_14: r.rsi_14 ?? "",
+            sma50_gap_pct: r.sma50_gap_pct ?? "",
+            sma200_gap_pct: r.sma200_gap_pct ?? "",
+            from_high_52w_pct: r.from_high_52w_pct ?? "",
+            from_low_52w_pct: r.from_low_52w_pct ?? "",
+            turnover_1d: r.turnover_1d ?? "",
+            turnover_20d: r.turnover_20d ?? "",
             market: r.exchange ?? getMarketLabel(r.ticker)
         }))
 
@@ -353,7 +379,7 @@ export default function ResearchExplorer() {
                                     </label>
                                 ))}
                             </div>
-                            <p className="text-[11px] text-muted-foreground">Covers the Nifty 500 and any stock you've opened. Ratios and returns from Yahoo, daily; ROCE and 3-year CAGR from annual statements, weekly; promoter holding from NSE filings, quarterly. Blank means no data, and that stock is left out of a filter.</p>
+                            <p className="text-[11px] text-muted-foreground">Covers the Nifty 500 and any stock you've opened. Ratios and returns from Yahoo, daily; ROCE and 3-year CAGR from annual statements, weekly; promoter holding from NSE filings, quarterly; RSI, moving averages, 52-week range and traded value from daily closes, refreshed once a day. Blank means no data, and that stock is left out of a filter.</p>
                         </div>
                     </details>
 
@@ -679,6 +705,9 @@ export default function ResearchExplorer() {
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROCE</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Change in promoter holding from the previous quarter">Promoter Δ</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">1Y Return</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="14-day RSI: above 70 overbought, below 30 oversold">RSI</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Price vs its 52-week high">From High</th>
+                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Traded value in the last session">Traded</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
                                         <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
@@ -726,6 +755,9 @@ export default function ResearchExplorer() {
                                             <td className="px-6 py-4 text-muted-foreground">{row.roce_pct == null ? "—" : `${row.roce_pct.toFixed(1)}%`}</td>
                                             <td className="px-6 py-4">{row.promoter_change_pp == null ? "—" : <span className={row.promoter_change_pp > 0 ? "text-green-500" : row.promoter_change_pp < 0 ? "text-red-500" : ""}>{row.promoter_change_pp > 0 ? "+" : ""}{row.promoter_change_pp.toFixed(2)} pts</span>}</td>
                                             <td className="px-6 py-4">{pctCell(row.return_1y_pct)}</td>
+                                            <td className={cn("px-6 py-4", row.rsi_14 == null ? "text-muted-foreground" : row.rsi_14 >= 70 ? "text-red-500" : row.rsi_14 <= 30 ? "text-green-500" : "text-muted-foreground")}>{row.rsi_14 == null ? "—" : Math.round(row.rsi_14)}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.from_high_52w_pct == null ? "—" : `${row.from_high_52w_pct.toFixed(1)}%`}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.turnover_1d == null ? "—" : traded(row.turnover_1d, row.ticker)}</td>
                                             <td className="px-6 py-4">
                                                 <span className={cn(
                                                     "px-2 py-0.5 rounded border",

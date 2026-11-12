@@ -253,3 +253,89 @@ async def theme_members() -> dict[str, list[dict]]:
     names = list(THEMES)
     files = await asyncio.gather(*(_index_file(THEMES[n]) for n in names))
     return {name: parse_index_members(text) for name, text in zip(names, files, strict=True) if text}
+
+
+# Indices and ETFs pages. NSE dropped its per-index constituents API; constituents come from the
+# archive CSVs, whose names follow ind_<slug>list.csv or ind_<slug>_list.csv (about a quarter of
+# indices publish one; strategy and fixed-income indices mostly don't).
+def parse_index_list(rows: list[dict]) -> list[dict]:
+    """Every NSE index with its level, valuation, range, returns and breadth, in NSE's order."""
+    out = []
+    for r in rows:
+        if not r.get("index"):
+            continue
+        adv, dec = _num(r.get("advances")), _num(r.get("declines"))
+        out.append({
+            "name": r["index"], "category": str(r.get("key") or "").title(),
+            "last": _num(r.get("last")), "change_pct": _num(r.get("percentChange")),
+            "pe": _num(r.get("pe")), "pb": _num(r.get("pb")), "dividend_yield": _num(r.get("dy")),
+            "year_high": _num(r.get("yearHigh")), "year_low": _num(r.get("yearLow")),
+            "return_30d": _num(r.get("perChange30d")), "return_1y": _num(r.get("perChange365d")),
+            "advances": int(adv) if adv is not None else None, "declines": int(dec) if dec is not None else None,
+        })
+    return out
+
+
+async def index_list() -> list[dict] | None:
+    data = await nse_json("api/allIndices")  # same cache entry as the market overview
+    rows = data.get("data") if isinstance(data, dict) else None
+    return parse_index_list(rows) if isinstance(rows, list) else None
+
+
+def index_file_candidates(name: str) -> list[str]:
+    slug = re.sub(r"[^a-z0-9]", "", name.lower())
+    return [f"ind_{slug}list.csv", f"ind_{slug}_list.csv"]
+
+
+async def index_members(name: str) -> list[dict] | None:
+    """Constituents of an NSE index from its archive file; None when NSE publishes none we can find."""
+    for filename in index_file_candidates(name):
+        text = await _index_file(filename)
+        if text and text.lstrip().startswith("Company Name"):
+            return parse_index_members(text)
+    return None
+
+
+ETF_CATEGORIES = (
+    ("Gold", re.compile(r"\bgold\b", re.I)),
+    ("Silver", re.compile(r"\bsilver\b", re.I)),
+    ("International", re.compile(r"nasdaq|s&p 500|nyse|hang seng|global|international|us |\bmsci\b|world", re.I)),
+    ("Debt", re.compile(r"liquid|rate index|government securit|gilt|g-sec|gsec|bond|sdl|debt|t-bill|overnight|money market|crisil|psu bank bond|treasury", re.I)),
+    ("Banking & financial", re.compile(r"bank|financial", re.I)),
+    ("Sector & theme", re.compile(r"\bit\b|pharma|health|auto|fmcg|consum|energy|infra|psu|cpse|metal|realty|defence|manufactur|digital|tourism|commodit|oil|media|capital market|ev\b|chemical", re.I)),
+    ("Factor & strategy", re.compile(r"momentum|quality|value|low vol|alpha|equal weight|dividend|growth|multi.?factor|shariah", re.I)),
+    ("Broad market", re.compile(r"nifty|sensex|bse|midcap|smallcap|next 50|100|200|500|large", re.I)),
+)
+
+
+def etf_category(underlying: str, symbol: str = "") -> str:
+    """Asset class from NSE's underlying text, else from the symbol (some list the underlying as just "Index")."""
+    for text in (underlying, re.sub(r"(BEES|ETF|IETF|CASE)$", "", symbol.upper())):
+        found = next((name for name, pattern in ETF_CATEGORIES if pattern.search(text)), None)
+        if found:
+            return found
+    return "Other"
+
+
+def parse_etfs(rows: list[dict]) -> list[dict]:
+    """NSE ETFs with price, NAV premium/discount, traded value, range and returns; most traded first."""
+    out = []
+    for r in rows:
+        if not r.get("symbol"):
+            continue
+        price, nav = _num(r.get("ltP")), _num(r.get("nav"))
+        underlying = str(r.get("assets") or "").strip()
+        out.append({
+            "symbol": r["symbol"], "underlying": underlying or None, "category": etf_category(underlying, r["symbol"]),
+            "price": price, "change_pct": _num(r.get("per")), "nav": nav,
+            "premium_pct": round((price / nav - 1) * 100, 2) if price and nav else None,
+            "traded_value": _num(r.get("trdVal")), "year_high": _num(r.get("wkhi")), "year_low": _num(r.get("wklo")),
+            "return_30d": _num(r.get("perChange30d")), "return_1y": _num(r.get("perChange365d")),
+        })
+    return sorted(out, key=lambda e: e["traded_value"] or 0, reverse=True)
+
+
+async def etf_list() -> list[dict] | None:
+    data = await nse_json("api/etf")
+    rows = data.get("data") if isinstance(data, dict) else None
+    return parse_etfs(rows) if isinstance(rows, list) else None
