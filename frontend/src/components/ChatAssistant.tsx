@@ -4,10 +4,21 @@ import { Mic, MessageSquare, Send, Share2, X } from "lucide-react"
 import apiClient, { postStream } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import MiniPriceChart from "@/components/MiniPriceChart"
 
 interface Message {
     role: "user" | "assistant"
     content: string
+    tickers?: string[]  // stocks the answer looked up, charted under it
+}
+
+/** The stream ends with a record separator and {"tickers": [...]}; split it off the text. */
+const TRAILER = "\x1e"
+function splitReply(raw: string): Message {
+    const [content, trailer] = raw.split(TRAILER)
+    let tickers: string[] = []
+    try { tickers = trailer ? JSON.parse(trailer).tickers ?? [] : [] } catch { /* trailer still arriving */ }
+    return { role: "assistant", content, tickers }
 }
 
 /** Ticker of the stock page the user is on (/research/:t or /risk/:t), if any. */
@@ -72,14 +83,15 @@ export default function ChatAssistant() {
         setPending(true)
         setError(null)
         let started = false
+        let raw = ""
         try {
             // the server caps a conversation at 30 messages
             await postStream("/chat/stream", { messages: history.slice(-20), ticker }, chunk => {
                 const first = !started // read now: the state updater below may run later
                 started = true
-                setMessages(m => first
-                    ? [...m, { role: "assistant", content: chunk }]
-                    : [...m.slice(0, -1), { role: "assistant", content: m[m.length - 1].content + chunk }])
+                raw += chunk
+                const reply = splitReply(raw)
+                setMessages(m => first ? [...m, reply] : [...m.slice(0, -1), reply])
             })
         } catch (e) {
             setError(e instanceof Error ? e.message : "The assistant couldn't answer.")
@@ -224,6 +236,7 @@ export default function ChatAssistant() {
                             m.role === "user" ? "bg-primary text-primary-foreground whitespace-pre-wrap" : "bg-muted/60 text-foreground/90"
                         )}>
                             {m.role === "user" ? m.content : <Formatted text={m.content} />}
+                            {m.role === "assistant" && m.tickers?.map(t => <MiniPriceChart key={t} ticker={t} />)}
                         </div>
                     </div>
                 ))}

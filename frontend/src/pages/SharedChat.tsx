@@ -4,7 +4,7 @@ import apiClient from "@/lib/api"
 import { Formatted } from "@/components/ChatAssistant"
 import { cn } from "@/lib/utils"
 
-interface Shared { messages: { role: "user" | "assistant"; content: string }[]; created_at: string }
+interface Shared { messages: { role: "user" | "assistant"; content: string; tickers?: string[] }[]; created_at: string }
 
 export default function SharedChat() {
     const { token = "" } = useParams()
@@ -24,6 +24,8 @@ export default function SharedChat() {
                     <div key={i} className={cn("rounded-lg border border-border p-3 text-sm text-foreground", m.role === "user" ? "bg-primary/10" : "bg-card")}>
                         <p className="mb-1 text-[11px] text-muted-foreground">{m.role === "user" ? "Question" : "Quantara"}</p>
                         <Formatted text={m.content} />
+                        {/* Charts need a login (price history API), so the public page names the stocks instead */}
+                        {m.tickers && m.tickers.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">Looked up: {m.tickers.join(", ")}</p>}
                     </div>
                 ))}
             </div>
