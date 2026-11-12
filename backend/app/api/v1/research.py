@@ -58,6 +58,13 @@ class StockSearchItem(BaseModel):
     profit_cagr_3y_pct: float | None = None
     promoter_pct: float | None = None
     promoter_change_pp: float | None = None
+    rsi_14: float | None = None
+    sma50_gap_pct: float | None = None
+    sma200_gap_pct: float | None = None
+    from_high_52w_pct: float | None = None
+    from_low_52w_pct: float | None = None
+    turnover_1d: float | None = None
+    turnover_20d: float | None = None
     exchange: str | None = None
     tracked: bool = True  # False: directory-only, no price or scores until someone opens it
     call: str | None = None  # Buy / Hold / Avoid from the stock's numbers (moderate profile, no signals)
@@ -137,6 +144,13 @@ def to_search_item(stock: Any) -> StockSearchItem:
         profit_cagr_3y_pct=stock.profit_cagr_3y_pct,
         promoter_pct=stock.promoter_pct,
         promoter_change_pp=stock.promoter_change_pp,
+        rsi_14=stock.rsi_14,
+        sma50_gap_pct=stock.sma50_gap_pct,
+        sma200_gap_pct=stock.sma200_gap_pct,
+        from_high_52w_pct=stock.from_high_52w_pct,
+        from_low_52w_pct=stock.from_low_52w_pct,
+        turnover_1d=stock.turnover_1d,
+        turnover_20d=stock.turnover_20d,
         call=None if call == "Unrated" else call,
     )
 
@@ -172,7 +186,16 @@ async def search_stocks(
     profit_cagr_3y_min: float | None = None,
     promoter_min: float | None = None,
     promoter_change_min: float | None = None,
-    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|roce|revenue_growth|revenue_cagr_3y|profit_cagr_3y|profit_margin|dividend_yield|return_1y|promoter|promoter_change|risk)$")] = None,
+    rsi_min: float | None = None,
+    rsi_max: float | None = None,
+    sma50_gap_min: float | None = None,
+    sma50_gap_max: float | None = None,
+    sma200_gap_min: float | None = None,
+    sma200_gap_max: float | None = None,
+    from_high_min: float | None = None,
+    from_low_max: float | None = None,
+    turnover_min_cr: float | None = None,
+    sort: Annotated[str | None, Query(pattern=r"^-?(ticker|market_cap|pe|roe|roce|revenue_growth|revenue_cagr_3y|profit_cagr_3y|profit_margin|dividend_yield|return_1y|promoter|promoter_change|risk|rsi|turnover|from_high)$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     track: bool = False,
@@ -254,7 +277,13 @@ async def search_stocks(
         (Stock.dividend_yield_pct, dividend_yield_min, True), (Stock.return_1y_pct, return_1y_min, True),
         (Stock.roce_pct, roce_min, True), (Stock.revenue_cagr_3y_pct, revenue_cagr_3y_min, True),
         (Stock.profit_cagr_3y_pct, profit_cagr_3y_min, True), (Stock.promoter_pct, promoter_min, True),
-        (Stock.promoter_change_pp, promoter_change_min, True),
+        (Stock.promoter_change_pp, promoter_change_min, True), (Stock.rsi_14, rsi_min, True),
+        (Stock.rsi_14, rsi_max, False), (Stock.sma50_gap_pct, sma50_gap_min, True),
+        (Stock.sma50_gap_pct, sma50_gap_max, False), (Stock.sma200_gap_pct, sma200_gap_min, True),
+        (Stock.sma200_gap_pct, sma200_gap_max, False), (Stock.from_high_52w_pct, from_high_min, True),
+        (Stock.from_low_52w_pct, from_low_max, False),
+        # 20-session average traded value; the filter is in crore (₹1 Cr = 1e7)
+        (Stock.turnover_20d, turnover_min_cr * 1e7 if turnover_min_cr is not None else None, True),
     ):
         if bound is not None:
             stmt = stmt.where(column >= bound if is_min else column <= bound)
@@ -266,6 +295,7 @@ async def search_stocks(
         "dividend_yield": Stock.dividend_yield_pct, "return_1y": Stock.return_1y_pct, "risk": Stock.risk_score,
         "roce": Stock.roce_pct, "revenue_cagr_3y": Stock.revenue_cagr_3y_pct, "profit_cagr_3y": Stock.profit_cagr_3y_pct,
         "promoter": Stock.promoter_pct, "promoter_change": Stock.promoter_change_pp,
+        "rsi": Stock.rsi_14, "turnover": Stock.turnover_1d, "from_high": Stock.from_high_52w_pct,
     }
     order: Any = Stock.ticker
     if sort:
@@ -278,7 +308,9 @@ async def search_stocks(
 
     data_filters = (pe_min, pe_max, beta_min, beta_max, risk_min, risk_max, signals, roe_min, debt_to_equity_max,
                     revenue_growth_min, profit_margin_min, dividend_yield_min, return_1y_min, roce_min,
-                    revenue_cagr_3y_min, profit_cagr_3y_min, promoter_min, promoter_change_min)
+                    revenue_cagr_3y_min, profit_cagr_3y_min, promoter_min, promoter_change_min, rsi_min, rsi_max,
+                    sma50_gap_min, sma50_gap_max, sma200_gap_min, sma200_gap_max, from_high_min, from_low_max,
+                    turnover_min_cr)
     if all(f is None for f in data_filters):
         q = (query or "").strip().upper()
         directory = directory.where(~ListedSecurity.ticker.in_(select(Stock.ticker)))

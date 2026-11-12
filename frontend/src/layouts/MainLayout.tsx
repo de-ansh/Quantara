@@ -29,6 +29,7 @@ import {
     FileText,
     Mic,
     Handshake,
+    Layers,
 } from "lucide-react"
 import { useTheme } from "@/context/use-theme"
 import { cn } from "@/lib/utils"
@@ -51,6 +52,7 @@ const PUBLIC_ROUTES = ["/login", "/register"]
 const navigation: NavItem[] = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Markets", href: "/markets", icon: Globe },
+    { name: "Indices & ETFs", href: "/indices", icon: Layers },
     { name: "Events", href: "/events", icon: CalendarDays },
     { name: "Filings", href: "/filings", icon: FileText },
     { name: "Concalls", href: "/concalls", icon: Mic },
