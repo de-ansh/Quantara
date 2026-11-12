@@ -25,6 +25,15 @@ export interface StockSearchItem {
     promoter_pct?: number | null
     /** Change in promoter holding from the previous quarter, in percentage points */
     promoter_change_pp?: number | null
+    rsi_14?: number | null
+    /** Price vs its moving average / 52-week extremes, in % */
+    sma50_gap_pct?: number | null
+    sma200_gap_pct?: number | null
+    from_high_52w_pct?: number | null
+    from_low_52w_pct?: number | null
+    /** Traded value (price x volume) in the listing currency: last session, 20-session average */
+    turnover_1d?: number | null
+    turnover_20d?: number | null
     exchange?: string | null
     /** false: listed but nobody has opened it yet, so no price or scores */
     tracked?: boolean

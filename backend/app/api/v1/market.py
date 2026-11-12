@@ -284,6 +284,7 @@ class Mover(BaseModel):
     name: str | None
     price: float
     change_pct: float
+    turnover: float | None = None  # last session's traded value (most-traded list)
 
 
 class SectorSummary(BaseModel):
@@ -303,6 +304,7 @@ class MarketOverviewResponse(BaseModel):
     gainers: list[Mover]
     losers: list[Mover]
     sectors: list[SectorSummary]
+    most_traded: list[Mover] = []
 
 
 MOVERS_SHOWN = 10
@@ -342,6 +344,20 @@ def summarize_stocks(stocks: list[Stock]) -> tuple[list[Mover], list[Mover], lis
     return gainers, losers, sectors
 
 
+def most_traded(stocks: list[Stock]) -> list[Mover]:
+    """Highest traded value in the last session, from the daily technicals snapshot."""
+    cutoff = utcnow() - PRICE_MAX_AGE
+    ranked = sorted(
+        (s for s in stocks if s.turnover_1d and s.price and s.price_updated_at and s.price_updated_at >= cutoff),
+        key=lambda s: s.turnover_1d or 0, reverse=True,
+    )[:MOVERS_SHOWN]
+    return [
+        Mover(ticker=s.ticker, name=s.name, price=float(s.price or 0), turnover=s.turnover_1d,
+              change_pct=round((s.price / s.previous_close - 1) * 100, 2) if s.price and s.previous_close else 0.0)
+        for s in ranked
+    ]
+
+
 async def _indian_stocks(db: DBSession) -> list[Stock]:
     return list((await db.execute(select(Stock).where(Stock.ticker.like("%.NS")))).scalars().all())
 
@@ -355,7 +371,8 @@ async def get_market_overview(current_user: CurrentUser, db: DBSession) -> Marke
     sensex = quotes["^BSESN"]
     if indices is not None and sensex != _FALLBACK_QUOTES["^BSESN"]:
         indices = [{"name": "SENSEX", "last": sensex[0], "change": sensex[1], "change_pct": _pct(*sensex)}, *indices]
-    gainers, losers, sectors = summarize_stocks(await _indian_stocks(db))
+    stocks = await _indian_stocks(db)
+    gainers, losers, sectors = summarize_stocks(stocks)
     return MarketOverviewResponse(
         indices=indices,
         sector_indices=feed["sectors"] if feed else None,
@@ -364,6 +381,7 @@ async def get_market_overview(current_user: CurrentUser, db: DBSession) -> Marke
         gainers=gainers,
         losers=losers,
         sectors=sectors,
+        most_traded=most_traded(stocks),
     )
 
 
