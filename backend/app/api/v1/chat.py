@@ -8,7 +8,7 @@ import json
 import secrets
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -28,6 +28,8 @@ logger = get_logger(__name__)
 MAX_TOOL_ROUNDS = 4
 CHAT_LIMIT_PER_HOUR = 40
 SHARES_PER_HOUR = 20
+MAX_CHARTS = 3  # price charts under one answer
+STREAM_TRAILER = "\x1e"  # ASCII record separator: never in model text, so the client can split on it
 
 SYSTEM_PROMPT = """You are Quantara's research assistant. The user is an individual investor looking at \
 Quantara's pages: price charts, risk breakdowns (volatility, beta, leverage, earnings stability, sector, \
@@ -75,6 +77,8 @@ TOOLS: list[ChatCompletionToolParam] = [
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
+    # Stocks an answer looked up; the client draws their price charts, and shared chats keep them
+    tickers: list[Annotated[str, Field(max_length=20)]] = Field(default=[], max_length=MAX_CHARTS)
 
 
 class ChatRequest(BaseModel):
@@ -228,7 +232,7 @@ async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, r
             )
             msg = resp.choices[0].message
             if not msg.tool_calls:
-                return ChatResponse(reply=msg.content or "", tickers=tickers)
+                return ChatResponse(reply=msg.content or "", tickers=list(dict.fromkeys(tickers))[:MAX_CHARTS])
             calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments}
                      for c in msg.tool_calls if c.type == "function"]  # the only kind of tool offered
             await _answer_tool_calls(calls, messages, current_user, db, tickers)
@@ -236,6 +240,11 @@ async def chat(request: ChatRequest, current_user: CurrentUser, db: DBSession, r
         logger.error(f"Chat LLM call failed: {e}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The assistant is unavailable right now") from e
     raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The assistant needed too many lookups; ask a narrower question")
+
+
+def _trailer(tickers: list[str]) -> str:
+    """End-of-stream marker the client strips from the text: record separator, then JSON."""
+    return STREAM_TRAILER + json.dumps({"tickers": list(dict.fromkeys(tickers))[:MAX_CHARTS]})
 
 
 @router.post("/stream")
@@ -265,12 +274,14 @@ async def chat_stream(
                         call["name"] += (tc.function.name or "") if tc.function else ""
                         call["arguments"] += (tc.function.arguments or "") if tc.function else ""
                 if not calls:
+                    yield _trailer(tickers)
                     return
                 await _answer_tool_calls(list(calls.values()), messages, current_user, db, tickers)
             yield "\n\nI needed too many lookups for that; please ask a narrower question."
         except OpenAIError as e:  # headers are already sent, so the failure goes into the text
             logger.error(f"Chat LLM stream failed: {e}")
             yield "\n\nThe assistant is unavailable right now. Please try again."
+        yield _trailer(tickers)
 
     return StreamingResponse(answer(), media_type="text/plain; charset=utf-8")
 
