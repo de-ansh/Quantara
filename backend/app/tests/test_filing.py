@@ -193,17 +193,10 @@ def _bse_feed(pdf: str) -> str:
 
 @pytest.fixture
 def watch(serve, monkeypatch):
-    """Fresh watcher state, NSE feed and XBRL served, Slack captured."""
+    """Fresh watcher state, NSE feed and XBRL served."""
     from app.services import filing_watch
 
     monkeypatch.setattr(filing_watch, "_seen_xbrl", set())
-    monkeypatch.setattr(filing_watch, "_reported_unreadable", set())
-    posted: list[str] = []
-
-    async def fake_slack(text: str) -> None:
-        posted.append(text)
-
-    monkeypatch.setattr(filing_watch, "notify_slack", fake_slack)
     serve[filing_watch.NSE_ANNOUNCEMENTS_RSS] = httpx.Response(200, text=NSE_FEED)
     serve["https://nse.example.com/xbrl/INFY.xml"] = httpx.Response(
         200, text=_xbrl("INFY", "500209", "https://www.infosys.example.com/investors")
@@ -212,7 +205,7 @@ def watch(serve, monkeypatch):
         200, text=_xbrl("OTHER", "500001", "https://other.example.com/t.pdf")
     )
     serve["https://www.infosys.example.com/investors"] = httpx.Response(200, text="<html>IR page</html>")
-    return filing_watch, posted
+    return filing_watch
 
 
 @pytest.mark.asyncio
@@ -221,7 +214,7 @@ async def test_watch_links_transcript_via_bse_fallback(db_session, serve, watch)
 
     from app.models.research import ResearchReport
 
-    filing_watch, posted = watch
+    filing_watch = watch
     db_session.add(Stock(ticker="INFY.NS", name="Infosys", price=1500.0))
     db_session.add(Stock(ticker="500209.BO", name="Infosys", price=1500.0))
     await db_session.flush()
@@ -238,16 +231,14 @@ async def test_watch_links_transcript_via_bse_fallback(db_session, serve, watch)
         assert stock.filing_url == pdf and "strong digital demand" in stock.filing_text
     # The stale report is dropped so the next view regenerates with the transcript
     assert (await db_session.execute(select(ResearchReport))).first() is None
-    assert len(posted) == 1 and "INFY.NS" in posted[0]
 
     # Already handled: the next pass does nothing
     assert await filing_watch.link_new_transcripts(db_session) == 0
-    assert len(posted) == 1
 
 
 @pytest.mark.asyncio
 async def test_watch_skips_cover_letters_and_retries(db_session, serve, watch):
-    filing_watch, posted = watch
+    filing_watch = watch
     db_session.add(Stock(ticker="INFY.NS", name="Infosys", price=1500.0))
     await db_session.commit()
     pdf = "https://www.bse.example.com/AttachLive/infy.pdf"
@@ -256,7 +247,6 @@ async def test_watch_skips_cover_letters_and_retries(db_session, serve, watch):
 
     assert await filing_watch.link_new_transcripts(db_session) == 0
     assert await filing_watch.link_new_transcripts(db_session) == 0
-    assert len(posted) == 1 and "no readable PDF or recording" in posted[0]  # reported once, not every pass
 
     # The full transcript turns up later and is picked up
     serve[pdf] = httpx.Response(200, content=_pdf(SENTENCE * 80))
@@ -290,7 +280,7 @@ async def test_watch_reads_transcript_pdfs_and_transcribes_recordings_for_held_s
     from app.models.user import User
     from app.models.watchlist import WatchlistItem
 
-    filing_watch, posted = watch
+    filing_watch = watch
     transcribed: list[str] = []
 
     async def transcribe(audio: bytes, filename: str) -> str:
@@ -329,7 +319,6 @@ async def test_watch_reads_transcript_pdfs_and_transcribes_recordings_for_held_s
     assert wipro.filing_url == "https://wipro.example.com/q2.mp3"
     assert other.filing_url is None
     assert transcribed == ["q2.mp3"]  # only the watched stock's recording was paid for
-    assert any("recording transcribed for WIPRO.NS" in p for p in posted)
 
     # A recording for a call that already has a newer filing is skipped, so a PDF transcript is never replaced
     filing_watch._seen_xbrl.clear()

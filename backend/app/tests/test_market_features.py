@@ -167,6 +167,47 @@ def test_event_digest_covers_only_held_stocks_on_that_day():
 
 
 @pytest.mark.asyncio
+async def test_daily_digest_has_market_highlights_and_only_watched_stocks(db_session):
+    from sqlalchemy import select
+
+    from app.models.price_alert import PriceAlert
+    from app.models.signal import Signal
+    from app.models.user import User
+    from app.models.watchlist import WatchlistItem
+    from app.services.event_alerts import build_daily_digest
+
+    now = utcnow()
+    db_session.add_all([
+        Stock(ticker="ITC.NS", name="ITC", price=412.0, previous_close=400.0, price_updated_at=now,
+              turnover_1d=5e9, filing_updated_at=now),
+        Stock(ticker="TCS.NS", name="TCS", price=3000.0, previous_close=3100.0, price_updated_at=now, turnover_1d=5e9),
+        Stock(ticker="OTHER.NS", name="Other Co", price=10.0, previous_close=9.0, price_updated_at=now,
+              turnover_1d=5e9, filing_updated_at=now),
+    ])
+    await db_session.flush()
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    db_session.add_all([
+        WatchlistItem(user_id=user.id, ticker="ITC.NS"),
+        PriceAlert(user_id=user.id, ticker="ITC.NS", direction="above", target_price=410, triggered_at=now),
+        Signal(ticker="ITC.NS", signal_type="large_deal", strength=70, confidence=80, timestamp=now),
+        # Saved today but about a months-old event (a backfill): not news
+        Signal(ticker="ITC.NS", signal_type="promoter_pledge", strength=70, confidence=80,
+               timestamp=now - timedelta(days=60)),
+    ])
+    await db_session.commit()
+    events = {"earnings": [{"ticker": "ITC.NS", "date": "2026-11-14"}], "corporate_actions": []}
+
+    text = await build_daily_digest(db_session, {"NIFTY 50": (25100.0, 100.0)}, events, date(2026, 11, 13))
+    assert "Market close, Fri 13 Nov" in text and "NIFTY 50 25,100 (+0.40%)" in text
+    assert "Top gainers: Other Co +11.1%, ITC +3.0%" in text and "Top losers: TCS -3.2%" in text
+    [mine] = [line for line in text.splitlines() if line.startswith("• <")]
+    assert "/research/ITC.NS|ITC>" in mine and "₹412.00 (+3.0%)" in mine
+    assert "price alert hit (above 410)" in mine and "large deal" in mine and "transcript in" in mine
+    assert "pledge" not in mine
+    assert "Tomorrow (Sat 14 Nov)" in text and "ITC.NS: results board meeting" in text
+    assert "Other Co (" not in text and "OTHER.NS" not in text  # not watched: only in the market movers
+
+@pytest.mark.asyncio
 async def test_gallery_shows_only_chats_their_owners_listed(client):
     headers = await _headers(client)
     chat = [{"role": "user", "content": "Is TCS a buy?"}, {"role": "assistant", "content": "Hold.", "tickers": ["TCS.NS"]}]
@@ -183,3 +224,44 @@ async def test_gallery_shows_only_chats_their_owners_listed(client):
 
     await client.delete(f"/api/v1/chat/shared/{item['token']}", headers=headers)
     assert (await client.get("/api/v1/chat/gallery", headers=headers)).json() == []  # stop sharing also unlists
+
+
+@pytest.mark.asyncio
+async def test_daily_digest_goes_out_once_on_weekdays_after_the_close(monkeypatch):
+    from datetime import datetime
+
+    from redis.asyncio import Redis
+
+    from app.core.config import settings
+    from app.services import event_alerts
+
+    sent: list[str] = []
+
+    async def fake_slack(text: str) -> None:
+        sent.append(text)
+
+    async def no_indices() -> dict:
+        return {}
+
+    async def no_events(today: date) -> dict:
+        return {}
+
+    async def built(db, indices, events, today) -> str:
+        return f"digest {today}"
+
+    monkeypatch.setattr(settings, "slack_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(event_alerts, "notify_slack", fake_slack)
+    monkeypatch.setattr(event_alerts, "_market_indices", no_indices)
+    monkeypatch.setattr(event_alerts, "event_feeds", no_events)
+    monkeypatch.setattr(event_alerts, "build_daily_digest", built)
+    redis = Redis.from_url(settings.redis_url)
+    await redis.delete("digest:sent:2030-01-07")  # a Monday no real digest uses
+    try:
+        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 5, 17, tzinfo=event_alerts.IST))  # Saturday
+        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 15, tzinfo=event_alerts.IST))  # market open
+        assert await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 5, tzinfo=event_alerts.IST))
+        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 15, tzinfo=event_alerts.IST))
+        assert sent == ["digest 2030-01-07"]
+    finally:
+        await redis.delete("digest:sent:2030-01-07")
+        await redis.aclose()

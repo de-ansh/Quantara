@@ -9,7 +9,7 @@ Framework for detecting market signals:
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -599,29 +599,6 @@ async def save_signal_to_db(db: AsyncSession, signal: Signal) -> None:
         db.add(db_signal)
         await db.commit()
         logger.info(f"Saved signal {signal.signal_type.value} for {signal.ticker} to database")
-        await _notify_watchers(db, signal)
-
-
-async def _notify_watchers(db: AsyncSession, signal: Signal) -> None:
-    """Slack a new signal if someone watches or holds the ticker and it is recent (skips backfill)."""
-    from sqlalchemy import select
-
-    from app.api.v1.watchlist import ALERT_WINDOW
-    from app.models.portfolio import PortfolioPosition
-    from app.models.watchlist import WatchlistItem
-    from app.services.notify import notify_slack
-
-    ts = signal.timestamp
-    now = datetime.now(UTC) if ts.tzinfo else utcnow()
-    if now - ts > ALERT_WINDOW:
-        return
-    watched = await db.scalar(select(WatchlistItem.id).where(WatchlistItem.ticker == signal.ticker).limit(1))
-    held = await db.scalar(select(PortfolioPosition.id).where(PortfolioPosition.ticker == signal.ticker).limit(1))
-    if watched is not None or held is not None:
-        await notify_slack(
-            f":chart_with_upwards_trend: {signal.ticker}: {signal.signal_type.value} signal "
-            f"(strength {signal.strength:.0f}, confidence {signal.confidence:.0f})"
-        )
 
 
 def _signal_time(s: Any) -> datetime | None:

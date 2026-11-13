@@ -28,7 +28,6 @@ from app.models.research import ResearchReport
 from app.models.stock import Stock
 from app.models.watchlist import WatchlistItem
 from app.providers.filing import FilingError, fetch_filing_text
-from app.services.notify import notify_slack
 
 logger = get_logger(__name__)
 
@@ -43,7 +42,6 @@ _ITEM = re.compile(r"<item>(.*?)</item>", re.S)
 _BSE_TRANSCRIPT = re.compile(r"transcript|conference call|earnings? call", re.I)
 # shortcut: in-memory, so a restart re-reads the XBRL files still in the feed once; persist if that gets costly
 _seen_xbrl: set[str] = set()
-_reported_unreadable: set[str] = set()
 
 
 def _tag(name: str, text: str) -> str | None:
@@ -214,12 +212,6 @@ async def link_new_transcripts(db: AsyncSession) -> int:
                 if kind == "recording":
                     _seen_xbrl.add(xbrl_url)  # don't re-download a big recording every pass; the transcript follows
                 # Otherwise not marked seen: BSE may publish the PDF by the next pass, until NSE's feed drops the item
-                if xbrl_url not in _reported_unreadable:
-                    _reported_unreadable.add(xbrl_url)
-                    await notify_slack(
-                        f"New {info['symbol']} earnings-call transcript, but no readable PDF or recording yet. "
-                        f"Quantara will keep checking; or paste a link on the stock page: {info['url']}"
-                    )
                 continue
             _seen_xbrl.add(xbrl_url)
 
@@ -236,8 +228,6 @@ async def link_new_transcripts(db: AsyncSession) -> int:
             )
             await db.commit()
             linked += len(stocks)
-            what = "Earnings-call recording transcribed" if kind == "recording" else "New earnings-call transcript linked"
-            await notify_slack(f"{what} for {', '.join(s.ticker for s in stocks)}: {url}")
     return linked
 
 
