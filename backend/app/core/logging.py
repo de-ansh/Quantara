@@ -54,6 +54,8 @@ def configure_logging() -> None:
         stream=sys.stdout,
         level=getattr(logging, settings.log_level.upper()),
     )
+    # httpx logs every request URL at INFO, which would put secret URLs (the Slack webhook) in the logs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
