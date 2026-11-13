@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import sleep_wall, utcnow
 from app.core.logging import get_logger
 from app.models.stock import Stock
-from app.services.notify import notify_slack
 
 logger = get_logger(__name__)
 
@@ -98,10 +97,8 @@ async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> 
         if stock.ticker in quotes:
             stock.price, stock.previous_close = quotes[stock.ticker]
             stock.price_updated_at = now
-    fired = await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
+    await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
     await db.commit()
-    for message in fired:
-        await notify_slack(f":bell: Price alert: {message}")
     logger.info(f"Refreshed prices for {len(quotes)}/{len(stocks)} stocks")
     return len(quotes)
 

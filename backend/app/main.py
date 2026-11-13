@@ -149,6 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Background jobs. Every worker schedules them; Postgres advisory locks let one run each pass.
     import asyncio
 
+    from app.services.event_alerts import run_periodic_daily_digest
     from app.services.filing_watch import run_periodic_filing_watch
     from app.services.held_research import run_periodic_held_research
     from app.services.price_service import run_periodic_price_refresh
@@ -163,8 +164,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             asyncio.create_task(run_periodic_filing_watch()),
             asyncio.create_task(run_periodic_directory_refresh()),
             asyncio.create_task(run_periodic_held_research()),
+            asyncio.create_task(run_periodic_daily_digest()),
         ]
-        logger.info("Background signal, price, filing watch, directory and nightly research tasks started")
+        logger.info("Background signal, price, filing watch, directory, nightly research and daily digest tasks started")
     app.state.bg_tasks = bg_tasks
 
     yield
