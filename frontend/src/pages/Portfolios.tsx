@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Briefcase, Pencil, Play, Plus, RefreshCw, Trash2, Wallet, X } from "lucide-react"
+import { Briefcase, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wallet, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn, timeAgo } from "@/lib/utils"
 import { getCurrencySymbol } from "@/lib/currency"
 import { apiErrorDetail } from "@/lib/api"
+import { parseHoldingsCsv } from "@/lib/holdingsCsv"
 import {
     useDeletePortfolio,
     usePortfolios,
@@ -73,7 +74,34 @@ function validate(draft: Draft): string | null {
 function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => void }) {
     const [draft, setDraft] = useState<Draft>(initial)
     const [error, setError] = useState<string | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
     const save = useSavePortfolio()
+
+    const importCsv = async (file: File) => {
+        setError(null)
+        setNotice(null)
+        try {
+            const { holdings, skipped } = parseHoldingsCsv(await file.text())
+            if (holdings.length === 0) {
+                setError("No holdings found in that file." + (skipped.length ? ` Skipped: ${skipped.join("; ")}` : ""))
+                return
+            }
+            const invested = holdings.reduce((sum, h) => sum + h.shares * h.cost, 0)
+            // Weights left blank: the server weights by market value from the share counts
+            setDraft(d => ({
+                ...d,
+                name: d.name || "My holdings",
+                initialInvestment: invested > 0 ? String(Math.round(invested)) : d.initialInvestment,
+                rows: holdings.map(h => newRow(h.ticker, "", String(h.shares), h.cost ? String(h.cost) : "")),
+            }))
+            setNotice(
+                `Imported ${holdings.length} holding${holdings.length === 1 ? "" : "s"}. Check them, then save.` +
+                (skipped.length ? ` Skipped ${skipped.length}: ${skipped.join("; ")}.` : ""),
+            )
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Couldn't read that file.")
+        }
+    }
 
     const total = draft.rows.reduce((sum, r) => sum + (Number(r.weight) || 0), 0)
     const updateRow = (key: string, patch: Partial<DraftRow>) =>
@@ -159,6 +187,16 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
                                 <RefreshCw className="size-3" /> Normalize
                             </button>
+                            <label title="Fill the holdings from your broker's holdings export (CSV)"
+                                className="flex items-center gap-1 text-muted-foreground hover:text-foreground cursor-pointer focus-within:text-foreground">
+                                <Upload className="size-3" /> Import CSV
+                                <input type="file" accept=".csv,text/csv" className="sr-only" aria-label="Import holdings CSV"
+                                    onChange={e => {
+                                        const file = e.target.files?.[0]
+                                        e.target.value = ""  // choosing the same file again still triggers a change
+                                        if (file) void importCsv(file)
+                                    }} />
+                            </label>
                         </div>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
@@ -195,6 +233,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                     </button>
                 </div>
 
+                {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
                 {error && <p role="alert" className="text-xs text-q-risk-high">{error}</p>}
 
                 <div className="flex justify-end gap-2">
