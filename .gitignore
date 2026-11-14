@@ -35,3 +35,6 @@ logs/
 .pytest_cache/
 htmlcov/
 
+
+# Verdict backtest download cache
+backend/.backtest-cache/
