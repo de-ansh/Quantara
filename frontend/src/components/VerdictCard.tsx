@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { dataCallLabel } from "@/lib/verdict"
 
 interface Verdict {
     verdict: "Buy" | "Hold" | "Avoid" | "Unrated"
@@ -19,6 +20,8 @@ const TONE: Record<Verdict["verdict"], string> = {
     Avoid: "text-red-500 border-red-500/40 bg-red-500/10",
     Unrated: "text-muted-foreground border-border bg-muted/30",
 }
+// Not red: it isn't a warning that the price will fall
+const WEAK_TONE = "text-slate-500 border-slate-500/40 bg-slate-500/10"
 
 /** Buy / Hold / Avoid for the viewer's risk profile, with pros and cons; `version` refetches once research or risk lands. */
 export default function VerdictCard({ ticker, version }: { ticker: string; version?: string | number | null }) {
@@ -29,6 +32,7 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
     // Unknown values (an older or failing API) fall back to Unrated instead of crashing the page
     const verdict = data?.verdict && data.verdict in TONE ? data.verdict : "Unrated"
     const fromData = data?.basis === "data"
+    const weakNumbers = fromData && verdict === "Avoid"
 
     return (
         <section aria-label="Verdict" className="bg-card border border-border p-4 px-5 min-w-[240px] max-w-md">
@@ -40,12 +44,18 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
                     <span className="text-xs font-mono text-muted-foreground">{data.final_score}/100</span>
                 )}
             </div>
-            <div className={cn("mt-2 inline-block border px-3 py-1 text-xl font-black uppercase tracking-wider", TONE[verdict])}>
-                {isLoading ? "…" : verdict}
+            <div className={cn("mt-2 inline-block border px-3 py-1 text-xl font-black uppercase tracking-wider", weakNumbers ? WEAK_TONE : TONE[verdict])}>
+                {isLoading ? "…" : fromData ? dataCallLabel(verdict) : verdict}
             </div>
             {data && verdict !== "Unrated" && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
                     {fromData ? "From the stock's numbers. The AI verdict replaces this once research is generated." : "From AI research, risk and signals."}
+                </p>
+            )}
+            {weakNumbers && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                    Its returns, profits or debt look weak. In a 2023–25 backtest, stocks like this did no worse than
+                    the typical stock, so this describes the numbers and is not a call to sell.
                 </p>
             )}
             {data && verdict === "Unrated" && (
