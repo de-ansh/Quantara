@@ -147,7 +147,7 @@ export const CALCULATORS: Calculator[] = [
                 { label: "Effective rate (better regime)", value: gross ? `${((Math.min(newTax, oldTax) / gross) * 100).toFixed(2)}%` : "0%" },
             ]
         },
-        note: "FY 2025-26 slabs (Budget 2025), including the 4% cess, standard deduction and the section 87A rebate. Surcharge applies above ₹50 lakh without marginal relief. Check for later Budget changes before filing.",
+        note: "Slabs for FY 2025-26 and FY 2026-27 (set in Budget 2025; Budget 2026 left them unchanged), including the 4% cess, standard deduction and the ₹12 lakh rebate. Surcharge applies above ₹50 lakh without marginal relief. Check for later Budget changes before filing.",
     },
     {
         id: "capital-gains", name: "Capital gains",
@@ -170,7 +170,7 @@ export const CALCULATORS: Calculator[] = [
                 { label: "You keep", value: inr(sell - tax) },
             ]
         },
-        note: "Listed shares and equity mutual funds sold on or after 23 July 2024: short-term (12 months or less) at 20%, long-term at 12.5% above ₹1.25 lakh of long-term gains a year, plus 4% cess. Ignores surcharge and the 2018 grandfathering rule.",
+        note: "Listed shares and equity mutual funds sold on or after 23 July 2024: short-term (12 months or less) at 20%, long-term at 12.5% above ₹1.25 lakh of long-term gains a year, plus 4% cess. Unchanged by Budget 2026. Ignores surcharge, the 2018 grandfathering rule and share buybacks (taxed as capital gains from FY 2026-27).",
     },
     {
         id: "hra", name: "HRA exemption",
@@ -218,7 +218,7 @@ export const CALCULATORS: Calculator[] = [
                 { label: "Interest earned", value: inr(total - balance - contributed) },
             ]
         },
-        note: "12% from you and 3.67% from your employer go to EPF (the employer's other 8.33% goes to the pension scheme). 8.25% was the rate for FY 2024-25.",
+        note: "12% from you and 3.67% from your employer go to EPF (the employer's other 8.33% goes to the pension scheme). 8.25% was the rate for FY 2024-25 and FY 2025-26.",
     },
 ]
 
