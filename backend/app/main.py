@@ -237,6 +237,7 @@ from app.api.v1 import (
     risk,
     screens,
     signals,
+    tax,
     users,
     watchlist,
 )
@@ -256,6 +257,7 @@ app.include_router(market.router, prefix="/api/v1/market", tags=["market"])
 app.include_router(watchlist.router, prefix="/api/v1/watchlist", tags=["watchlist"])
 app.include_router(screens.router, prefix="/api/v1/screens", tags=["screens"])
 app.include_router(price_alerts.router, prefix="/api/v1/alerts/price", tags=["alerts"])
+app.include_router(tax.router, prefix="/api/v1/tax", tags=["tax"])
 
 
 @app.exception_handler(Exception)

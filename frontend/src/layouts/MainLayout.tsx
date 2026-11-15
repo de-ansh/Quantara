@@ -26,6 +26,7 @@ import {
     Globe,
     CalendarDays,
     Calculator,
+    Receipt,
     FileText,
     Mic,
     Handshake,
@@ -66,6 +67,7 @@ const navigation: NavItem[] = [
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Compare", href: "/compare", icon: Columns3 },
     { name: "Calculators", href: "/calculators", icon: Calculator },
+    { name: "Tax harvesting", href: "/tax", icon: Receipt },
     { name: "Chat gallery", href: "/gallery", icon: MessagesSquare },
 ]
 
