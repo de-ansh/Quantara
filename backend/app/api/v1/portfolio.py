@@ -20,7 +20,7 @@ router = APIRouter()
 class PositionBase(BaseModel):
     """Position request schema."""
 
-    ticker: str = Field(..., pattern=r"^[A-Za-z0-9.\-^]{1,20}$")
+    ticker: str = Field(..., pattern=r"^[A-Za-z0-9&.\-^]{1,20}$")  # & for M&M.NS, J&KBANK.NS
     weight: float = Field(
         0.0, ge=0, le=1, description="Portfolio weight (0.0 - 1.0); derived from shares when all are 0"
     )
