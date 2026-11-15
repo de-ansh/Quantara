@@ -38,6 +38,7 @@ const Concalls = lazy(() => import("@/pages/Concalls"))
 const Deals = lazy(() => import("@/pages/Deals"))
 const Events = lazy(() => import("@/pages/Events"))
 const Calculators = lazy(() => import("@/pages/Calculators"))
+const TaxHarvest = lazy(() => import("@/pages/TaxHarvest"))
 const SharedChat = lazy(() => import("@/pages/SharedChat"))
 const Settings = lazy(() => import("@/pages/Settings"))
 const Account = lazy(() => import("@/pages/Account"))
@@ -71,6 +72,7 @@ function App() {
                   <Route path="/concalls" element={<ProtectedRoute><Concalls /></ProtectedRoute>} />
                   <Route path="/deals" element={<ProtectedRoute><Deals /></ProtectedRoute>} />
                   <Route path="/calculators" element={<ProtectedRoute><Calculators /></ProtectedRoute>} />
+                  <Route path="/tax" element={<ProtectedRoute><TaxHarvest /></ProtectedRoute>} />
                   <Route path="/shared/:token" element={<SharedChat />} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
