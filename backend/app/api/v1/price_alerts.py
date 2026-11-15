@@ -19,7 +19,7 @@ MAX_ACTIVE_ALERTS = 50
 class PriceAlertCreate(BaseModel):
     """Create-alert request schema."""
 
-    ticker: str = Field(..., pattern=r"^[A-Za-z0-9.\-^]{1,20}$")
+    ticker: str = Field(..., pattern=r"^[A-Za-z0-9&.\-^]{1,20}$")  # & for M&M.NS, J&KBANK.NS
     direction: Literal["above", "below"]
     target_price: float = Field(..., gt=0)
 

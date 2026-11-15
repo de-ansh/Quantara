@@ -265,3 +265,28 @@ async def test_screener_filters_and_sorts_on_fundamentals(client, db_session):
     await db_session.commit()
     assert await tickers("roce_min=20&revenue_cagr_3y_min=10&promoter_change_min=0") == ["QUAL.NS"]
     assert (await tickers("sort=-roce"))[0] == "QUAL.NS"
+
+
+@pytest.mark.asyncio
+async def test_symbols_with_an_ampersand_can_be_held_and_watched(client, db_session):
+    # As a broker export lists them: bare NSE symbols, one with "&" (M&M)
+    db_session.add_all([
+        ListedSecurity(ticker="M&M.NS", name="Mahindra & Mahindra Limited", exchange="NSE"),
+        ListedSecurity(ticker="ITC.NS", name="ITC Limited", exchange="NSE"),
+        Stock(ticker="M&M.NS", name="Mahindra & Mahindra Limited", price=3000.0),
+        Stock(ticker="ITC.NS", name="ITC Limited", price=400.0),
+    ])
+    await db_session.commit()
+    headers = await _headers(client)
+
+    created = await client.post("/api/v1/portfolio/", headers=headers, json={
+        "name": "My holdings", "initial_investment": 31000,
+        "positions": [{"ticker": "M&M", "shares": 10, "cost_basis": 2800}, {"ticker": "ITC", "shares": 25, "cost_basis": 120}],
+    })
+    assert created.status_code == 201, created.text
+    held = {p["ticker"]: p for p in created.json()["positions"]}
+    assert set(held) == {"M&M.NS", "ITC.NS"}
+    assert held["M&M.NS"]["cost_basis"] == 2800 and round(held["M&M.NS"]["weight"], 2) == 0.75  # 30k of 40k
+
+    added = await client.post("/api/v1/watchlist/", json={"ticker": "M&M"}, headers=headers)
+    assert added.status_code in (200, 201) and [i["ticker"] for i in added.json()["items"]] == ["M&M.NS"]

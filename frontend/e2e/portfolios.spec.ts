@@ -63,6 +63,45 @@ async function mockApi(page: Page) {
 }
 
 test.describe('Portfolios', () => {
+  test('imports holdings from a broker CSV export, then saves them', async ({ page }) => {
+    const state = await mockApi(page);
+    await page.goto('/portfolios');
+    await page.getByRole('button', { name: 'New portfolio' }).first().click();
+
+    // Zerodha-style export: quoted thousands, a series suffix, the same stock twice, a zero-quantity row
+    const csv = [
+      'Instrument,Qty.,Avg. cost,LTP,Cur. val,P&L',
+      'ITC,10,"400.00",412.3,"4,123.00",123',
+      'M&M,5,"2,800.50",3000,"15,000.00",997.5',
+      'IRFC-BE,100,120,130,13000,1000',
+      'ITC,10,420,412.3,4123,-77',
+      'GOLDBEES,0,50,55,0,0',
+    ].join('\n');
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'holdings.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+
+    await expect(page.getByRole('status')).toContainText('Imported 3 holdings');
+    await expect(page.getByRole('status')).toContainText('GOLDBEES: no quantity');
+    await page.getByRole('button', { name: 'Save portfolio' }).click();
+
+    await expect(page.getByText('My holdings')).toBeVisible();
+    expect(state.posted).toEqual([{
+      name: 'My holdings', description: null, initial_investment: 34203,  // 20 x 410 + 5 x 2800.5 + 100 x 120 = 34,202.5
+      positions: [
+        { ticker: 'ITC', weight: 0, shares: 20, cost_basis: 410 },
+        { ticker: 'M&M', weight: 0, shares: 5, cost_basis: 2800.5 },
+        { ticker: 'IRFC', weight: 0, shares: 100, cost_basis: 120 },
+      ],
+    }]);
+  });
+
+  test('a file without symbol and quantity columns explains itself', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/portfolios');
+    await page.getByRole('button', { name: 'New portfolio' }).first().click();
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'x.csv', mimeType: 'text/csv', buffer: Buffer.from('Date,Amount\n2026-01-01,5') });
+    await expect(page.getByRole('alert')).toHaveText(/symbol column and a quantity column/);
+  });
+
   test('creates a portfolio and lists it', async ({ page }) => {
     const state = await mockApi(page);
     await page.goto('/portfolios');
