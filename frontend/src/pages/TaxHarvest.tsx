@@ -21,7 +21,7 @@ interface Plan {
     no_price: string[]
 }
 
-const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
+const inr = (n: number) => `${n < 0 ? "−" : ""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`
 const ticker = (s: string) => s.replace(/\.(NS|BO)$/, "")
 const th = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
 const td = "px-3 py-2 font-mono"
