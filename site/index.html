@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantara</title>
+<meta name="description" content="Quantara is a self-hosted stock research app for Indian markets: verdicts with their reasons, a screener over every NSE, BSE and US listing, AI summaries of earnings calls, a daily Slack digest and tax harvesting.">
+<meta property="og:title" content="Quantara">
+<meta property="og:description" content="Self-hosted stock research for Indian markets.">
+<meta property="og:image" content="img/stock.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e5df1' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f7f8fa; --surface: #ffffff; --text: #0f1420; --muted: #586174; --border: #e2e5ec;
+  --accent: #1e5df1; --accent-text: #ffffff; --code-bg: #0f1420; --code-text: #e6e9f0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0e12; --surface: #121821; --text: #e8ebf2; --muted: #9ca5ba; --border: #232a37;
+    --accent: #4c7ff5; --code-bg: #05080b; --code-text: #d6dbe6;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0e12; --surface: #121821; --text: #e8ebf2; --muted: #9ca5ba; --border: #232a37;
+  --accent: #4c7ff5; --code-bg: #05080b; --code-text: #d6dbe6;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+header.top { border-bottom: 1px solid var(--border); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .06em; color: var(--text); text-decoration: none; }
+.brand svg { width: 22px; height: 22px; color: var(--accent); }
+nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 14px; }
+nav a:hover { color: var(--text); }
+.hero { padding: 72px 0 40px; }
+.hero h1 { font-size: clamp(32px, 6vw, 56px); line-height: 1.08; margin: 0 0 16px; letter-spacing: -.02em; max-width: 820px; }
+.hero p { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 0 28px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-block; padding: 11px 20px; border-radius: 6px; font-weight: 600; text-decoration: none; border: 1px solid var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-text); }
+.btn.ghost { color: var(--accent); }
+.hero-shot { margin-top: 48px; }
+figure { margin: 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); }
+figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+section { padding: 56px 0; border-top: 1px solid var(--border); }
+section h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -.01em; }
+section > .wrap > p.lead { color: var(--muted); margin: 0 0 32px; max-width: 720px; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.feature { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.feature h3 { margin: 0 0 6px; font-size: 16px; }
+.feature p { margin: 0; color: var(--muted); font-size: 15px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 32px; }
+.honest { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 20px 24px; max-width: 820px; }
+.honest p { margin: 0 0 10px; }
+.honest p:last-child { margin: 0; }
+.stack { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.stack li { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 14px; }
+pre { background: var(--code-bg); color: var(--code-text); padding: 18px 20px; border-radius: 8px; overflow-x: auto; font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0 0 12px; }
+.small { font-size: 14px; color: var(--muted); }
+footer { border-top: 1px solid var(--border); padding: 32px 0 48px; }
+footer p { margin: 0 0 8px; }
+@media (max-width: 560px) {
+  nav a { margin-left: 14px; }
+  nav a.hide-sm { display: none; }
+  .hero { padding: 48px 0 24px; }
+  .hero p { font-size: 17px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      QUANTARA
+    </a>
+    <nav aria-label="Page">
+      <a href="#features">Features</a>
+      <a class="hide-sm" href="#screens">Screens</a>
+      <a href="#run">Run it</a>
+      <a href="https://github.com/de-ansh/Quantara">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <h1>Stock research for Indian markets, on your own machine.</h1>
+      <p>
+        Quantara reads NSE and BSE filings, prices and fundamentals for every listed company, explains each stock's
+        numbers in plain pros and cons, summarises earnings calls, and tells you once a day what changed for the
+        stocks you follow. It runs in Docker on your computer, and your watchlist and holdings are stored only in your own database.
+      </p>
+      <div class="buttons">
+        <a class="btn primary" href="#run">Run it yourself</a>
+        <a class="btn ghost" href="https://github.com/de-ansh/Quantara">View the code</a>
+      </div>
+      <figure class="hero-shot">
+        <img src="img/markets.png" width="1440" height="900" alt="Quantara's Markets page: NIFTY, SENSEX and sector indices, market breadth, FII and DII cash flows, and the day's top gainers and losers.">
+        <figcaption>The Markets page: indices, breadth, institutional flows and the day's movers.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <p class="lead">Built for one investor following Indian equities closely, with the data an expensive terminal would show.</p>
+      <div class="features">
+        <div class="feature"><h3>A verdict with its reasons</h3><p>Every stock gets a call from its numbers (returns on capital, growth, debt, valuation, promoter moves), listed as pros and cons. Stocks with an AI research report get a fuller one.</p></div>
+        <div class="feature"><h3>Screener over 17,000 listings</h3><p>Every NSE, BSE and US listing, filterable by ROE, ROCE, growth, debt, dividend yield, promoter holding and technicals. Filters can be saved and exported.</p></div>
+        <div class="feature"><h3>Earnings calls, summarised</h3><p>Transcripts are picked up from exchange filings as they're published, and recordings are transcribed when there's no transcript yet. The AI summary gives tone, guidance, highlights and concerns.</p></div>
+        <div class="feature"><h3>One daily Slack message</h3><p>After the close: the indices, the day's movers, and each stock you hold or watch, with price alerts hit, new signals and tomorrow's results dates.</p></div>
+        <div class="feature"><h3>Tax harvesting</h3><p>Upload a broker tradebook to see which long-term gains to book within the yearly ₹1.25 lakh tax-free allowance, which losses would cut this year's tax, and which gains to wait on.</p></div>
+        <div class="feature"><h3>Risk you can read</h3><p>A risk score broken into volatility, beta, earnings stability and sector, with drawdowns and scenario shocks such as a rate hike or a credit squeeze.</p></div>
+        <div class="feature"><h3>Market plumbing</h3><p>Bulk and block deals, shareholding changes, promoter pledges, corporate filings, results calendars, IPO analysis, and indices and ETFs with their constituents.</p></div>
+        <div class="feature"><h3>Portfolios from your broker</h3><p>Import holdings from a broker's CSV export, then simulate and stress-test them, or ask the research chat about any stock.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screens">
+    <div class="wrap">
+      <h2>Screens</h2>
+      <p class="lead">From a running instance with real market data. Buy and Hold labels are blurred: this public page isn't the place for calls on real stocks.</p>
+      <div class="shots">
+        <figure><img src="img/stock.png" width="1440" height="900" loading="lazy" alt="A stock page for Reliance Industries: the verdict card with its pros and cons, a risk score and the price history."><figcaption>A stock page: verdict, pros and cons, risk and price history.</figcaption></figure>
+        <figure><img src="img/screener.png" width="1440" height="900" loading="lazy" alt="The Research Explorer: filters for exchange, fundamentals and technicals beside a table of stocks with price, market cap, call, ROE and ROCE."><figcaption>The screener: fundamentals and technical filters over every listing.</figcaption></figure>
+        <figure><img src="img/concalls.png" width="1440" height="900" loading="lazy" alt="The Concalls page listing the week's earnings-call transcripts from NSE filings, each with an AI summary link."><figcaption>Earnings calls as they're filed, each one a click from an AI summary.</figcaption></figure>
+        <figure><img src="img/tax.png" width="1440" height="900" loading="lazy" alt="The Tax harvesting page with this year's realised gains, a long-term gain to book tax-free, losing lots and gains about to turn long-term, from a sample tradebook."><figcaption>Tax harvesting, here from an invented sample tradebook.</figcaption></figure>
+        <figure><img src="img/risk.png" width="1440" height="900" loading="lazy" alt="A risk breakdown: overall score, beta, one-year drawdown, worst scenario, and the factors that make up the score."><figcaption>A risk breakdown, with the scenarios that would hurt most.</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="honest">
+    <div class="wrap">
+      <h2>Tested against history</h2>
+      <div class="honest">
+        <p>The numbers-based verdict was replayed on past dates (30 June 2023 to 2026, the Nifty 500, using only data public on each date) and scored on what the stocks did next.</p>
+        <p>Its Buy did better than the typical stock in each year tested, by a modest margin. Its Avoid did not: those stocks did about as well as any other. So Quantara now labels them "Weak numbers", which describes the stock rather than calling it a sell.</p>
+        <p class="small">The replay is in <a href="https://github.com/de-ansh/Quantara/blob/main/backend/app/services/backtest.py">backend/app/services/backtest.py</a>. It uses today's index members, so it flatters stocks that survived.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="wrap">
+      <h2>Run it yourself</h2>
+      <p class="lead">You need Docker Desktop and an OpenAI API key for the AI features. Everything else, from listings to prices to filings, comes from public exchange and Yahoo Finance data.</p>
+      <pre><code>git clone https://github.com/de-ansh/Quantara.git
+cd Quantara/backend
+cp .env.example .env      # set SECRET_KEY and OPENAI_API_KEY
+docker compose up -d --build</code></pre>
+      <p class="small">Then open <code>http://localhost:3000</code> and register. The first day fills in the stock directory, fundamentals and technicals in the background. Optional: set <code>SLACK_WEBHOOK_URL</code> for the daily digest. The <a href="https://github.com/de-ansh/Quantara#readme">README</a> covers running without Docker.</p>
+      <h3>Built with</h3>
+      <ul class="stack">
+        <li>React 19</li><li>TypeScript</li><li>Vite</li><li>TanStack Query</li><li>Tailwind CSS</li><li>Recharts</li>
+        <li>Python 3.11</li><li>FastAPI</li><li>SQLAlchemy</li><li>PostgreSQL + pgvector</li><li>Redis</li><li>OpenAI</li><li>Docker</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="small"><strong>Not investment advice.</strong> Quantara is a personal research tool. Its author isn't a SEBI-registered research analyst or adviser, and nothing it shows is a recommendation to buy or sell. Market data comes from NSE, BSE and Yahoo Finance, whose terms allow personal use.</p>
+    <p class="small">Apache-2.0 licensed. <a href="https://github.com/de-ansh/Quantara">github.com/de-ansh/Quantara</a></p>
+  </div>
+</footer>
+</body>
+</html>

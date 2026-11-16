@@ -2,6 +2,8 @@
 
 **Risk-Intelligent Investment Research Platform**
 
+**Website:** https://de-ansh.github.io/Quantara/ (features, screenshots and how to run it)
+
 A full-stack financial intelligence platform combining a React/TypeScript frontend with a production-grade Python/FastAPI backend.
 
 ## 📁 Project Structure
