@@ -38,3 +38,6 @@ htmlcov/
 
 # Verdict backtest download cache
 backend/.backtest-cache/
+
+# context-mode plugin session data
+.github/context-mode/
