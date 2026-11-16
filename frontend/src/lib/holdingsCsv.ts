@@ -16,7 +16,7 @@ const SYMBOL = ["instrument", "symbol", "tradingsymbol", "stocksymbol", "scrip",
 const QUANTITY = ["qty", "quantity", "quantityavailable", "availableqty", "netqty", "holdingqty", "totalqty", "shares"]
 const AVG_COST = ["avgcost", "averagecost", "avgprice", "averageprice", "buyavg", "avgbuyprice", "averagebuyprice", "buyprice", "costprice", "avgrate"]
 
-const norm = (s: string) => s.toLowerCase().replace(/[\s._()₹-]/g, "")
+export const norm = (s: string) => s.toLowerCase().replace(/[\s._()₹-]/g, "")
 
 /** Split one CSV line, honouring double quotes ("1,234.50" stays one field). */
 export function splitCsvLine(line: string): string[] {
@@ -37,13 +37,13 @@ export function splitCsvLine(line: string): string[] {
     return out
 }
 
-const number = (s: string | undefined) => {
+export const parseNumber = (s: string | undefined) => {
     const n = Number((s ?? "").replace(/[₹$,\s]/g, ""))
     return Number.isFinite(n) ? n : NaN
 }
 
 /** Exchange-series suffixes on NSE symbols (ITC-EQ, IRFC-BE) aren't part of the ticker. */
-const cleanSymbol = (s: string) => s.trim().toUpperCase().replace(/-(EQ|BE|BZ|SM|ST)$/, "")
+export const cleanSymbol = (s: string) => s.trim().toUpperCase().replace(/-(EQ|BE|BZ|SM|ST)$/, "")
 
 export function parseHoldingsCsv(text: string): HoldingsImport {
     const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim())
@@ -64,11 +64,11 @@ export function parseHoldingsCsv(text: string): HoldingsImport {
     for (const line of lines.slice(headerAt + 1)) {
         const cells = splitCsvLine(line)
         const symbol = cleanSymbol(cells[symCol] ?? "")
-        const shares = number(cells[qtyCol])
+        const shares = parseNumber(cells[qtyCol])
         if (!symbol || /^total/i.test(symbol)) continue  // blank or a totals row
         if (!/^[A-Z0-9&.^-]{1,20}$/.test(symbol)) { skipped.push(`${symbol}: not a ticker symbol`); continue }
         if (!(shares > 0)) { skipped.push(`${symbol}: no quantity`); continue }
-        const cost = costCol >= 0 ? number(cells[costCol]) : 0
+        const cost = costCol >= 0 ? parseNumber(cells[costCol]) : 0
         const row = merged.get(symbol) ?? { shares: 0, spent: 0, costed: 0 }
         // The same stock on two lines (e.g. pledged and free shares): add up, averaging the cost over the
         // shares that have one, so a line without a cost doesn't drag the average down
