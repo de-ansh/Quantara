@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import apiClient from "@/lib/api"
 import { cn } from "@/lib/utils"
+import Panel from "@/components/Panel"
 
 interface Outcome {
     verdict: "Buy" | "Hold" | "Avoid"
@@ -34,11 +35,9 @@ export default function TrackRecordCard() {
     })
 
     return (
-        <section aria-labelledby="track-record-heading" className="bg-q-surface border border-q-border shrink-0">
-            <div className="px-4 py-2 border-b border-q-border flex items-center justify-between gap-2">
-                <h2 id="track-record-heading" className="text-xs font-bold uppercase tracking-wider text-foreground">
-                    Verdict track record{data ? ` · ${data.risk_level}` : ""}
-                </h2>
+        <Panel id="track-record-heading" title="How past verdicts did"
+            description={`Average return after each Buy, Hold or Avoid call${data?.risk_level ? ` (${data.risk_level.toLowerCase()} profile)` : ""}`}
+            action={
                 <div role="group" aria-label="Time after the verdict" className="flex gap-1">
                     {HORIZONS.map(h => (
                         <button
@@ -47,16 +46,16 @@ export default function TrackRecordCard() {
                             aria-pressed={horizon === h}
                             onClick={() => setHorizon(h)}
                             className={cn(
-                                "px-2 py-0.5 text-[11px] font-mono border rounded-sm",
-                                horizon === h ? "bg-primary text-primary-foreground border-primary" : "border-q-border text-muted-foreground hover:text-foreground"
+                                "px-2 py-0.5 text-xs border rounded-md",
+                                horizon === h ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground"
                             )}
                         >
-                            {h}d
+                            {h} days
                         </button>
                     ))}
                 </div>
-            </div>
-            <div className="px-4 py-3 text-xs">
+            }>
+            <div className="px-4 py-3 text-sm">
                 {isLoading ? (
                     <p className="text-muted-foreground">Loading…</p>
                 ) : isError || !data || !Array.isArray(data.verdicts) ? (
@@ -82,7 +81,7 @@ export default function TrackRecordCard() {
                             </thead>
                             <tbody className="font-mono">
                                 {data.verdicts.map(v => (
-                                    <tr key={v.verdict} className="border-t border-q-border/50">
+                                    <tr key={v.verdict} className="border-t border-border">
                                         <th scope="row" className="py-1 font-sans font-semibold text-foreground">{v.verdict}</th>
                                         <td className="py-1 text-right">{v.count}</td>
                                         <td className="py-1 text-right">{pct(v.avg_return_pct)}</td>
@@ -101,6 +100,6 @@ export default function TrackRecordCard() {
                     </>
                 )}
             </div>
-        </section>
+        </Panel>
     )
 }
