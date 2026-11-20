@@ -4,16 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn, timeAgo } from "@/lib/utils"
 import { usePortfolioPerformance, usePortfolios, type CurrencyTotals } from "@/hooks/usePortfolios"
-
-const SYMBOL = { USD: "$", INR: "₹" } as const
-
-const money = (v: number | null | undefined, currency: "USD" | "INR", signed = false) => {
-    if (v === null || v === undefined) return "—"
-    const sign = signed && v > 0 ? "+" : v < 0 ? "-" : ""
-    return `${sign}${SYMBOL[currency]}${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`)
-const tone = (v: number | null | undefined) => (!v ? "text-muted-foreground" : v > 0 ? "text-q-risk-low" : "text-q-risk-high")
+import { money, pct, tone } from "@/lib/money"
 
 function TotalsCard({ t }: { t: CurrencyTotals }) {
     const sectors = Object.entries(t.sector_allocation).sort((a, b) => b[1] - a[1])

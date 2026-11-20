@@ -1,6 +1,6 @@
 """Portfolio simulation and management API endpoints."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, status
@@ -9,6 +9,7 @@ from sqlalchemy import desc, select
 
 from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
+from app.core.logging import get_logger
 from app.models.mutual_fund import MutualFund
 from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
 from app.models.stock import Stock
@@ -17,6 +18,7 @@ from app.services.portfolio_analytics import PortfolioAnalyticsEngine
 from app.services.stock_lookup import get_or_track_stock
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class PositionBase(BaseModel):
@@ -278,6 +280,107 @@ async def create_portfolio(
     )
 
 
+class HoldingPerformance(BaseModel):
+    """Live valuation of one position (amounts in the listing currency)."""
+
+    kind: str = Field("stock", description="stock, or fund (ticker is then the AMFI scheme code, price the NAV)")
+    ticker: str
+    name: str
+    sector: str | None
+    currency: str
+    shares: float
+    avg_cost: float
+    price: float | None
+    market_value: float | None
+    cost_value: float
+    unrealized_pnl: float | None
+    unrealized_pnl_pct: float | None
+    day_change: float | None
+    weight_by_value: float | None = Field(None, description="Share of its currency's market value")
+
+
+class CurrencyTotals(BaseModel):
+    """Portfolio totals for holdings in one currency (USD and INR are never summed)."""
+
+    currency: str
+    market_value: float
+    cost_value: float
+    unrealized_pnl: float
+    unrealized_pnl_pct: float | None
+    day_change: float
+    sector_allocation: dict[str, float] = Field(
+        default_factory=dict, description="Sector -> % of this currency's market value"
+    )
+
+
+class PortfolioPerformance(BaseModel):
+    """Holdings valuation and P&L for a portfolio."""
+
+    portfolio_id: int
+    holdings: list[HoldingPerformance]
+    totals: list[CurrencyTotals]
+    prices_as_of: datetime | None = Field(None, description="Oldest price timestamp used")
+    weight_only_tickers: list[str] = Field(
+        default_factory=list, description="Positions without a share count (not valued)"
+    )
+
+
+PRICE_MAX_AGE = timedelta(minutes=15)
+
+
+class HoldingUpdateOut(BaseModel):
+    """Something that happened to (or is due for) a holding."""
+
+    kind: str = Field(..., description="signal, alert, transcript, results, verdict or event")
+    day: date
+    text: str
+    tone: str = Field("neutral", description="good, bad or neutral")
+    upcoming: bool = False
+
+
+class PortfolioUpdates(BaseModel):
+    """One portfolio's live valuation, plus updates per holding ticker."""
+
+    portfolio_id: int
+    name: str
+    performance: PortfolioPerformance
+    updates: dict[str, list[HoldingUpdateOut]]
+
+
+class PortfolioUpdatesResponse(BaseModel):
+    portfolios: list[PortfolioUpdates]
+
+
+@router.get("/updates", response_model=PortfolioUpdatesResponse)
+async def get_portfolio_updates(current_user: CurrentUser, db: DBSession) -> PortfolioUpdatesResponse:
+    """Every portfolio valued now, with the last week's news and the next two weeks' events on each stock."""
+    from app.services.holding_updates import holding_updates
+    from app.services.nse_market import event_feeds
+
+    user_id = int(current_user["id"])
+    portfolios = (await db.execute(
+        select(Portfolio).where(Portfolio.user_id == user_id).order_by(desc(Portfolio.updated_at))
+    )).scalars().all()
+    tickers = {p.ticker for pf in portfolios for p in pf.positions}
+    today = utcnow().date()
+    try:
+        events = await event_feeds(today) if any(_is_indian(t) for t in tickers) else {}
+    except Exception as e:  # NSE down: the rest of the feed still shows
+        logger.warning(f"Event feeds unavailable for portfolio updates: {e}")
+        events = {}
+    news = await holding_updates(db, tickers, user_id, current_user.get("risk_level") or "Moderate", events, today)
+    out: list[PortfolioUpdates] = []
+    for pf in portfolios:
+        held = {p.ticker for p in pf.positions}
+        out.append(PortfolioUpdates(
+            portfolio_id=pf.id,
+            name=pf.name,
+            performance=await _valuation(db, pf),
+            updates={t: [HoldingUpdateOut(**vars(u)) for u in news[t]] for t in held if t in news},
+        ))
+    return PortfolioUpdatesResponse(portfolios=out)
+
+
 @router.get("/{portfolio_id}", response_model=PortfolioResponse)
 async def get_portfolio(
     portfolio_id: int,
@@ -428,52 +531,6 @@ async def delete_portfolio(
     return None
 
 
-class HoldingPerformance(BaseModel):
-    """Live valuation of one position (amounts in the listing currency)."""
-
-    kind: str = Field("stock", description="stock, or fund (ticker is then the AMFI scheme code, price the NAV)")
-    ticker: str
-    name: str
-    sector: str | None
-    currency: str
-    shares: float
-    avg_cost: float
-    price: float | None
-    market_value: float | None
-    cost_value: float
-    unrealized_pnl: float | None
-    unrealized_pnl_pct: float | None
-    day_change: float | None
-    weight_by_value: float | None = Field(None, description="Share of its currency's market value")
-
-
-class CurrencyTotals(BaseModel):
-    """Portfolio totals for holdings in one currency (USD and INR are never summed)."""
-
-    currency: str
-    market_value: float
-    cost_value: float
-    unrealized_pnl: float
-    unrealized_pnl_pct: float | None
-    day_change: float
-    sector_allocation: dict[str, float] = Field(
-        default_factory=dict, description="Sector -> % of this currency's market value"
-    )
-
-
-class PortfolioPerformance(BaseModel):
-    """Holdings valuation and P&L for a portfolio."""
-
-    portfolio_id: int
-    holdings: list[HoldingPerformance]
-    totals: list[CurrencyTotals]
-    prices_as_of: datetime | None = Field(None, description="Oldest price timestamp used")
-    weight_only_tickers: list[str] = Field(
-        default_factory=list, description="Positions without a share count (not valued)"
-    )
-
-
-PRICE_MAX_AGE = timedelta(minutes=15)
 
 
 @router.get("/{portfolio_id}/performance", response_model=PortfolioPerformance)
@@ -483,8 +540,6 @@ async def get_portfolio_performance(
     db: DBSession,
 ) -> PortfolioPerformance:
     """Value each position at the latest price, refreshing quotes older than 15 minutes."""
-    from app.services.price_service import refresh_prices
-
     portfolio = (
         await db.execute(
             select(Portfolio).where(
@@ -494,6 +549,12 @@ async def get_portfolio_performance(
     ).scalar_one_or_none()
     if not portfolio:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await _valuation(db, portfolio)
+
+
+async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformance:
+    """Holdings at the latest price (stocks, refreshing quotes older than 15 minutes) or NAV (funds)."""
+    from app.services.price_service import refresh_prices
 
     positions = [p for p in portfolio.positions if p.shares > 0]
     weight_only = [p.ticker for p in portfolio.positions if p.shares <= 0]

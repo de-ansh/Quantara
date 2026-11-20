@@ -119,3 +119,27 @@ export const usePortfolioPerformance = (id: number) => {
         refetchInterval: 5 * 60 * 1000,
     });
 };
+
+export interface HoldingUpdate {
+    kind: 'signal' | 'alert' | 'transcript' | 'results' | 'verdict' | 'event';
+    day: string; // YYYY-MM-DD
+    text: string;
+    tone: 'good' | 'bad' | 'neutral';
+    upcoming: boolean;
+}
+
+export interface PortfolioUpdates {
+    portfolio_id: number;
+    name: string;
+    performance: PortfolioPerformance;
+    updates: Record<string, HoldingUpdate[]>; // by ticker; holdings with nothing new are absent
+}
+
+/** Every portfolio valued now, with the last week's news and the next two weeks' events per holding. */
+export const usePortfolioUpdates = () => {
+    return useQuery({
+        queryKey: ['portfolioUpdates'],
+        queryFn: async () => (await apiClient.get<{ portfolios: PortfolioUpdates[] }>('/portfolio/updates')).data.portfolios,
+        refetchInterval: 5 * 60 * 1000,
+    });
+};
