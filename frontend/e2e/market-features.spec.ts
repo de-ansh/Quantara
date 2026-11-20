@@ -357,3 +357,57 @@ test('the gallery lists all my chats, private or shared, then other users\' shar
   await mine.getByRole('button', { name: 'Delete chat: Is TCS a buy?' }).click();
   await expect.poll(() => deleted).toMatch(/\/chat\/shared\/mine1$/);
 });
+
+test('Find stocks opens on Indian stocks, largest first', async ({ page }) => {
+  await signedIn(page);
+  const seen: URLSearchParams[] = [];
+  await page.route('**/api/v1/stocks/search**', route => {
+    seen.push(new URL(route.request().url()).searchParams);
+    return route.fulfill({ json: { stocks: [], total_count: 0 } });
+  });
+  await page.goto('/explorer');
+  await expect.poll(() => seen.some(p => p.get('market') === 'india' && p.get('sort') === '-market_cap')).toBe(true);
+  await expect(page.getByRole('heading', { name: 'Find stocks', level: 1 })).toBeAttached();
+});
+
+test('signals read in words and filter by type and by what I own', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [], total_count: 0 } }));
+  await page.route('**/api/v1/signals**', route => route.fulfill({ json: { total_count: 2, signals: [
+    { id: 1, ticker: 'TCS.NS', signal_type: 'large_deal', strength: 40, confidence: 0.7, timestamp: '2026-11-19T00:00:00Z',
+      metadata: { direction: 'bullish', net_pct_of_company: 0.44 } },
+    { id: 2, ticker: 'OTHER.NS', signal_type: 'promoter_pledge', strength: 60, confidence: 0.7, timestamp: '2026-11-18T00:00:00Z',
+      metadata: { direction: 'bearish', pledged_pct_of_promoter: 40.68 } },
+  ] } }));
+  await page.goto('/signals');
+  const list = page.getByRole('region', { name: /signal/ });
+  await expect(list.getByRole('row', { name: /TCS\.NS/ })).toContainText('Bulk/block deals: net buying of 0.44% of the company');
+  await expect(list.getByRole('row', { name: /TCS\.NS/ })).toContainText('Positive');
+  await expect(list.getByRole('row', { name: /OTHER\.NS/ })).toContainText('Promoters have pledged 40.7% of their shares');
+  await expect(page.getByRole('button', { name: 'US insider buying' })).toHaveCount(0);  // no chip without data
+
+  await page.getByRole('button', { name: 'Promoter pledges' }).click();
+  await expect(list.getByRole('row', { name: /TCS\.NS/ })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await page.getByLabel('Only stocks I hold or watch').check();  // TCS.NS is on the watchlist
+  await expect(list.getByRole('row', { name: /TCS\.NS/ })).toContainText('(yours)');
+  await expect(list.getByRole('row', { name: /OTHER\.NS/ })).toHaveCount(0);
+});
+
+test('a stock page explains its key numbers in words', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/stocks/search**', route => route.fulfill({ json: { total_count: 1, stocks: [{
+    ticker: 'TCS.NS', name: 'Tata Consultancy Services Limited', price: '₹2,376.20', cap: '₹8.61 L Cr', risk: 54, signal: 'Neutral',
+    status: 'up', change_pct: 1.43, price_updated_at: null, sector: 'Technology', pe: 22.4, beta: 0.85, roe_pct: 45.6,
+    debt_to_equity: 0.1, dividend_yield_pct: 2.1, return_1y_pct: -12.3,
+  }] } }));
+  await page.goto('/research/TCS.NS');
+  await expect(page.getByRole('heading', { name: /Tata Consultancy Services Limited/, level: 1 })).toBeVisible();
+  await expect(page.getByText('Market cap ₹8.61 L Cr')).toBeVisible();
+  const numbers = page.getByRole('region', { name: 'Key numbers' });
+  await expect(numbers).toContainText('Medium · 54/100');
+  await expect(numbers).toContainText('Price for each rupee of yearly profit');
+  await expect(numbers).toContainText('Moves about 0.8× as much as the market');
+  await expect(page.getByRole('link', { name: 'Full risk breakdown' })).toHaveAttribute('href', '/risk/TCS.NS');
+});
