@@ -108,8 +108,8 @@ test.describe('Authentication Flow', () => {
     await userTrigger.click();
 
     // Verify dropdown content
-    await expect(page.getByText('Account Profile')).toBeVisible();
-    const logoutBtn = page.getByText('Sign Out Session');
+    await expect(page.getByRole('menuitem', { name: 'Account' })).toBeVisible();
+    const logoutBtn = page.getByRole('menuitem', { name: 'Sign out' });
     await expect(logoutBtn).toBeVisible();
 
     // Click logout
