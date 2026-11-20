@@ -68,7 +68,7 @@ class MarketStatusResponse(BaseModel):
 
 
 @router.get("/status", response_model=MarketStatusResponse)
-async def get_market_status() -> MarketStatusResponse:
+async def get_market_status(current_user: CurrentUser) -> MarketStatusResponse:
     """
     Get live market VIX feed, dual-market status (US + India), and macroeconomic alerts.
     """

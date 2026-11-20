@@ -107,7 +107,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [])
 
-    const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname) || location.pathname.startsWith("/shared/")
+    const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
 
     // Live market status feed
     const { data: marketData } = useQuery({

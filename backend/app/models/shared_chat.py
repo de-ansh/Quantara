@@ -1,4 +1,4 @@
-"""A research chat its owner published at an unguessable link, and optionally listed in the gallery."""
+"""A research chat, saved for its owner automatically; other signed-in users can read it only while it's shared (listed)."""
 
 from datetime import datetime
 
@@ -18,5 +18,5 @@ class SharedChat(Base):
     )
     messages: Mapped[list] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    # Opt-in: only chats the owner chose to list appear in the gallery; the rest stay link-only
+    # Opt-in sharing: other signed-in users can open and find it in the gallery; otherwise owner-only
     listed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)

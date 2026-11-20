@@ -68,32 +68,49 @@ test('calculators compute known values and reject bad input', async ({ page }) =
   await expect(page.getByText('20.11%')).toBeVisible();
 });
 
-test('a chat can be shared after a warning, and read without signing in', async ({ page }) => {
+test('every chat is saved privately, and shared with signed-in users only on request', async ({ page }) => {
   await signedIn(page);
   await page.route('**/api/v1/chat/stream', route => route.fulfill({ body: 'Moderate risk.', contentType: 'text/plain' }));
-  let shared = false;
-  await page.route('**/api/v1/chat/share', route => { shared = true; return route.fulfill({ json: { token: 'tok123', messages: [], created_at: '2026-11-10T00:00:00' } }); });
+  const saves: { method: string; url: string; body: { messages: unknown[] } }[] = [];
+  await page.route('**/api/v1/chat/saved**', route => {
+    saves.push({ method: route.request().method(), url: route.request().url(), body: route.request().postDataJSON() });
+    return route.fulfill({ json: { token: 'tok123' } });
+  });
+  const shares: { listed?: boolean; token?: string | null }[] = [];
+  await page.route('**/api/v1/chat/share', route => {
+    shares.push(route.request().postDataJSON());
+    return route.fulfill({ json: { token: 'tok123', messages: [], created_at: '2026-11-10T00:00:00', listed: true } });
+  });
   await page.goto('/calculators');
   await page.getByRole('button', { name: 'Open research assistant' }).click();
   await page.getByLabel('Message').fill('Is TCS risky?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.getByText('Moderate risk.')).toBeVisible();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].method).toBe('POST');
+  expect(saves[0].body.messages).toHaveLength(2);
+
+  await page.getByLabel('Message').fill('And INFY?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[1].method).toBe('PUT');  // the same saved chat, updated
+  expect(saves[1].url).toMatch(/\/chat\/saved\/tok123$/);
+
   await page.getByRole('button', { name: 'Share this chat' }).click();
-  expect(shared).toBe(false);
-  await expect(page.getByText('including anything about your holdings')).toBeVisible();
-  await page.getByRole('button', { name: 'Create link' }).click();
+  expect(shares).toEqual([]);  // the warning comes first
+  await expect(page.getByText("It's never readable without signing in")).toBeVisible();
+  await page.getByRole('button', { name: 'Share with Quantara users' }).click();
   await expect(page.getByLabel('Share link')).toHaveValue(/\/shared\/tok123$/);
+  expect(shares[0]).toMatchObject({ listed: true, token: 'tok123' });
+  await page.getByRole('button', { name: 'Stop sharing' }).click();
+  await expect.poll(() => shares.length).toBe(2);
+  expect(shares[1]).toMatchObject({ listed: false, token: 'tok123' });  // unshared, not deleted
 });
 
-test('shared chat page needs no login', async ({ page }) => {
+test('a chat link needs signing in', async ({ page }) => {
   await page.route('**/api/v1/**', route => route.fulfill({ status: 401, json: { detail: 'no' } }));
-  await page.route('**/api/v1/chat/shared/abc', route => route.fulfill({ json: {
-    token: 'abc', created_at: '2026-11-10T00:00:00',
-    messages: [{ role: 'user', content: 'Is TCS risky?' }, { role: 'assistant', content: 'Moderate **risk**.' }],
-  } }));
   await page.goto('/shared/abc');
-  await expect(page.getByText('Is TCS risky?')).toBeVisible();
-  await expect(page).toHaveURL(/\/shared\/abc$/);
+  await expect(page).toHaveURL(/\/login/);
 });
 
 test('saved screens restore their filters', async ({ page }) => {
@@ -317,30 +334,26 @@ test('a chat answer charts the stocks it looked up, without showing the stream m
   await expect(page.getByText('"tickers"')).toHaveCount(0);
 });
 
-test('sharing can opt into the gallery, which lists chats without authors', async ({ page }) => {
+test('the gallery lists all my chats, private or shared, then other users\' shared ones', async ({ page }) => {
   await signedIn(page);
-  await page.route('**/api/v1/chat/stream', route => route.fulfill({ body: 'Hold.', contentType: 'text/plain' }));
-  let body: { listed?: boolean } = {};
-  await page.route('**/api/v1/chat/share', route => {
-    body = route.request().postDataJSON();
-    return route.fulfill({ json: { token: 'tok9', messages: [], created_at: '2026-11-12T00:00:00', listed: true } });
+  let deleted = '';
+  await page.route('**/api/v1/chat/shared/**', route => {
+    deleted = route.request().method() === 'DELETE' ? route.request().url() : deleted;
+    return route.fulfill({ status: 204 });
   });
   await page.route('**/api/v1/chat/gallery', route => route.fulfill({ json: [
-    { token: 'tok9', question: 'Is TCS a buy?', tickers: ['TCS.NS'], messages: 2, created_at: '2026-11-12T10:00:00' },
+    { token: 'mine1', mine: true, listed: false, question: 'Is TCS a buy?', tickers: ['TCS.NS'], messages: 2, created_at: '2026-11-12T10:00:00' },
+    { token: 'mine2', mine: true, listed: true, question: 'How risky is ITC?', tickers: [], messages: 4, created_at: '2026-11-11T10:00:00' },
+    { token: 'their1', mine: false, listed: true, question: 'Compare banks', tickers: [], messages: 2, created_at: '2026-11-10T10:00:00' },
   ] }));
-  await page.goto('/calculators');
-  await page.getByRole('button', { name: 'Open research assistant' }).click();
-  await page.getByLabel('Message').fill('Is TCS a buy?');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(page.getByText('Hold.')).toBeVisible();
-  await page.getByRole('button', { name: 'Share this chat' }).click();
-  await page.getByLabel(/Also list in the gallery/).check();
-  await page.getByRole('button', { name: 'Create link' }).click();
-  await expect(page.getByLabel('Share link')).toHaveValue(/\/shared\/tok9$/);
-  expect(body.listed).toBe(true);
-
   await page.goto('/gallery');
-  const card = page.getByRole('link', { name: /Is TCS a buy\?/ });
-  await expect(card).toHaveAttribute('href', '/shared/tok9');
-  await expect(card).toContainText('TCS · 2 messages');
+  const mine = page.getByRole('region', { name: 'Your chats' });
+  await expect(mine.getByRole('link', { name: /Is TCS a buy\?/ })).toHaveAttribute('href', '/shared/mine1');
+  await expect(mine.getByRole('link', { name: /Is TCS a buy\?/ })).toContainText('Private · TCS · 2 messages');
+  await expect(mine.getByRole('link', { name: /How risky is ITC\?/ })).toContainText('Shared · 4 messages');
+  const theirs = page.getByRole('region', { name: 'Shared by other users' });
+  await expect(theirs.getByRole('link', { name: /Compare banks/ })).toBeVisible();
+  await expect(theirs.getByRole('button')).toHaveCount(0);  // only your own chats can be deleted
+  await mine.getByRole('button', { name: 'Delete chat: Is TCS a buy?' }).click();
+  await expect.poll(() => deleted).toMatch(/\/chat\/shared\/mine1$/);
 });
