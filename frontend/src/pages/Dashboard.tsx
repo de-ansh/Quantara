@@ -20,6 +20,7 @@ import apiClient from "@/lib/api"
 import DayChange from "@/components/DayChange"
 import AdviceNotice from "@/components/AdviceNotice"
 import TrackRecordCard from "@/components/TrackRecordCard"
+import PortfolioUpdatesCard from "@/components/PortfolioUpdatesCard"
 
 interface StatItem {
     label: string
@@ -176,6 +177,8 @@ export default function Dashboard() {
                     </Card>
                 ))}
             </div>
+
+            <PortfolioUpdatesCard />
 
             {/* Watchlist */}
             <section aria-labelledby="watchlist-heading" className="bg-q-surface border border-q-border shrink-0">
