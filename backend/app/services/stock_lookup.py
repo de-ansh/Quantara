@@ -44,7 +44,15 @@ async def resolve_ticker(db: AsyncSession, text: str) -> str | None:
         return None
     if await db.scalar(select(ListedSecurity.ticker).limit(1)) is None:
         return symbol
+    if re.fullmatch(r"IN[A-Z0-9]{9}\d", symbol):  # an ISIN, which is all some brokers' exports (Groww) carry
+        by_isin: str | None = await db.scalar(
+            select(ListedSecurity.ticker).where(ListedSecurity.isin == symbol).order_by(EXCHANGE_PREFERENCE).limit(1)
+        )
+        return by_isin
     candidates = [symbol] if symbol.endswith((".NS", ".BO")) else [f"{symbol}.NS", f"{symbol}.BO", symbol.replace(".", "-")]
+    # Brokers append the NSE series (ITC-F, IRFC-BE); tried last, so a listed BRK-B still wins
+    if (base := re.fullmatch(r"([A-Z0-9&]+)-[A-Z0-9]{1,2}", symbol)) is not None:
+        candidates += [f"{base[1]}.NS", f"{base[1]}.BO"]
     listed = set((await db.execute(select(ListedSecurity.ticker).where(ListedSecurity.ticker.in_(candidates)))).scalars())
     for candidate in candidates:
         if candidate in listed:
