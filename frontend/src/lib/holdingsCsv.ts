@@ -1,8 +1,9 @@
 /** Read a broker's holdings export (CSV) into symbol, quantity and average cost per share. */
 
 export interface ImportedHolding {
-    ticker: string
-    shares: number
+    ticker: string // "" when the row only names the holding (a mutual fund, matched by name later)
+    name: string // the row's name or label, as written
+    shares: number // units, for a fund
     cost: number // average cost per share; 0 when the file has none
 }
 
@@ -14,8 +15,8 @@ export interface HoldingsImport {
 // Header names brokers use, compared lower-cased with spaces, dots and brackets removed. Brokers word them
 // differently and few document them, so each column is an exact name first, then a looser pattern
 const TICKER = ["symbol", "tradingsymbol", "stocksymbol", "nsesymbol", "bsesymbol", "ticker", "instrument"]
-const NAME = ["scrip", "scripname", "stock", "stockname", "securityname", "companyname", "name", "security"]
-const QUANTITY = ["qty", "quantity", "quantityavailable", "availableqty", "netqty", "holdingqty", "totalqty", "shares", "currentqty", "freeqty", "currentbalance", "currentbal", "freebalance", "freebal"]
+const NAME = ["scrip", "scripname", "stock", "stockname", "securityname", "companyname", "name", "security", "schemename", "fundname", "scheme"]
+const QUANTITY = ["qty", "quantity", "quantityavailable", "availableqty", "netqty", "holdingqty", "totalqty", "shares", "currentqty", "freeqty", "currentbalance", "currentbal", "freebalance", "freebal", "units", "balanceunits", "unitbalance", "totalunits"]
 const AVG_COST = ["avgcost", "averagecost", "avgprice", "averageprice", "buyavg", "avgbuyprice", "averagebuyprice", "buyprice", "costprice", "avgrate"]
 const TICKER_LIKE = /^[A-Z0-9&.^-]{1,20}$/
 const ISIN = /^IN[A-Z0-9]{9}\d$/
@@ -100,7 +101,7 @@ export function parseHoldingsCsv(text: string): HoldingsImport {
     }
     const at = holdingsColumns(splitCsvLine(lines[headerAt]).map(norm))!
 
-    const merged = new Map<string, { shares: number; spent: number; costed: number }>()
+    const merged = new Map<string, { ticker: string; name: string; shares: number; spent: number; costed: number }>()
     const skipped: string[] = []
     for (const line of lines.slice(headerAt + 1)) {
         const cells = splitCsvLine(line)
@@ -111,21 +112,24 @@ export function parseHoldingsCsv(text: string): HoldingsImport {
         const ticker = cleanSymbol(cellAt(at.ticker)), isin = cellAt(at.isin).trim().toUpperCase(), name = cleanSymbol(cellAt(at.name))
         const symbol = TICKER_LIKE.test(ticker) ? ticker : ISIN.test(isin) ? isin : TICKER_LIKE.test(name) ? name : ""
         const shares = parseNumber(cells[at.qty])
-        if (!symbol) { skipped.push(`${label.trim()}: not a ticker symbol`); continue }
-        if (!(shares > 0)) { skipped.push(`${symbol}: no quantity`); continue }
+        if (!(shares > 0)) { skipped.push(`${symbol || label.trim()}: no quantity`); continue }
         const cost = at.cost >= 0 ? parseNumber(cells[at.cost]) : at.spent >= 0 ? parseNumber(cells[at.spent]) / shares : 0
-        const row = merged.get(symbol) ?? { shares: 0, spent: 0, costed: 0 }
+        // A row with no ticker is kept by name: it may be a mutual fund (Groww lists funds by name only)
+        const key = symbol || `name:${label.trim().toUpperCase()}`
+        const row = merged.get(key) ?? { ticker: symbol, name: (cellAt(at.name) || label).trim(), shares: 0, spent: 0, costed: 0 }
         // The same stock on two lines (e.g. pledged and free shares): add up, averaging the cost over the
         // shares that have one, so a line without a cost doesn't drag the average down
         const known = cost > 0
-        merged.set(symbol, {
+        merged.set(key, {
+            ...row,
             shares: row.shares + shares,
             spent: row.spent + (known ? shares * cost : 0),
             costed: row.costed + (known ? shares : 0),
         })
     }
-    const holdings = [...merged].map(([ticker, { shares, spent, costed }]) => ({
-        ticker, shares, cost: costed > 0 ? Math.round((spent / costed) * 100) / 100 : 0,
+    // Four decimals: a fund's cost per unit (invested / units) needs more than paise
+    const holdings = [...merged.values()].map(({ ticker, name, shares, spent, costed }) => ({
+        ticker, name, shares, cost: costed > 0 ? Math.round((spent / costed) * 10000) / 10000 : 0,
     }))
     return { holdings, skipped }
 }

@@ -91,6 +91,7 @@ test.describe('Portfolios', () => {
         { ticker: 'M&M', weight: 0, shares: 5, cost_basis: 2800.5 },
         { ticker: 'IRFC', weight: 0, shares: 100, cost_basis: 120 },
       ],
+      funds: [],
     }]);
   });
 
@@ -129,6 +130,44 @@ test.describe('Portfolios', () => {
     expect(state.posted).toEqual([]);
   });
 
+  test('a Groww mutual funds file becomes fund holdings, matched by scheme name', async ({ page }) => {
+    const state = await mockApi(page);
+    let asked: unknown = null;
+    await page.route('**/api/v1/portfolio/funds/match', route => {
+      asked = route.request().postDataJSON();
+      return route.fulfill({ json: { matches: [
+        { scheme_code: 200001, name: 'Example Flexi Cap Fund - Direct Plan - Growth', nav: 50 },
+        null,
+      ] } });
+    });
+    await page.goto('/portfolios');
+    await page.getByRole('button', { name: 'New portfolio' }).first().click();
+    // Groww: personal details first, funds by name only, the same fund in two folios
+    const csv = [
+      'Name,A Person',
+      'Total Investments,Current Portfolio Value',
+      'Scheme Name,AMC,Category,Sub-category,Folio No.,Source,Units,Invested Value,Current Value,Returns,XIRR',
+      'Example Flexi Cap Fund Direct Growth,Example Mutual Fund,Equity,Flexi Cap,111,Groww,10.5,420,525,105,9%',
+      'Example Flexi Cap Fund Direct Growth,Example Mutual Fund,Equity,Flexi Cap,222,Groww,9.5,380,475,95,9%',
+      'Unknown Fund Direct Growth,Some AMC,Debt,Liquid,333,Groww,1,100,101,1,5%',
+    ].join('\n');
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'funds.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+
+    await expect(page.getByRole('status')).toContainText('Imported 1 mutual fund');
+    await expect(page.getByRole('status')).toContainText('Unknown Fund Direct Growth: not a ticker symbol or a mutual fund we could match');
+    expect(asked).toEqual({ funds: [
+      { isin: null, name: 'Example Flexi Cap Fund Direct Growth' },
+      { isin: null, name: 'Unknown Fund Direct Growth' },
+    ] });
+    await expect(page.getByText('Example Flexi Cap Fund - Direct Plan - Growth')).toBeVisible();
+    await page.getByRole('button', { name: 'Save portfolio' }).click();
+    await expect(page.getByText('My holdings')).toBeVisible();
+    expect(state.posted).toEqual([{
+      name: 'My holdings', description: null, initial_investment: 800, positions: [],
+      funds: [{ scheme_code: 200001, units: 20, cost_basis: 40 }],  // two folios: 20 units for 800
+    }]);
+  });
+
   test('a file without symbol and quantity columns explains itself', async ({ page }) => {
     await mockApi(page);
     await page.goto('/portfolios');
@@ -152,7 +191,7 @@ test.describe('Portfolios', () => {
     await expect(page.getByText('Retirement')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Simulate' })).toBeVisible();
     expect(state.posted).toEqual([
-      { name: 'Retirement', description: null, initial_investment: 100000, positions: [{ ticker: 'AAPL', weight: 1, shares: 0, cost_basis: 0 }] },
+      { name: 'Retirement', description: null, initial_investment: 100000, positions: [{ ticker: 'AAPL', weight: 1, shares: 0, cost_basis: 0 }], funds: [] },
     ]);
   });
 

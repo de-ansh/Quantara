@@ -9,8 +9,10 @@ from sqlalchemy import desc, select
 
 from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
-from app.models.portfolio import Portfolio, PortfolioPosition
+from app.models.mutual_fund import MutualFund
+from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
 from app.models.stock import Stock
+from app.services.mutual_funds import match_funds
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
 from app.services.stock_lookup import get_or_track_stock
 
@@ -35,6 +37,20 @@ class PositionResponse(PositionBase):
     portfolio_id: int
 
 
+class FundPositionBase(BaseModel):
+    """Units of one AMFI mutual fund scheme."""
+
+    scheme_code: int = Field(..., gt=0)
+    units: float = Field(..., gt=0)
+    cost_basis: float = Field(0.0, ge=0, description="Average cost per unit")
+
+
+class FundPositionResponse(FundPositionBase):
+    """A fund holding with its scheme name."""
+
+    name: str
+
+
 class PortfolioCreate(BaseModel):
     """Portfolio creation request schema."""
 
@@ -42,6 +58,7 @@ class PortfolioCreate(BaseModel):
     description: str | None = None
     initial_investment: float = Field(100000.0, gt=0)
     positions: list[PositionBase] = []
+    funds: list[FundPositionBase] = []
 
 
 class PortfolioUpdate(BaseModel):
@@ -51,6 +68,7 @@ class PortfolioUpdate(BaseModel):
     description: str | None = None
     initial_investment: float | None = Field(None, gt=0)
     positions: list[PositionBase] | None = None
+    funds: list[FundPositionBase] | None = None
 
 
 class PortfolioResponse(BaseModel):
@@ -62,8 +80,34 @@ class PortfolioResponse(BaseModel):
     description: str | None
     initial_investment: float
     positions: list[PositionResponse]
+    funds: list[FundPositionResponse] = []
     created_at: datetime
     updated_at: datetime
+
+
+def _funds_out(portfolio: Portfolio) -> list[FundPositionResponse]:
+    return [
+        FundPositionResponse(scheme_code=f.scheme_code, units=f.units, cost_basis=f.cost_basis, name=f.fund.name)
+        for f in portfolio.funds
+    ]
+
+
+async def _verify_funds(db: DBSession, funds: list[FundPositionBase]) -> None:
+    """Reject a scheme listed twice or one AMFI doesn't have."""
+    if not funds:
+        return
+    codes = [f.scheme_code for f in funds]
+    if len(set(codes)) != len(codes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Each mutual fund can appear only once in a portfolio",
+        )
+    known = set((await db.execute(select(MutualFund.scheme_code).where(MutualFund.scheme_code.in_(codes)))).scalars())
+    if unknown := [str(c) for c in codes if c not in known]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown mutual fund scheme: {', '.join(unknown)}",
+        )
 
 
 def _is_indian(ticker: str) -> bool:
@@ -162,6 +206,7 @@ async def list_portfolios(
                 )
                 for pos in p.positions
             ],
+            funds=_funds_out(p),
             created_at=p.created_at,
             updated_at=p.updated_at,
         )
@@ -180,6 +225,7 @@ async def create_portfolio(
     """Create a new portfolio with initial positions."""
     user_id = int(current_user["id"])
     await _verify_positions(db, request.positions)
+    await _verify_funds(db, request.funds)
     now = utcnow()
     new_portfolio = Portfolio(
         user_id=user_id,
@@ -203,6 +249,8 @@ async def create_portfolio(
             cost_basis=pos.cost_basis,
         )
         db.add(p_pos)
+    for fund in request.funds:
+        db.add(PortfolioFund(portfolio_id=new_portfolio.id, **fund.model_dump()))
 
     await db.commit()
     await db.refresh(new_portfolio)
@@ -224,6 +272,7 @@ async def create_portfolio(
             )
             for pos in new_portfolio.positions
         ],
+        funds=_funds_out(new_portfolio),
         created_at=new_portfolio.created_at or now,
         updated_at=new_portfolio.updated_at or now,
     )
@@ -264,6 +313,7 @@ async def get_portfolio(
             )
             for pos in portfolio.positions
         ],
+        funds=_funds_out(portfolio),
         created_at=portfolio.created_at,
         updated_at=portfolio.updated_at,
     )
@@ -319,6 +369,15 @@ async def update_portfolio(
             )
             db.add(p_pos)
 
+    if request.funds is not None:
+        await _verify_funds(db, request.funds)
+        for old in list(portfolio.funds):
+            await db.delete(old)
+        portfolio.funds.clear()
+        await db.flush()
+        for fund in request.funds:
+            db.add(PortfolioFund(portfolio_id=portfolio.id, **fund.model_dump()))
+
     portfolio.updated_at = utcnow()
     await db.commit()
     await db.refresh(portfolio)
@@ -340,6 +399,7 @@ async def update_portfolio(
             )
             for pos in portfolio.positions
         ],
+        funds=_funds_out(portfolio),
         created_at=portfolio.created_at or utcnow(),
         updated_at=portfolio.updated_at or utcnow(),
     )
@@ -371,6 +431,7 @@ async def delete_portfolio(
 class HoldingPerformance(BaseModel):
     """Live valuation of one position (amounts in the listing currency)."""
 
+    kind: str = Field("stock", description="stock, or fund (ticker is then the AMFI scheme code, price the NAV)")
     ticker: str
     name: str
     sector: str | None
@@ -477,6 +538,29 @@ async def get_portfolio_performance(
             )
         )
 
+    for pf in portfolio.funds:  # valued at the latest NAV; AMFI publishes one a day
+        fund = pf.fund
+        fund_cost = pf.units * pf.cost_basis
+        fund_value = pf.units * fund.nav
+        fund_pnl = fund_value - fund_cost if pf.cost_basis > 0 else None
+        holdings.append(
+            HoldingPerformance(
+                kind="fund",
+                ticker=str(pf.scheme_code),
+                name=fund.name,
+                sector=fund.category,
+                currency="INR",
+                shares=pf.units,
+                avg_cost=pf.cost_basis,
+                price=fund.nav,
+                market_value=fund_value,
+                cost_value=fund_cost,
+                unrealized_pnl=fund_pnl,
+                unrealized_pnl_pct=(fund_pnl / fund_cost * 100) if fund_pnl is not None and fund_cost else None,
+                day_change=pf.units * (fund.nav - fund.prev_nav) if fund.prev_nav else None,
+            )
+        )
+
     totals: list[CurrencyTotals] = []
     for currency in sorted({h.currency for h in holdings}):
         group = [h for h in holdings if h.currency == currency]
@@ -509,6 +593,36 @@ async def get_portfolio_performance(
         totals=totals,
         prices_as_of=min(times) if times else None,
         weight_only_tickers=weight_only,
+    )
+
+
+class FundMatchRow(BaseModel):
+    """One fund row from a broker's export: its ISIN when the file has one, else its name."""
+
+    isin: str | None = Field(None, max_length=12)
+    name: str | None = Field(None, max_length=255)
+
+
+class FundMatchRequest(BaseModel):
+    funds: list[FundMatchRow] = Field(..., max_length=500)
+
+
+class FundMatch(BaseModel):
+    scheme_code: int
+    name: str
+    nav: float
+
+
+class FundMatchResponse(BaseModel):
+    matches: list[FundMatch | None] = Field(..., description="Same order as the request; None when no single scheme fits")
+
+
+@router.post("/funds/match", response_model=FundMatchResponse)
+async def match_fund_rows(request: FundMatchRequest, current_user: CurrentUser, db: DBSession) -> FundMatchResponse:
+    """The AMFI scheme each imported row means. A listed ETF's ISIN gives None, since it's held as a stock."""
+    found = await match_funds(db, [(r.isin, r.name) for r in request.funds])
+    return FundMatchResponse(
+        matches=[FundMatch(scheme_code=f.scheme_code, name=f.name, nav=f.nav) if f else None for f in found]
     )
 
 

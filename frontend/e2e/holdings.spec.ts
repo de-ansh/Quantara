@@ -28,6 +28,9 @@ test('holdings page shows value, P&L and separate currency totals', async ({ pag
           market_value: 2000, cost_value: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33, day_change: 100, weight_by_value: 100 },
         { ticker: 'TCS.NS', name: 'TCS', sector: 'IT', currency: 'INR', shares: 2, avg_cost: 3500, price: 4000,
           market_value: 8000, cost_value: 7000, unrealized_pnl: 1000, unrealized_pnl_pct: 14.29, day_change: -200, weight_by_value: 100 },
+        { kind: 'fund', ticker: '200001', name: 'Example Flexi Cap Fund - Direct Plan - Growth', sector: 'Equity Scheme - Flexi Cap Fund',
+          currency: 'INR', shares: 20, avg_cost: 40, price: 50, market_value: 1000, cost_value: 800, unrealized_pnl: 200,
+          unrealized_pnl_pct: 25, day_change: 10, weight_by_value: 11.1 },
       ],
       totals: [
         { currency: 'INR', market_value: 8000, cost_value: 7000, unrealized_pnl: 1000, unrealized_pnl_pct: 14.29, day_change: -200, sector_allocation: { IT: 100 } },
@@ -46,6 +49,11 @@ test('holdings page shows value, P&L and separate currency totals', async ({ pag
   await expect(aapl).toContainText('+$500.00');
   await expect(page.getByRole('row', { name: /TCS\.NS/ })).toContainText('-₹200.00');
   await expect(page.getByText('Not valued (weight only, no share count): GLD')).toBeVisible();
+  // A fund: named, not linked to a stock page, valued at NAV
+  const fund = page.getByRole('row', { name: /Example Flexi Cap Fund/ });
+  await expect(fund).toContainText('Mutual fund · Equity Scheme - Flexi Cap Fund');
+  await expect(fund).toContainText('₹1,000.00');
+  await expect(fund.getByRole('link')).toHaveCount(0);
 });
 
 test('stock detail shows a price chart with range switching', async ({ page }) => {

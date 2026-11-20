@@ -271,6 +271,9 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
     async def _job() -> None:
         async with AsyncSessionLocal() as db:
             await refresh_prices(db)
+            from app.services.mutual_funds import refresh_funds
+
+            await refresh_funds(db)  # AMFI NAVs; no-op unless 6 hours have passed
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
             await refresh_technicals(db)  # no-op until a day has passed
             await score_unrated_stocks(db)
