@@ -84,7 +84,7 @@ export default function TaxHarvest() {
 
             <label className="inline-flex w-fit items-center gap-2 border border-primary text-primary px-4 py-2 text-sm font-bold cursor-pointer hover:bg-primary/10 focus-within:ring-2 focus-within:ring-primary">
                 <Upload className="size-4" /> {busy ? "Working…" : "Choose tradebook files"}
-                <input type="file" accept=".csv,.xlsx,text/csv" multiple className="sr-only" aria-label="Tradebook CSV files" disabled={busy}
+                <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="sr-only" aria-label="Tradebook CSV files" disabled={busy}
                     onChange={e => {
                         const files = e.target.files
                         if (files?.length) void load(files)
