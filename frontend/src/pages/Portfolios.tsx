@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { cn, timeAgo } from "@/lib/utils"
 import { getCurrencySymbol } from "@/lib/currency"
 import { apiErrorDetail } from "@/lib/api"
-import { parseHoldingsCsv } from "@/lib/holdingsCsv"
+import { fileAsCsv, parseHoldingsCsv } from "@/lib/holdingsCsv"
 import {
     useDeletePortfolio,
     usePortfolios,
@@ -81,7 +81,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
         setError(null)
         setNotice(null)
         try {
-            const { holdings, skipped } = parseHoldingsCsv(await file.text())
+            const { holdings, skipped } = parseHoldingsCsv(await fileAsCsv(file))
             if (holdings.length === 0) {
                 setError("No holdings found in that file." + (skipped.length ? ` Skipped: ${skipped.join("; ")}` : ""))
                 return
@@ -187,10 +187,10 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
                                 <RefreshCw className="size-3" /> Normalize
                             </button>
-                            <label title="Fill the holdings from your broker's holdings export (CSV)"
+                            <label title="Fill the holdings from your broker's holdings export (CSV or Excel)"
                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground cursor-pointer focus-within:text-foreground">
-                                <Upload className="size-3" /> Import CSV
-                                <input type="file" accept=".csv,text/csv" className="sr-only" aria-label="Import holdings CSV"
+                                <Upload className="size-3" /> Import file
+                                <input type="file" accept=".csv,.xlsx,text/csv" className="sr-only" aria-label="Import holdings CSV"
                                     onChange={e => {
                                         const file = e.target.files?.[0]
                                         e.target.value = ""  // choosing the same file again still triggers a change
