@@ -32,21 +32,21 @@ export default function PriceChart({ ticker }: { ticker: string }) {
         new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, range === "5Y" || range === "1Y" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" })
 
     return (
-        <Card className="bg-card border-border shadow-none mb-6">
+        <Card className="bg-card border-border shadow-none rounded-lg">
             <CardHeader className="p-4 pb-2 flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-3">
-                    Price History
+                <CardTitle className="text-sm font-semibold flex items-center gap-3">
+                    Price
                     {data && <DayChange pct={data.change_pct} className="text-xs normal-case" />}
                     {data && <span className="text-[11px] text-muted-foreground font-normal normal-case">over {range}</span>}
                 </CardTitle>
-                <div role="group" aria-label="Chart range" className="flex border border-border rounded-sm overflow-hidden">
+                <div role="group" aria-label="Chart range" className="flex border border-border rounded-md overflow-hidden">
                     {RANGES.map(r => (
                         <button
                             key={r}
                             type="button"
                             onClick={() => setRange(r)}
                             aria-pressed={r === range}
-                            className={cn("px-2.5 py-1 text-[11px] font-bold font-mono", r === range ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground")}
+                            className={cn("px-2.5 py-1 text-xs", r === range ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground")}
                         >
                             {r}
                         </button>
@@ -55,7 +55,7 @@ export default function PriceChart({ ticker }: { ticker: string }) {
             </CardHeader>
             <CardContent className="p-4 pt-0 h-64">
                 {isLoading ? (
-                    <div className="h-full flex items-center justify-center text-xs text-muted-foreground font-mono">Loading chart…</div>
+                    <div className="h-full rounded bg-muted animate-pulse" aria-busy="true" aria-label="Loading chart" />
                 ) : isError || !data ? (
                     <div className="h-full flex items-center justify-center text-xs text-muted-foreground">No price history available for {ticker}.</div>
                 ) : (

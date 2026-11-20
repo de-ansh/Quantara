@@ -80,9 +80,14 @@ def format_price(value: float | None, ticker: str) -> str:
 
 
 def format_market_cap(value: float | None, ticker: str) -> str:
-    """Display market cap with T/B/M suffix in the listing currency."""
+    """Market cap the way readers expect it: rupees in crore (lakh crore when huge), dollars in T/B/M."""
     if value is None:
         return "N/A"
+    if _currency(ticker) == "₹":
+        crore = value / 1e7
+        if crore >= 1e5:
+            return f"₹{crore / 1e5:.2f} L Cr"
+        return f"₹{crore:,.0f} Cr" if crore >= 100 else f"₹{crore:,.1f} Cr"
     for divisor, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
         if value >= divisor:
             return f"{_currency(ticker)}{value / divisor:.2f}{suffix}"
