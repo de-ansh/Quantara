@@ -43,15 +43,15 @@ export default function FilingCard({ ticker }: { ticker: string }) {
     })
 
     return (
-        <div className="bg-card border border-border shadow-lg">
-            <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
-                <FileText className="text-primary size-4" />
-                <h3 className="text-xs font-bold uppercase tracking-widest text-foreground">Earnings Filing</h3>
+        <section aria-labelledby="filing-heading" className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-4 pt-3 pb-2">
+                <FileText className="text-muted-foreground size-4" aria-hidden="true" />
+                <h2 id="filing-heading" className="text-sm font-semibold text-foreground">Earnings-call transcript</h2>
             </div>
-            <div className="p-4 space-y-3 text-xs">
+            <div className="p-4 space-y-3 text-sm">
                 <p className="text-muted-foreground">
-                    Research uses this filing as context. New NSE/BSE earnings-call transcripts are linked
-                    automatically. To add or replace one, paste a PDF, a call recording (MP3), or the company's transcript page. Recordings are transcribed, which can take a minute.
+                    The research reads the latest transcript. New NSE/BSE transcripts are added automatically; you can also paste a
+                    PDF, an MP3 recording (transcribed in about a minute) or the company's transcript page.
                 </p>
                 {filing?.url && (
                     <div className="space-y-1">
@@ -86,7 +86,7 @@ export default function FilingCard({ ticker }: { ticker: string }) {
                         placeholder="https://…/transcript.pdf or .mp3"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
-                        className="min-w-0 flex-1 bg-background border border-border px-3 py-2 rounded-sm text-foreground focus:border-primary outline-none"
+                        className="min-w-0 flex-1 bg-background border border-border px-3 py-2 rounded-md text-foreground focus:border-primary outline-none"
                     />
                     <Button type="submit" size="sm" disabled={save.isPending} className="gap-2">
                         {save.isPending && <Loader2 className="size-4 animate-spin" />} {filing?.url ? "Replace" : "Add"}
@@ -98,6 +98,6 @@ export default function FilingCard({ ticker }: { ticker: string }) {
                     {refreshReport.isPending && "Regenerating research with the filing…"}
                 </p>
             </div>
-        </div>
+        </section>
     )
 }

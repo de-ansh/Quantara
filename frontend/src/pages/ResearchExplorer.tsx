@@ -108,13 +108,13 @@ export default function ResearchExplorer() {
     const navigate = useNavigate()
 
     // Filter states
-    const [selectedMarket, setSelectedMarket] = useState<"all" | "us" | "india">("all")
+    const [selectedMarket, setSelectedMarket] = useState<"all" | "us" | "india">("india") // most users research Indian stocks
     const [query, setQuery] = useState("")
     const [peLimit, setPeLimit] = useState(50)
     const [betaLimit, setBetaLimit] = useState(2.0)
     const [selectedSignals, setSelectedSignals] = useState<string[]>([])
     const [fundamentals, setFundamentals] = useState<Fundamentals>({})
-    const [sort, setSort] = useState("")
+    const [sort, setSort] = useState("-market_cap") // largest companies first
     const [screenName, setScreenName] = useState("")
     const queryClient = useQueryClient()
     const { data: savedScreens = [] } = useQuery({
@@ -195,13 +195,13 @@ export default function ResearchExplorer() {
     }
 
     const handleResetAll = () => {
-        setSelectedMarket("all")
+        setSelectedMarket("india")
         setQuery("")
         setPeLimit(50)
         setBetaLimit(2.0)
         setSelectedSignals([])
         setFundamentals({})
-        setSort("")
+        setSort("-market_cap")
         setSelectedTickers([])
     }
 
@@ -268,6 +268,7 @@ export default function ResearchExplorer() {
 
     return (
         <div className="flex flex-col h-full overflow-hidden bg-background transition-colors">
+            <h1 className="sr-only">Find stocks</h1>
             <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
                 {/* Sidebar: Filters (collapsible panel on phones) */}
                 <aside className={cn(
@@ -275,12 +276,12 @@ export default function ResearchExplorer() {
                     filtersOpen ? "flex" : "hidden md:flex"
                 )}>
                     <div className="p-4 border-b border-border flex items-center justify-between">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Institutional Filters</h2>
+                        <h2 className="text-sm font-semibold text-foreground">Filters</h2>
                         <button 
                             onClick={handleResetAll}
-                            className="text-[11px] text-primary hover:underline font-bold"
+                            className="text-xs text-primary hover:underline font-medium"
                         >
-                            Reset All
+                            Reset
                         </button>
                     </div>
 
@@ -288,15 +289,15 @@ export default function ResearchExplorer() {
                     <details className="border-b border-border group" open>
                         <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted list-none transition-colors">
                             <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <Globe className="size-3.5 text-primary" /> Exchange / Market
+                                <Globe className="size-3.5 text-primary" /> Market
                             </span>
                             <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
                         </summary>
                         <div className="px-4 pb-4 space-y-1.5">
                             {[
-                                { key: "all" as const, label: "Global (All Markets)", icon: "🌐" },
-                                { key: "india" as const, label: "Indian Equities (NSE/BSE)", icon: "🇮🇳" },
-                                { key: "us" as const, label: "US Equities (NYSE/NASDAQ)", icon: "🇺🇸" }
+                                { key: "all" as const, label: "All markets", icon: "🌐" },
+                                { key: "india" as const, label: "India (NSE/BSE)", icon: "🇮🇳" },
+                                { key: "us" as const, label: "US (NYSE/NASDAQ)", icon: "🇺🇸" }
                             ].map((m) => (
                                 <button
                                     key={m.key}
@@ -438,7 +439,7 @@ export default function ResearchExplorer() {
                         </summary>
                         <div className="px-4 pb-4 space-y-2">
                             {[
-                                { key: "inflow", label: "Institutional Inflow" },
+                                { key: "inflow", label: "Institutions buying" },
                                 { key: "insider", label: "Insider Buying" },
                                 { key: "sentiment", label: "Options/Sentiment Spike" }
                             ].map((signal) => (
@@ -470,7 +471,7 @@ export default function ResearchExplorer() {
                                 Filters
                             </button>
                             <h2 className="text-sm font-semibold text-foreground select-none">
-                                {isLoading ? "Syncing..." : `${totalCount.toLocaleString()} results`}
+                                {isLoading ? "Loading…" : `${totalCount.toLocaleString("en-IN")} stocks`}
                             </h2>
                             {stillLoading > 25 && (
                                 <span role="status" className="hidden lg:inline text-[11px] text-muted-foreground whitespace-nowrap" title="New stocks get their fundamentals and call over the next few hours">
@@ -482,7 +483,7 @@ export default function ResearchExplorer() {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                                 <input
                                     type="text"
-                                    placeholder="Filter Ticker or Name..."
+                                    placeholder="Filter by name or ticker"
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     className="w-full bg-muted/50 border border-border rounded pl-9 pr-4 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition-all text-foreground"
@@ -544,7 +545,7 @@ export default function ResearchExplorer() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleExport(true)}
-                                    className="h-7 text-[11px] font-black uppercase tracking-wider bg-background"
+                                    className="h-7 text-xs font-medium bg-background"
                                 >
                                     <Download className="size-3 mr-1" />
                                     Export Selected ({selectedTickers.length})
@@ -555,14 +556,14 @@ export default function ResearchExplorer() {
                                     disabled={selectedTickers.length < 2 || selectedTickers.length > 4}
                                     title="Select 2–4 stocks to compare side by side"
                                     onClick={() => navigate(`/compare?tickers=${selectedTickers.join(",")}`)}
-                                    className="h-7 text-[11px] font-black uppercase tracking-wider bg-background"
+                                    className="h-7 text-xs font-medium bg-background"
                                 >
                                     Compare (2–4)
                                 </Button>
                                 <Button
                                     size="sm"
                                     onClick={() => navigate(`/simulation?tickers=${selectedTickers.join(",")}`)}
-                                    className="h-7 text-[11px] font-black uppercase tracking-wider"
+                                    className="h-7 text-xs font-medium"
                                 >
                                     Simulate Selected
                                 </Button>
@@ -580,7 +581,7 @@ export default function ResearchExplorer() {
                     {/* Results Content Area: List Table or Card Grid */}
                     <div className="flex-1 overflow-auto no-scrollbar bg-background">
                         {isLoading && results.length === 0 ? (
-                            <div className="h-64 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
+                            <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
                                 FETCHING_DB_RECORDS...
                             </div>
                         ) : view === "grid" ? (
@@ -669,7 +670,7 @@ export default function ResearchExplorer() {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => navigate(`/research/${row.ticker}`)}
-                                                    className="flex-1 h-7 text-[10px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                    className="flex-1 h-7 text-xs font-medium border-border hover:bg-muted"
                                                 >
                                                     Research
                                                 </Button>
@@ -677,7 +678,7 @@ export default function ResearchExplorer() {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => navigate(`/risk/${row.ticker}`)}
-                                                    className="flex-1 h-7 text-[10px] font-black uppercase tracking-wider border-border hover:bg-muted"
+                                                    className="flex-1 h-7 text-xs font-medium border-border hover:bg-muted"
                                                 >
                                                     Risk
                                                 </Button>
@@ -690,7 +691,7 @@ export default function ResearchExplorer() {
                             <table className="w-full border-collapse text-left">
                                 <thead className="sticky top-0 bg-card z-10 transition-colors">
                                     <tr className="border-b border-border">
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground w-12">
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground w-12">
                                             <input
                                                 type="checkbox"
                                                 checked={results.length > 0 && selectedTickers.length === results.length}
@@ -698,20 +699,20 @@ export default function ResearchExplorer() {
                                                 className="size-3.5 rounded-sm bg-background border-border text-primary focus:ring-0 cursor-pointer"
                                             />
                                         </th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Ticker</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Price</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Buy / Hold / Weak numbers, from the stock's numbers; open the stock for the full call">Call</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROE</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">ROCE</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Change in promoter holding from the previous quarter">Promoter Δ</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">1Y Return</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="14-day RSI: above 70 overbought, below 30 oversold">RSI</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Price vs its 52-week high">From High</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground" title="Traded value in the last session">Traded</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Risk Score</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Signal Strength</th>
-                                        <th className="px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sector</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Stock</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Price</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Market cap</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground" title="Buy / Hold / Weak numbers, from the stock's numbers; open the stock for the full call">Verdict</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">ROE</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">ROCE</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground" title="Change in promoter holding from the previous quarter">Promoter change</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">1-year return</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground" title="14-day RSI: above 70 overbought, below 30 oversold">RSI</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground" title="Price vs its 52-week high">From 52-wk high</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground" title="Traded value in the last session">Traded</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Risk</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Signals</th>
+                                        <th className="px-6 py-3 text-xs font-medium text-muted-foreground">Sector</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border font-mono text-xs">
@@ -801,7 +802,7 @@ export default function ResearchExplorer() {
             </div>
 
             <footer className="h-8 flex items-center border-t border-border bg-card px-6 shrink-0 z-20 transition-colors">
-                <div className="flex-1 flex items-center justify-between gap-4 text-[11px] text-muted-foreground/60 font-bold uppercase tracking-tight">
+                <div className="flex-1 flex items-center justify-between gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
                         <Clock className="size-3" /> Prices updated: {latestPriceAt ? timeAgo(latestPriceAt) : "—"}
                     </span>

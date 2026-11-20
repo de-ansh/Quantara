@@ -22,7 +22,7 @@ export default function TechnicalsCard({ ticker }: { ticker: string }) {
         ["MACD", shown(data.macd)], ["MACD signal", shown(data.macd_signal)], ["1-year range", `${shown(data.low_1y)} – ${shown(data.high_1y)}`], ["From 1-year high", shown(data.pct_from_high, "%")],
     ]
     return (
-        <section aria-label="Technical indicators" className="mt-4 mb-4 bg-card border border-border rounded-lg p-4">
+        <section aria-label="Technical indicators" className="bg-card border border-border rounded-lg p-4">
             <h2 className="text-sm font-semibold text-foreground mb-3">Technicals</h2>
             <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {stats.map(([label, value]) => (

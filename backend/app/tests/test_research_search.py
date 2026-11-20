@@ -110,7 +110,9 @@ def test_price_and_market_cap_formatting_uses_listing_currency():
     assert format_price(1215.4, "RELIANCE.NS") == "₹1,215.40"
     assert format_price(None, "AAPL") == "N/A"
     assert format_market_cap(2.94e12, "AAPL") == "$2.94T"
-    assert format_market_cap(558.2e9, "INFY.BO") == "₹558.20B"
+    assert format_market_cap(558.2e9, "INFY.BO") == "₹55,820 Cr"
+    assert format_market_cap(3.74e12, "ITC.NS") == "₹3.74 L Cr"  # lakh crore
+    assert format_market_cap(4.5e8, "SMALL.NS") == "₹45.0 Cr"
     assert format_market_cap(None, "AAPL") == "N/A"
 
 

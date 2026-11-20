@@ -69,7 +69,7 @@ test('stock detail shows a price chart with range switching', async ({ page }) =
   });
 
   await page.goto('/research/AAPL');
-  await expect(page.getByText('Price History')).toBeVisible();
+  await expect(page.getByText('over 1Y')).toBeVisible();
   await expect(page.getByText('+12.50%')).toBeVisible();
 
   await page.getByRole('button', { name: '5Y' }).click();
