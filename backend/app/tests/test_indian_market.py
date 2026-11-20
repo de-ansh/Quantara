@@ -66,7 +66,7 @@ async def test_stock_search_market_filter():
 @pytest.mark.asyncio
 async def test_dual_market_status():
     """Test market status endpoint returning US and India payloads."""
-    status = await get_market_status()
+    status = await get_market_status({"id": "1"})
     assert status.vix.value > 0
 
     # US Market checks

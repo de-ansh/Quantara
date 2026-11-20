@@ -111,7 +111,7 @@ async def test_market_status_falls_back_when_yahoo_unreachable(monkeypatch):
     monkeypatch.setattr(market.yf, "Ticker", _boom)
     monkeypatch.setattr(market, "_quote_cache", {"at": 0.0, "quotes": None})
 
-    status = await market.get_market_status()
+    status = await market.get_market_status({"id": "1"})
     assert status.vix.value == market._FALLBACK_QUOTES["^VIX"][0]
     assert status.india_market.index_value == market._FALLBACK_QUOTES["^NSEI"][0]
 
