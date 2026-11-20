@@ -190,7 +190,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                             <label title="Fill the holdings from your broker's holdings export (CSV or Excel)"
                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground cursor-pointer focus-within:text-foreground">
                                 <Upload className="size-3" /> Import file
-                                <input type="file" accept=".csv,.xlsx,text/csv" className="sr-only" aria-label="Import holdings CSV"
+                                <input type="file" accept=".csv,.xlsx,.xls,text/csv" className="sr-only" aria-label="Import holdings CSV"
                                     onChange={e => {
                                         const file = e.target.files?.[0]
                                         e.target.value = ""  // choosing the same file again still triggers a change
