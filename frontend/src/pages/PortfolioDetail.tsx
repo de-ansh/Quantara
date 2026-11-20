@@ -101,17 +101,23 @@ export default function PortfolioDetail() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-q-border text-[11px] uppercase tracking-wider text-muted-foreground">
-                                {["Holding", "Shares", "Avg cost", "Price", "Market value", "Weight", "Today", "Unrealized P&L"].map((h, i) => (
+                                {["Holding", "Shares / units", "Avg cost", "Price / NAV", "Market value", "Weight", "Today", "Unrealized P&L"].map((h, i) => (
                                     <th key={h} scope="col" className={cn("px-4 py-3 font-bold", i === 0 ? "text-left" : "text-right")}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {perf.holdings.map(h => (
-                                <tr key={h.ticker} className="border-b border-q-border/40 hover:bg-primary/5">
+                                <tr key={`${h.kind}-${h.ticker}`} className="border-b border-q-border/40 hover:bg-primary/5">
                                     <th scope="row" className="px-4 py-2.5 text-left">
-                                        <Link to={`/research/${h.ticker}`} className="font-mono font-black text-foreground hover:text-primary">{h.ticker}</Link>
-                                        <span className="block text-[11px] text-muted-foreground font-normal">{h.name}{h.sector ? ` · ${h.sector}` : ""}</span>
+                                        {h.kind === "fund" ? (
+                                            <span className="font-bold text-foreground">{h.name}</span>
+                                        ) : (
+                                            <Link to={`/research/${h.ticker}`} className="font-mono font-black text-foreground hover:text-primary">{h.ticker}</Link>
+                                        )}
+                                        <span className="block text-[11px] text-muted-foreground font-normal">
+                                            {h.kind === "fund" ? `Mutual fund${h.sector ? ` · ${h.sector}` : ""}` : `${h.name}${h.sector ? ` · ${h.sector}` : ""}`}
+                                        </span>
                                     </th>
                                     <td className="px-4 py-2.5 text-right font-mono">{h.shares.toLocaleString()}</td>
                                     <td className="px-4 py-2.5 text-right font-mono">{h.avg_cost ? money(h.avg_cost, h.currency) : "—"}</td>

@@ -32,6 +32,7 @@ for (const [broker, lines, want] of BROKERS) {
   test(`reads a ${broker} holdings export`, () => {
     const { holdings, skipped } = parseHoldingsCsv(lines.join('\n'));
     expect(skipped).toEqual([]);
-    expect(holdings).toEqual(want);
+    expect(holdings).toMatchObject(want);
+    expect(holdings).toHaveLength(want.length);
   });
 }

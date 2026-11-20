@@ -8,10 +8,12 @@ import { getCurrencySymbol } from "@/lib/currency"
 import { apiErrorDetail } from "@/lib/api"
 import { fileAsCsv, parseHoldingsCsv } from "@/lib/holdingsCsv"
 import {
+    matchFunds,
     useDeletePortfolio,
     usePortfolios,
     useSavePortfolio,
     type Portfolio,
+    type PortfolioFund,
 } from "@/hooks/usePortfolios"
 
 interface DraftRow {
@@ -28,6 +30,7 @@ interface Draft {
     description: string
     initialInvestment: string
     rows: DraftRow[]
+    funds: PortfolioFund[] // from an import; valued at NAV, not part of the weights
 }
 
 const SEGMENT_COLORS = ["bg-primary", "bg-emerald-500", "bg-amber-500", "bg-sky-500", "bg-rose-500", "bg-violet-500"]
@@ -35,7 +38,7 @@ const SEGMENT_COLORS = ["bg-primary", "bg-emerald-500", "bg-amber-500", "bg-sky-
 let rowSeq = 0
 const newRow = (ticker = "", weight = "", shares = "", cost = ""): DraftRow => ({ key: `row-${rowSeq++}`, ticker, weight, shares, cost })
 
-const emptyDraft = (): Draft => ({ name: "", description: "", initialInvestment: "100000", rows: [newRow()] })
+const emptyDraft = (): Draft => ({ name: "", description: "", initialInvestment: "100000", rows: [newRow()], funds: [] })
 
 const toDraft = (p: Portfolio): Draft => ({
     id: p.id,
@@ -47,17 +50,21 @@ const toDraft = (p: Portfolio): Draft => ({
         String(Math.round(pos.weight * 1000) / 10),
         pos.shares ? String(pos.shares) : "",
         pos.cost_basis ? String(pos.cost_basis) : "",
-    )),
+    )).concat(p.positions.length ? [] : [newRow()]),
+    funds: p.funds ?? [],
 })
 
-const portfolioCurrency = (p: Portfolio) => getCurrencySymbol(p.positions.find(pos => /\.(NS|BO)$/i.test(pos.ticker))?.ticker)
+const portfolioCurrency = (p: Portfolio) =>
+    p.funds?.length ? "₹" : getCurrencySymbol(p.positions.find(pos => /\.(NS|BO)$/i.test(pos.ticker))?.ticker)
+
+const ISIN_OF_FUND_HOUSE = /^INF[A-Z0-9]{8}\d$/ // mutual funds and ETFs; an ETF's resolves to its listing instead
 
 /** Returns an error message, or null when the draft can be saved. */
 function validate(draft: Draft): string | null {
     if (!draft.name.trim()) return "Give the portfolio a name."
     if (!(Number(draft.initialInvestment) > 0)) return "Initial investment must be greater than 0."
     const rows = draft.rows.filter(r => r.ticker.trim())
-    if (rows.length === 0) return "Add at least one holding."
+    if (rows.length === 0) return draft.funds.length ? null : "Add at least one holding."
     const tickers = rows.map(r => r.ticker.trim().toUpperCase())
     if (new Set(tickers).size !== tickers.length) return "Each ticker can appear only once."
     if (rows.some(r => Number(r.shares) < 0 || Number(r.cost) < 0)) return "Shares and cost can't be negative."
@@ -82,24 +89,53 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
         setNotice(null)
         try {
             const { holdings, skipped } = parseHoldingsCsv(await fileAsCsv(file))
-            if (holdings.length === 0) {
+            // Rows with only a name, or a fund house's ISIN, may be mutual funds: ask the server which scheme each is
+            const maybeFunds = holdings.filter(h => !h.ticker || ISIN_OF_FUND_HOUSE.test(h.ticker))
+            const matches = maybeFunds.length
+                ? await matchFunds(maybeFunds.map(h => ({ isin: h.ticker || null, name: h.name })))
+                : []
+            const funds: PortfolioFund[] = []
+            const fundRows = new Set<typeof holdings[number]>()
+            maybeFunds.forEach((h, i) => {
+                const m = matches[i]
+                if (m && !funds.some(f => f.scheme_code === m.scheme_code)) {
+                    funds.push({ scheme_code: m.scheme_code, name: m.name, units: h.shares, cost_basis: h.cost })
+                    fundRows.add(h)
+                } else if (!h.ticker) {
+                    skipped.push(`${h.name}: not a ticker symbol or a mutual fund we could match`)
+                    fundRows.add(h)
+                }
+            })
+            const stocks = holdings.filter(h => !fundRows.has(h))
+            if (stocks.length === 0 && funds.length === 0) {
                 setError("No holdings found in that file." + (skipped.length ? ` Skipped: ${skipped.join("; ")}` : ""))
                 return
             }
-            const invested = holdings.reduce((sum, h) => sum + h.shares * h.cost, 0)
-            // Weights left blank: the server weights by market value from the share counts
-            setDraft(d => ({
-                ...d,
-                name: d.name || "My holdings",
-                initialInvestment: invested > 0 ? String(Math.round(invested)) : d.initialInvestment,
-                rows: holdings.map(h => newRow(h.ticker, "", String(h.shares), h.cost ? String(h.cost) : "")),
-            }))
+            // Weights left blank: the server weights by market value from the share counts. A file of only
+            // stocks or only funds replaces that kind and keeps the other, so both files can go in one portfolio
+            setDraft(d => {
+                const rows = stocks.length ? stocks.map(h => newRow(h.ticker, "", String(h.shares), h.cost ? String(h.cost) : "")) : d.rows
+                const kept = funds.length ? funds : d.funds
+                const invested = rows.reduce((sum, r) => sum + (Number(r.shares) || 0) * (Number(r.cost) || 0), 0)
+                    + kept.reduce((sum, f) => sum + f.units * f.cost_basis, 0)
+                return {
+                    ...d,
+                    name: d.name || "My holdings",
+                    initialInvestment: invested > 0 ? String(Math.round(invested)) : d.initialInvestment,
+                    rows,
+                    funds: kept,
+                }
+            })
+            const parts = [
+                stocks.length && `${stocks.length} holding${stocks.length === 1 ? "" : "s"}`,
+                funds.length && `${funds.length} mutual fund${funds.length === 1 ? "" : "s"}`,
+            ].filter(Boolean)
             setNotice(
-                `Imported ${holdings.length} holding${holdings.length === 1 ? "" : "s"}. Check them, then save.` +
+                `Imported ${parts.join(" and ")}. Check them, then save.` +
                 (skipped.length ? ` Skipped ${skipped.length}: ${skipped.join("; ")}.` : ""),
             )
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Couldn't read that file.")
+            setError(apiErrorDetail(err) ?? (err instanceof Error ? err.message : "Couldn't read that file."))
         }
     }
 
@@ -137,6 +173,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                     shares: Number(r.shares) || 0,
                     cost_basis: Number(r.cost) || 0,
                 })),
+                funds: draft.funds.map(({ scheme_code, units, cost_basis }) => ({ scheme_code, units, cost_basis })),
             })
             onClose()
         } catch (err) {
@@ -233,6 +270,30 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                     </button>
                 </div>
 
+                {draft.funds.length > 0 && (
+                    <div className="space-y-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Mutual funds</span>
+                        <p className="text-[11px] text-muted-foreground">
+                            Valued at the latest NAV. They count in value and P&amp;L, not in the simulator. Import a fund file again to change them.
+                        </p>
+                        <ul className="space-y-1">
+                            {draft.funds.map(f => (
+                                <li key={f.scheme_code} className="flex items-center gap-2 text-xs border border-border rounded-sm px-3 py-2">
+                                    <span className="flex-1 text-foreground">{f.name}</span>
+                                    <span className="font-mono text-muted-foreground">
+                                        {f.units.toLocaleString()} units{f.cost_basis ? ` @ ₹${f.cost_basis.toLocaleString()}` : ""}
+                                    </span>
+                                    <button type="button" aria-label={`Remove ${f.name}`}
+                                        onClick={() => setDraft(d => ({ ...d, funds: d.funds.filter(x => x.scheme_code !== f.scheme_code) }))}
+                                        className="p-1 text-muted-foreground hover:text-q-risk-high">
+                                        <Trash2 className="size-4" />
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
                 {error && <p role="alert" className="text-xs text-q-risk-high">{error}</p>}
 
@@ -269,7 +330,9 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
             <CardContent className="p-4 pt-2 space-y-3 flex-1 flex flex-col">
                 <div className="flex items-baseline justify-between font-mono">
                     <span className="text-lg font-bold text-foreground">{sym}{portfolio.initial_investment.toLocaleString()}</span>
-                    <span className="text-[11px] uppercase text-muted-foreground">{portfolio.positions.length} holdings</span>
+                    <span className="text-[11px] uppercase text-muted-foreground">
+                        {portfolio.positions.length} holdings{portfolio.funds?.length ? ` + ${portfolio.funds.length} funds` : ""}
+                    </span>
                 </div>
 
                 {/* Allocation bar */}
