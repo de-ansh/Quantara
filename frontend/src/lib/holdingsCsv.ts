@@ -45,6 +45,16 @@ export const parseNumber = (s: string | undefined) => {
 /** Exchange-series suffixes on NSE symbols (ITC-EQ, IRFC-BE) aren't part of the ticker. */
 export const cleanSymbol = (s: string) => s.trim().toUpperCase().replace(/-(EQ|BE|BZ|SM|ST)$/, "")
 
+/** A file's contents as CSV text. For .xlsx (Zerodha's default download) that's the first sheet. */
+export async function fileAsCsv(file: File): Promise<string> {
+    if (!/\.xlsx$/i.test(file.name)) return file.text()
+    const { readSheet } = await import("read-excel-file/browser")  // loaded only when someone picks a spreadsheet
+    const rows = await readSheet(file)
+    const cell = (v: unknown) =>
+        v == null ? "" : `"${(v instanceof Date ? v.toISOString().slice(0, 10) : String(v)).replace(/[\r\n]+/g, " ").replace(/"/g, '""')}"`
+    return rows.map(r => r.map(cell).join(",")).join("\n")
+}
+
 export function parseHoldingsCsv(text: string): HoldingsImport {
     const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim())
     // Some exports open with a few summary lines; the header is the first row naming a symbol and a quantity
