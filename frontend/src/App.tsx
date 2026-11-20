@@ -73,7 +73,7 @@ function App() {
                   <Route path="/deals" element={<ProtectedRoute><Deals /></ProtectedRoute>} />
                   <Route path="/calculators" element={<ProtectedRoute><Calculators /></ProtectedRoute>} />
                   <Route path="/tax" element={<ProtectedRoute><TaxHarvest /></ProtectedRoute>} />
-                  <Route path="/shared/:token" element={<SharedChat />} />
+                  <Route path="/shared/:token" element={<ProtectedRoute><SharedChat /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
                   <Route path="/login" element={<Login />} />

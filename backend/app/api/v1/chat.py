@@ -28,6 +28,7 @@ logger = get_logger(__name__)
 MAX_TOOL_ROUNDS = 4
 CHAT_LIMIT_PER_HOUR = 40
 SHARES_PER_HOUR = 20
+SAVES_PER_HOUR = 300  # every answer re-saves its chat
 MAX_CHARTS = 3  # price charts under one answer
 STREAM_TRAILER = "\x1e"  # ASCII record separator: never in model text, so the client can split on it
 
@@ -91,9 +92,17 @@ class ChatResponse(BaseModel):
     tickers: list[str]  # stocks the answer looked up
 
 
-class ShareRequest(BaseModel):
+class SaveRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=30)
-    listed: bool = False  # also show it in the gallery to other signed-in users
+
+
+class ShareRequest(SaveRequest):
+    listed: bool = False  # readable by other signed-in users and shown in their gallery; False unshares
+    token: str | None = Field(default=None, max_length=64, description="The chat's saved token: shared as-is, no copy")
+
+
+class SavedChatResponse(BaseModel):
+    token: str
 
 
 class SharedChatResponse(BaseModel):
@@ -105,6 +114,8 @@ class SharedChatResponse(BaseModel):
 
 class GalleryItem(BaseModel):
     token: str
+    mine: bool = False  # the viewer's own chat (all of theirs show, listed or not)
+    listed: bool = True
     question: str  # the chat's first question
     tickers: list[str]
     messages: int
@@ -303,8 +314,14 @@ async def chat_stream(
 async def share_chat(
     body: ShareRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
 ) -> SharedChatResponse:
-    """Publish a chat at an unguessable link anyone holding it can read."""
+    """Share a chat with other signed-in users (listed=True) or stop (listed=False). Nothing is ever public."""
     await enforce_rate_limit(redis, f"chat-share:{current_user['id']}", SHARES_PER_HOUR, 3600)
+    saved = await db.get(SharedChat, body.token) if body.token else None
+    if saved is not None and saved.user_id == int(current_user["id"]):
+        saved.messages = [m.model_dump() for m in body.messages]
+        saved.listed = body.listed
+        await db.commit()
+        return SharedChatResponse(token=saved.token, messages=body.messages, created_at=saved.created_at, listed=saved.listed)
     shared = SharedChat(
         token=secrets.token_urlsafe(32),
         user_id=int(current_user["id"]),
@@ -316,28 +333,59 @@ async def share_chat(
     return SharedChatResponse(token=shared.token, messages=body.messages, created_at=shared.created_at, listed=shared.listed)
 
 
-# No auth on purpose: holding the link is what grants access
 @router.get("/shared/{token}", response_model=SharedChatResponse)
-async def read_shared_chat(token: str, db: DBSession) -> SharedChatResponse:
+async def read_shared_chat(token: str, current_user: CurrentUser, db: DBSession) -> SharedChatResponse:
+    """A chat its owner can always read, and other signed-in users only while it's shared."""
     shared = await db.get(SharedChat, token)
-    if shared is None:
+    if shared is None or not (shared.listed or shared.user_id == int(current_user["id"])):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This shared chat doesn't exist or was removed")
     return SharedChatResponse(token=shared.token, messages=shared.messages, created_at=shared.created_at, listed=shared.listed)
 
 
+@router.post("/saved", response_model=SavedChatResponse)
+async def save_chat(body: SaveRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient) -> SavedChatResponse:
+    """Keep a new chat for its owner (unlisted; its unguessable link is only shown to them)."""
+    await enforce_rate_limit(redis, f"chat-save:{current_user['id']}", SAVES_PER_HOUR, 3600)
+    chat = SharedChat(token=secrets.token_urlsafe(32), user_id=int(current_user["id"]),
+                      messages=[m.model_dump() for m in body.messages])
+    db.add(chat)
+    await db.commit()
+    return SavedChatResponse(token=chat.token)
+
+
+@router.put("/saved/{token}", response_model=SavedChatResponse)
+async def update_saved_chat(
+    token: str, body: SaveRequest, current_user: CurrentUser, db: DBSession, redis: RedisClient
+) -> SavedChatResponse:
+    """Replace a saved chat's messages as the conversation goes on."""
+    await enforce_rate_limit(redis, f"chat-save:{current_user['id']}", SAVES_PER_HOUR, 3600)
+    chat = await db.get(SharedChat, token)
+    if chat is None or chat.user_id != int(current_user["id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved chat not found")
+    chat.messages = [m.model_dump() for m in body.messages]
+    await db.commit()
+    return SavedChatResponse(token=chat.token)
+
+
+def _gallery_item(chat: SharedChat, user_id: int) -> GalleryItem:
+    question = next((m["content"] for m in chat.messages if m.get("role") == "user"), "")
+    tickers = list(dict.fromkeys(t for m in chat.messages for t in m.get("tickers") or []))
+    return GalleryItem(token=chat.token, mine=chat.user_id == user_id, listed=chat.listed, question=question[:200],
+                       tickers=tickers[:6], messages=len(chat.messages), created_at=chat.created_at)
+
+
 @router.get("/gallery", response_model=list[GalleryItem])
 async def chat_gallery(current_user: CurrentUser, db: DBSession) -> list[GalleryItem]:
-    """Chats their owners chose to list, newest first; no author is shown."""
-    rows = (await db.execute(
-        select(SharedChat).where(SharedChat.listed.is_(True)).order_by(SharedChat.created_at.desc()).limit(GALLERY_SIZE)
+    """The viewer's own chats (every one, saved automatically), then chats other users shared; no author is shown."""
+    user_id = int(current_user["id"])
+    newest = SharedChat.created_at.desc()
+    mine = (await db.execute(
+        select(SharedChat).where(SharedChat.user_id == user_id).order_by(newest).limit(GALLERY_SIZE)
     )).scalars().all()
-    items = []
-    for chat in rows:
-        question = next((m["content"] for m in chat.messages if m.get("role") == "user"), "")
-        tickers = list(dict.fromkeys(t for m in chat.messages for t in m.get("tickers") or []))
-        items.append(GalleryItem(token=chat.token, question=question[:200], tickers=tickers[:6],
-                                 messages=len(chat.messages), created_at=chat.created_at))
-    return items
+    others = (await db.execute(
+        select(SharedChat).where(SharedChat.listed.is_(True), SharedChat.user_id != user_id).order_by(newest).limit(GALLERY_SIZE)
+    )).scalars().all()
+    return [_gallery_item(c, user_id) for c in [*mine, *others]]
 
 
 @router.delete("/shared/{token}", status_code=status.HTTP_204_NO_CONTENT)

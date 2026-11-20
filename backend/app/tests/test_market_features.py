@@ -134,21 +134,46 @@ async def test_saved_screens_replace_by_name_and_stay_private(client):
     assert (await client.delete(f"/api/v1/screens/{first.json()['id']}", headers=headers)).status_code == 204
 
 
+async def _other_user(client):
+    """A second signed-in user, to check what someone else can and can't read."""
+    creds = {"email": "reader@quantara.com", "password": "Sup3r-secret-pw!"}
+    await client.post("/api/v1/auth/register", json={**creds, "full_name": "R"})
+    login = await client.post("/api/v1/auth/login", json=creds)
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
 @pytest.mark.asyncio
-async def test_shared_chat_is_public_by_link_and_can_be_withdrawn(client):
-    headers = await _headers(client)
+async def test_chats_are_saved_private_and_shared_only_with_signed_in_users(client):
+    headers, other = await _headers(client), await _other_user(client)
     messages = [{"role": "user", "content": "Is TCS risky?", "tickers": []},
-                {"role": "assistant", "content": "Moderately.", "tickers": ["TCS.NS"]}]  # kept, so the shared page charts it
-    created = await client.post("/api/v1/chat/share", headers=headers, json={"messages": messages})
-    assert created.status_code == 200
-    token = created.json()["token"]
+                {"role": "assistant", "content": "Moderately.", "tickers": ["TCS.NS"]}]
+    saved = await client.post("/api/v1/chat/saved", headers=headers, json={"messages": messages[:1]})
+    token = saved.json()["token"]
     assert len(token) >= 40
-    public = await client.get(f"/api/v1/chat/shared/{token}")
-    assert public.status_code == 200 and public.json()["messages"] == messages
-    assert (await client.get("/api/v1/chat/shared/not-a-token")).status_code == 404
-    assert (await client.delete(f"/api/v1/chat/shared/{token}")).status_code in (401, 403)
+    updated = await client.put(f"/api/v1/chat/saved/{token}", headers=headers, json={"messages": messages})
+    assert updated.json()["token"] == token
+    assert (await client.put(f"/api/v1/chat/saved/{token}", headers=other, json={"messages": messages})).status_code == 404
+
+    # Saved: the owner reads it; nobody else, and never without signing in
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=headers)).json()["messages"] == messages
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=other)).status_code == 404
+    assert (await client.get(f"/api/v1/chat/shared/{token}")).status_code in (401, 403)
+
+    # Shared: the same chat (no copy) opens for other signed-in users, still not for the signed-out
+    shared = await client.post("/api/v1/chat/share", headers=headers, json={"messages": messages, "listed": True, "token": token})
+    assert shared.json()["token"] == token and shared.json()["listed"] is True
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=other)).status_code == 200
+    assert (await client.get(f"/api/v1/chat/shared/{token}")).status_code in (401, 403)
+
+    # Stop sharing: private again, but kept for the owner
+    await client.post("/api/v1/chat/share", headers=headers, json={"messages": messages, "listed": False, "token": token})
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=other)).status_code == 404
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=headers)).status_code == 200
+
+    assert (await client.delete(f"/api/v1/chat/shared/{token}", headers=other)).status_code == 404
     assert (await client.delete(f"/api/v1/chat/shared/{token}", headers=headers)).status_code == 204
-    assert (await client.get(f"/api/v1/chat/shared/{token}")).status_code == 404
+    assert (await client.get(f"/api/v1/chat/shared/{token}", headers=headers)).status_code == 404
+    assert (await client.get("/api/v1/market/status")).status_code in (401, 403)  # nothing is public
 
 
 def test_event_digest_covers_only_held_stocks_on_that_day():
@@ -208,22 +233,19 @@ async def test_daily_digest_has_market_highlights_and_only_watched_stocks(db_ses
     assert "Other Co (" not in text and "OTHER.NS" not in text  # not watched: only in the market movers
 
 @pytest.mark.asyncio
-async def test_gallery_shows_only_chats_their_owners_listed(client):
-    headers = await _headers(client)
+async def test_gallery_has_all_my_chats_and_only_others_shared_ones(client):
+    headers, other = await _headers(client), await _other_user(client)
     chat = [{"role": "user", "content": "Is TCS a buy?"}, {"role": "assistant", "content": "Hold.", "tickers": ["TCS.NS"]}]
-    private = await client.post("/api/v1/chat/share", headers=headers, json={"messages": chat})
-    listed = await client.post("/api/v1/chat/share", headers=headers, json={"messages": chat, "listed": True})
-    assert private.json()["listed"] is False and listed.json()["listed"] is True
+    private = (await client.post("/api/v1/chat/saved", headers=headers, json={"messages": chat})).json()["token"]
+    listed = (await client.post("/api/v1/chat/share", headers=headers, json={"messages": chat, "listed": True})).json()["token"]
 
-    gallery = await client.get("/api/v1/chat/gallery", headers=headers)
-    assert gallery.status_code == 200
-    [item] = gallery.json()
-    assert item["token"] == listed.json()["token"]
-    assert item["question"] == "Is TCS a buy?" and item["tickers"] == ["TCS.NS"] and item["messages"] == 2
+    mine = (await client.get("/api/v1/chat/gallery", headers=headers)).json()
+    assert {(c["token"], c["mine"], c["listed"]) for c in mine} == {(private, True, False), (listed, True, True)}
+    assert mine[0]["question"] == "Is TCS a buy?" and mine[0]["tickers"] == ["TCS.NS"] and mine[0]["messages"] == 2
+
+    theirs = (await client.get("/api/v1/chat/gallery", headers=other)).json()
+    assert [(c["token"], c["mine"]) for c in theirs] == [(listed, False)]  # never someone's private chat
     assert (await client.get("/api/v1/chat/gallery")).status_code in (401, 403)  # signed-in users only
-
-    await client.delete(f"/api/v1/chat/shared/{item['token']}", headers=headers)
-    assert (await client.get("/api/v1/chat/gallery", headers=headers)).json() == []  # stop sharing also unlists
 
 
 @pytest.mark.asyncio
