@@ -122,3 +122,45 @@ test.describe('Dashboard E2E Tests', () => {
     await expect(activeThemeText).toContainText('LIGHT');
   });
 });
+
+test('dashboard shows each portfolio with its holdings and their news', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('quantara_user', JSON.stringify({ id: '1', email: 'analyst@quantara.com' }));
+  });
+  await page.route('**/api/v1/**', route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/watchlist/**', route =>
+    route.fulfill({ json: route.request().url().includes('alerts') ? { alerts: [], unread_count: 0 } : { items: [] } })
+  );
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: { access_token: 'tok' } }));
+  const holding = (over: object) => ({ kind: 'stock', sector: null, currency: 'INR', avg_cost: 0, price: 0, cost_value: 0,
+    unrealized_pnl: null, unrealized_pnl_pct: null, day_change: null, weight_by_value: null, shares: 1, ...over });
+  await page.route('**/api/v1/portfolio/updates', route => route.fulfill({ json: { portfolios: [{
+    portfolio_id: 7, name: 'Core',
+    performance: {
+      portfolio_id: 7, prices_as_of: null, weight_only_tickers: [],
+      totals: [{ currency: 'INR', market_value: 9100, cost_value: 8000, unrealized_pnl: 1100, unrealized_pnl_pct: 13.75, day_change: 90, sector_allocation: {} }],
+      holdings: [
+        holding({ ticker: 'TCS.NS', name: 'TCS', market_value: 4000, day_change: -40, unrealized_pnl_pct: 5 }),
+        holding({ ticker: 'ITC.NS', name: 'ITC', market_value: 4100, day_change: 100, unrealized_pnl_pct: 36.67 }),
+        holding({ kind: 'fund', ticker: '200001', name: 'Example Flexi Cap Fund - Direct Plan - Growth', market_value: 1000, day_change: 30 }),
+      ],
+    },
+    updates: { 'ITC.NS': [
+      { kind: 'verdict', day: '2026-11-20', text: 'Verdict changed: Hold → Buy', tone: 'good', upcoming: false },
+      { kind: 'event', day: '2026-11-25', text: 'Board meeting on results', tone: 'neutral', upcoming: true },
+    ] },
+  }] } }));
+
+  await page.goto('/');
+  const core = page.getByRole('article', { name: 'Core' });
+  await expect(core).toContainText('₹9,100.00');
+  await expect(core).toContainText('Today +₹90.00');
+  await expect(core).toContainText('1 with news');
+  // The holding with news comes first, then the biggest movers
+  const rows = core.getByRole('listitem').filter({ has: page.getByRole('link') });
+  await expect(rows.first()).toContainText('ITC.NS');
+  await expect(rows.first()).toContainText('Verdict changed: Hold → Buy');
+  await expect(rows.first()).toContainText('25 Nov');
+  await expect(core).toContainText('Example Flexi Cap Fund - Direct Plan - Growth');
+  await expect(core.getByText('+2.50%').first()).toBeVisible();  // ITC: 100 on 4,000
+});
