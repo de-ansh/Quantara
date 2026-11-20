@@ -11,8 +11,9 @@ export interface HoldingsImport {
     skipped: string[] // human-readable reasons, one per dropped row
 }
 
-// Header names brokers use, compared lower-cased with spaces and dots removed
-const SYMBOL = ["instrument", "symbol", "tradingsymbol", "stocksymbol", "scrip", "scripname", "stock", "stockname", "nsesymbol", "ticker"]
+// Header names brokers use, compared lower-cased with spaces and dots removed. Earlier names win: a ticker
+// column, then an ISIN (the server maps it to a ticker), then a company name as a last resort
+const SYMBOL = ["instrument", "symbol", "tradingsymbol", "stocksymbol", "nsesymbol", "ticker", "isin", "scrip", "scripname", "stock", "stockname"]
 const QUANTITY = ["qty", "quantity", "quantityavailable", "availableqty", "netqty", "holdingqty", "totalqty", "shares"]
 const AVG_COST = ["avgcost", "averagecost", "avgprice", "averageprice", "buyavg", "avgbuyprice", "averagebuyprice", "buyprice", "costprice", "avgrate"]
 

@@ -188,7 +188,8 @@ async def test_typed_tickers_resolve_to_the_indian_listing_first(client, db_sess
     from app.services.stock_lookup import resolve_ticker
 
     db_session.add_all([
-        ListedSecurity(ticker="ITC.NS", name="ITC Limited", exchange="NSE"),
+        ListedSecurity(ticker="ITC.NS", name="ITC Limited", exchange="NSE", isin="INE154A01025"),
+        ListedSecurity(ticker="ITC.BO", name="ITC Limited", exchange="BSE", isin="INE154A01025"),
         ListedSecurity(ticker="INFY.NS", name="Infosys Limited", exchange="NSE"),
         ListedSecurity(ticker="INFY", name="Infosys Limited American Depositary Shares", exchange="NYSE"),
         ListedSecurity(ticker="AAPL", name="Apple Inc.", exchange="NASDAQ"),
@@ -200,7 +201,8 @@ async def test_typed_tickers_resolve_to_the_indian_listing_first(client, db_sess
     await db_session.commit()
 
     for typed, meant in [("ITC", "ITC.NS"), ("itc", "ITC.NS"), ("INFY", "INFY.NS"), ("AAPL", "AAPL"),
-                         ("infosys", "INFY.NS"), ("state bank", "SBIN.NS"), ("BRK.B", "BRK-B"), ("zzzz", None)]:
+                         ("infosys", "INFY.NS"), ("state bank", "SBIN.NS"), ("BRK.B", "BRK-B"), ("zzzz", None),
+                         ("INE154A01025", "ITC.NS"), ("INE000A01010", None), ("ITC-F", "ITC.NS")]:
         assert await resolve_ticker(db_session, typed) == meant, typed
 
     headers = await _headers(client)

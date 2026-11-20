@@ -9,12 +9,15 @@ export interface TradeRow {
     price: number
 }
 
-// Zerodha Console: symbol, trade_date, trade_type, quantity, price; the rest are common variants
-const SYMBOL = ["symbol", "tradingsymbol", "instrument", "scrip", "scripname", "stock", "stockname", "nsesymbol"]
+// Zerodha Console: symbol, trade_date, trade_type, quantity, price; the rest are common variants.
+// ISIN comes after ticker columns and before names: the server maps it to a ticker (Groww has no symbol column)
+const SYMBOL = ["symbol", "tradingsymbol", "nsesymbol", "isin", "instrument", "scrip", "scripname", "stock", "stockname"]
 const DATE = ["tradedate", "date", "tradetime", "orderexecutiontime", "executiontime", "transactiondate"]
 const SIDE = ["tradetype", "type", "buysell", "side", "transactiontype", "action"]
 const QUANTITY = ["quantity", "qty", "tradedquantity", "tradedqty", "tradeqty"]
 const PRICE = ["price", "tradeprice", "tradedprice", "rate", "avgprice", "averageprice"]
+// A P&L report (Groww) lists lots instead: each row is a buy, plus its sell when the lot was sold
+const BUY_DATE = ["buydate"], BUY_PRICE = ["buyprice"], SELL_DATE = ["selldate"], SELL_PRICE = ["sellprice"]
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
 /** ISO (2024-03-15, with or without a time), or Indian day-first (15-03-2024, 15/03/2024, 15-Mar-2024). */
@@ -39,34 +42,46 @@ const side = (raw: string): "buy" | "sell" | null => {
 
 /** Trades from one file, plus a reason for each row that couldn't be read. */
 export function parseTradebookCsv(text: string): { trades: TradeRow[]; skipped: string[] } {
-    const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim())
-    const headerAt = lines.findIndex(l => {
-        const cols = splitCsvLine(l).map(norm)
-        return [SYMBOL, DATE, SIDE, QUANTITY, PRICE].every(names => cols.some(c => names.includes(c)))
-    })
-    if (headerAt < 0) {
-        throw new Error("Couldn't find a header row with symbol, date, buy/sell type, quantity and price columns.")
-    }
-    const header = splitCsvLine(lines[headerAt]).map(norm)
-    const col = (names: string[]) => names.map(n => header.indexOf(n)).find(i => i >= 0) ?? -1
-    const [sym, day, kind, qty, px] = [col(SYMBOL), col(DATE), col(SIDE), col(QUANTITY), col(PRICE)]
-
+    const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/)
     const trades: TradeRow[] = []
     const skipped: string[] = []
-    for (const [i, line] of lines.slice(headerAt + 1).entries()) {
+    // A file can hold several tables (a P&L report has realised and unrealised lots), each under its own header
+    let at: Record<string, number> | null = null
+    let lots = false
+    for (const [i, line] of lines.entries()) {
+        if (!line.trim()) continue
         const c = splitCsvLine(line)
-        const symbol = cleanSymbol(c[sym] ?? "")
-        const date = parseTradeDate(c[day] ?? "")
-        const s = side(c[kind] ?? "")
-        const quantity = parseNumber(c[qty])
-        const price = parseNumber(c[px])
+        const names = c.map(norm)
+        const find = (wanted: string[]) => wanted.map(n => names.indexOf(n)).find(j => j >= 0) ?? -1
+        const has = (...groups: string[][]) => groups.every(g => find(g) >= 0)
+        if (has(SYMBOL, DATE, SIDE, QUANTITY, PRICE) || has(SYMBOL, QUANTITY, BUY_DATE, BUY_PRICE)) {
+            lots = !has(SIDE)
+            at = { sym: find(SYMBOL), day: find(DATE), kind: find(SIDE), qty: find(QUANTITY), px: find(PRICE),
+                buyDay: find(BUY_DATE), buyPx: find(BUY_PRICE), sellDay: find(SELL_DATE), sellPx: find(SELL_PRICE) }
+            continue
+        }
+        if (!at) continue
+        const symbol = cleanSymbol(c[at.sym] ?? "")
         if (!symbol) continue
-        const where = `row ${headerAt + i + 2} (${symbol})`
-        if (!/^[A-Z0-9&.^-]{1,20}$/.test(symbol)) skipped.push(`${where}: not a ticker symbol`)
-        else if (!date) skipped.push(`${where}: unreadable date`)
-        else if (!s) skipped.push(`${where}: not a buy or sell`)
-        else if (!(quantity > 0) || !(price >= 0)) skipped.push(`${where}: no quantity or price`)
-        else trades.push({ symbol, date, side: s, quantity, price })
+        const where = `row ${i + 1} (${symbol})`
+        const quantity = parseNumber(c[at.qty])
+        if (!/^[A-Z0-9&.^-]{1,20}$/.test(symbol)) { skipped.push(`${where}: not a ticker symbol`); continue }
+        if (!(quantity > 0)) { skipped.push(`${where}: no quantity`); continue }
+        const legs: [string | undefined, "buy" | "sell" | null, string | undefined][] = lots
+            ? [[c[at.buyDay], "buy", c[at.buyPx]]]
+            : [[c[at.day], side(c[at.kind] ?? ""), c[at.px]]]
+        if (lots && at.sellDay >= 0 && c[at.sellDay]) legs.push([c[at.sellDay], "sell", c[at.sellPx]])
+        for (const [rawDate, s, rawPrice] of legs) {
+            const date = parseTradeDate(rawDate ?? "")
+            const price = parseNumber(rawPrice)
+            if (!date) skipped.push(`${where}: unreadable date`)
+            else if (!s) skipped.push(`${where}: not a buy or sell`)
+            else if (!(price >= 0) || rawPrice === undefined || rawPrice === "") skipped.push(`${where}: no price`)
+            else trades.push({ symbol, date, side: s, quantity, price })
+        }
+    }
+    if (!trades.length && !skipped.length && !at) {
+        throw new Error("Couldn't find a header row with symbol, date, buy/sell type, quantity and price columns, or a P&L report's buy date and buy price columns.")
     }
     return { trades, skipped }
 }
