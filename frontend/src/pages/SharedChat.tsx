@@ -16,15 +16,15 @@ export default function SharedChat() {
     return (
         <div className="flex-1 overflow-y-auto bg-background p-6">
             <div className="mx-auto max-w-2xl space-y-3">
-                <h1 className="text-xl font-bold text-foreground">Shared research chat</h1>
-                <p className="text-xs text-muted-foreground">AI-generated research shared by a Quantara user. Not financial advice.</p>
+                <h1 className="text-xl font-bold text-foreground">Research chat</h1>
+                <p className="text-xs text-muted-foreground">AI-generated research. Not financial advice.</p>
                 {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-                {isError && <p role="alert" className="text-sm text-muted-foreground">This shared chat doesn't exist or was removed.</p>}
+                {isError && <p role="alert" className="text-sm text-muted-foreground">This chat doesn't exist, was removed, or isn't shared with you.</p>}
                 {data?.messages.map((m, i) => (
                     <div key={i} className={cn("rounded-lg border border-border p-3 text-sm text-foreground", m.role === "user" ? "bg-primary/10" : "bg-card")}>
                         <p className="mb-1 text-[11px] text-muted-foreground">{m.role === "user" ? "Question" : "Quantara"}</p>
                         <Formatted text={m.content} />
-                        {/* Charts need a login (price history API), so the public page names the stocks instead */}
+                        {/* Named, not charted: a saved chat is a record, the stock pages have the live charts */}
                         {m.tickers && m.tickers.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">Looked up: {m.tickers.join(", ")}</p>}
                     </div>
                 ))}

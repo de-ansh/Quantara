@@ -68,8 +68,8 @@ export default function ChatAssistant() {
     const recognitionRef = useRef<Recognition | null>(null)
     const [share, setShare] = useState<"idle" | "confirm" | "busy" | { token: string }>("idle")
     const [shareError, setShareError] = useState(false)
-    const [listInGallery, setListInGallery] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
+    const savedToken = useRef<string | null>(null) // every chat is kept (privately) under this token
     const [draft, setDraft] = useState("")
     const ticker = tickerFromPath(useLocation().pathname)
     const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -78,6 +78,20 @@ export default function ChatAssistant() {
 
     const [pending, setPending] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    /** Keep the chat for its owner after each answer; only they can open it unless they share it. */
+    const save = async (all: Message[]) => {
+        const body = { messages: all.slice(-30) } // the server keeps the last 30, like a conversation
+        try {
+            if (savedToken.current) {
+                await apiClient.put(`/chat/saved/${savedToken.current}`, body)
+            } else {
+                savedToken.current = (await apiClient.post<{ token: string }>("/chat/saved", body)).data.token
+            }
+        } catch {
+            savedToken.current = null // deleted elsewhere, or a hiccup: the next answer starts a fresh copy
+        }
+    }
 
     /** Stream the reply into a new assistant message as it is written. */
     const ask = async (history: Message[]) => {
@@ -94,6 +108,7 @@ export default function ChatAssistant() {
                 const reply = splitReply(raw)
                 setMessages(m => first ? [...m, reply] : [...m.slice(0, -1), reply])
             })
+            if (started) void save([...history, splitReply(raw)])
         } catch (e) {
             setError(e instanceof Error ? e.message : "The assistant couldn't answer.")
         } finally {
@@ -125,7 +140,10 @@ export default function ChatAssistant() {
         setShare("busy")
         setShareError(false)
         try {
-            const { data } = await apiClient.post<{ token: string }>("/chat/share", { messages: messages.slice(-30), listed: listInGallery })
+            const { data } = await apiClient.post<{ token: string }>("/chat/share", {
+                messages: messages.slice(-30), listed: true, token: savedToken.current,
+            })
+            savedToken.current = data.token
             setShare({ token: data.token })
         } catch {
             setShareError(true)
@@ -134,7 +152,8 @@ export default function ChatAssistant() {
     }
     const stopSharing = async (token: string) => {
         try {
-            await apiClient.delete(`/chat/shared/${token}`)
+            // Unshared, not deleted: it stays in the owner's own chats
+            await apiClient.post("/chat/share", { messages: messages.slice(-30), listed: false, token })
             setShare("idle")
         } catch {
             setShareError(true)
@@ -200,7 +219,7 @@ export default function ChatAssistant() {
                         </Button>
                     )}
                     {messages.length > 0 && (
-                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); setError(null); setShare("idle") }} disabled={pending}>
+                        <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setMessages([]); setError(null); setShare("idle"); savedToken.current = null }} disabled={pending}>
                             New chat
                         </Button>
                     )}
@@ -256,13 +275,12 @@ export default function ChatAssistant() {
             {shareError && <p role="alert" className="px-3 pt-2 text-xs text-q-risk-high">Sharing failed. Please try again.</p>}
             {(share === "confirm" || share === "busy") && (
                 <div className="border-t border-border p-3 space-y-2 shrink-0 text-xs text-muted-foreground">
-                    <p>Anyone with the link will be able to read this chat, including anything about your holdings.</p>
-                    <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={listInGallery} onChange={e => setListInGallery(e.target.checked)} disabled={share === "busy"} />
-                        Also list in the gallery, so other Quantara users can find it (your name isn't shown)
-                    </label>
+                    <p>
+                        Other signed-in Quantara users will be able to read this chat, including anything about your holdings,
+                        and find it in the chat gallery (your name isn't shown). It's never readable without signing in.
+                    </p>
                     <div className="flex gap-2">
-                        <Button size="sm" className="h-7 text-xs" onClick={() => void createShare()} disabled={share === "busy"}>Create link</Button>
+                        <Button size="sm" className="h-7 text-xs" onClick={() => void createShare()} disabled={share === "busy"}>Share with Quantara users</Button>
                         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShare("idle")} disabled={share === "busy"}>Cancel</Button>
                     </div>
                 </div>
