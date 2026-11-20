@@ -94,6 +94,28 @@ test.describe('Portfolios', () => {
     }]);
   });
 
+  test('a Groww holdings statement (names and ISINs, no symbols) imports by ISIN', async ({ page }) => {
+    const state = await mockApi(page);
+    await page.goto('/portfolios');
+    await page.getByRole('button', { name: 'New portfolio' }).first().click();
+    const csv = [
+      'Name,A Person',
+      'Invested Value,10000.0',
+      'Stock Name,ISIN,Quantity,Average buy price,Buy value,Closing price,Closing value,Unrealised P&L',
+      'ITC LIMITED,INE154A01025,10.0,400.0,4000.0,410.0,4100.0,100.0',
+      'INFOSYS LIMITED,INE009A01021,4.0,1500.0,6000.0,1450.0,5800.0,-200.0',
+    ].join('\n');
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'holdings.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+    await expect(page.getByRole('status')).toContainText('Imported 2 holdings');
+    await page.getByRole('button', { name: 'Save portfolio' }).click();
+    await expect(page.getByText('My holdings')).toBeVisible();
+    // The server maps each ISIN to its NSE listing when it saves
+    expect((state.posted[0] as { positions: unknown }).positions).toEqual([
+      { ticker: 'INE154A01025', weight: 0, shares: 10, cost_basis: 400 },
+      { ticker: 'INE009A01021', weight: 0, shares: 4, cost_basis: 1500 },
+    ]);
+  });
+
   test('a file without symbol and quantity columns explains itself', async ({ page }) => {
     await mockApi(page);
     await page.goto('/portfolios');

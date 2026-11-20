@@ -68,3 +68,38 @@ test('a tradebook saved as .xlsx is read too, date cells included', async ({ pag
     { symbol: 'M&M', date: '2025-03-15', side: 'sell', quantity: 5, price: 2800 },
   ] });
 });
+
+test('a Groww P&L report becomes buys and sells, one lot per row', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('quantara_user', JSON.stringify({ id: '1', email: 'analyst@quantara.com' }));
+  });
+  await page.route('**/api/v1/**', route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/watchlist/**', route =>
+    route.fulfill({ json: route.request().url().includes('alerts') ? { alerts: [], unread_count: 0 } : { items: [] } })
+  );
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: { access_token: 'tok' } }));
+  let sent: unknown = null;
+  await page.route('**/api/v1/tax/harvest', route => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/tax');
+  // Two tables, each under its own header: sold lots, then lots still held
+  const csv = [
+    'P&L Statement for stocks from 01-04-2026 TO 19-11-2026',
+    'Realised P&L,1200.0',
+    'Realised trades',
+    'Stock name,ISIN,Quantity,Buy date,Buy price,Buy value,Sell date,Sell price,Sell value,Realised P&L,Remark',
+    'TATA CONSULTANCY SERV LT,INE467B01029,3.0,12-01-2024,3500.0,10500.0,15-06-2026,3900.0,11700.0,1200.0,',
+    'Unrealised trades',
+    'Stock name,ISIN,Quantity,Buy date,Buy price,Buy value,Closing date,Closing price,Closing value,Unrealised P&L,Remark',
+    'RELIANCE INDUSTRIES LTD,INE002A01018,8.0,05-05-2023,1200.0,9600.0,19-11-2026,1400.0,11200.0,1600.0,',
+  ].join('\n');
+  await page.getByLabel('Tradebook CSV files').setInputFiles([{ name: 'pnl.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) }]);
+  await expect.poll(() => sent).toEqual({ trades: [
+    { symbol: 'INE467B01029', date: '2024-01-12', side: 'buy', quantity: 3, price: 3500 },
+    { symbol: 'INE467B01029', date: '2026-06-15', side: 'sell', quantity: 3, price: 3900 },
+    { symbol: 'INE002A01018', date: '2023-05-05', side: 'buy', quantity: 8, price: 1200 },
+  ] });
+});
