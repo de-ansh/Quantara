@@ -330,6 +330,10 @@ async def export_my_data(current_user: CurrentUser, db: DBSession) -> JSONRespon
                      "cost_basis": pos.cost_basis}
                     for pos in p.positions
                 ],
+                "funds": [
+                    {"scheme_code": f.scheme_code, "name": f.fund.name, "units": f.units, "cost_basis": f.cost_basis}
+                    for f in p.funds
+                ],
             }
             for p in portfolios
         ],

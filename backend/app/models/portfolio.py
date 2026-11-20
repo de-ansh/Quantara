@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.clock import utcnow
 from app.core.database import Base
+from app.models.mutual_fund import MutualFund
 
 
 class Portfolio(Base):
@@ -27,6 +28,12 @@ class Portfolio(Base):
         "PortfolioPosition",
         back_populates="portfolio",
         cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    funds: Mapped[list["PortfolioFund"]] = relationship(
+        "PortfolioFund",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
         lazy="selectin",
     )
 
@@ -62,3 +69,19 @@ class PortfolioPosition(Base):
 
     def __repr__(self) -> str:
         return f"<PortfolioPosition(ticker={self.ticker}, weight={self.weight})>"
+
+
+class PortfolioFund(Base):
+    """Units of a mutual fund scheme held in a portfolio (valued at NAV, not in the simulator)."""
+
+    __tablename__ = "portfolio_funds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    scheme_code: Mapped[int] = mapped_column(Integer, ForeignKey("mutual_funds.scheme_code"), nullable=False)
+    units: Mapped[float] = mapped_column(Float, nullable=False)
+    cost_basis: Mapped[float] = mapped_column(Float, default=0.0, nullable=False, comment="Average cost per unit")
+
+    fund: Mapped["MutualFund"] = relationship("MutualFund", lazy="selectin")

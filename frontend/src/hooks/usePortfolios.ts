@@ -8,17 +8,38 @@ export interface PortfolioPosition {
     cost_basis?: number;
 }
 
+/** Units of one AMFI mutual fund scheme. */
+export interface PortfolioFund {
+    scheme_code: number;
+    name: string;
+    units: number;
+    cost_basis: number; // per unit
+}
+
 export interface Portfolio {
     id: number;
     name: string;
     description: string | null;
     initial_investment: number;
     positions: PortfolioPosition[];
+    funds: PortfolioFund[];
     created_at: string;
     updated_at: string;
 }
 
-export type PortfolioInput = Pick<Portfolio, 'name' | 'description' | 'initial_investment' | 'positions'>;
+export type PortfolioInput = Pick<Portfolio, 'name' | 'description' | 'initial_investment' | 'positions'> & {
+    funds?: Omit<PortfolioFund, 'name'>[];
+};
+
+export interface FundMatch {
+    scheme_code: number;
+    name: string;
+    nav: number;
+}
+
+/** The AMFI scheme each imported row means (null: no single scheme fits, or a listed ETF that stays a stock). */
+export const matchFunds = async (rows: { isin: string | null; name: string }[]) =>
+    (await apiClient.post<{ matches: (FundMatch | null)[] }>('/portfolio/funds/match', { funds: rows })).data.matches;
 
 const KEY = ['portfolios'];
 
@@ -57,6 +78,7 @@ export const useDeletePortfolio = () => {
 };
 
 export interface HoldingPerformance {
+    kind: 'stock' | 'fund'; // a fund's ticker is its AMFI scheme code and its price the NAV
     ticker: string;
     name: string;
     sector: string | null;
