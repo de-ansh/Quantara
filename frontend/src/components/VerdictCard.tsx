@@ -35,20 +35,20 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
     const weakNumbers = fromData && verdict === "Avoid"
 
     return (
-        <section aria-label="Verdict" className="bg-card border border-border p-4 px-5 min-w-[240px] max-w-md">
+        <section aria-label="Verdict" className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                    Verdict{data?.user_risk_level ? ` · ${data.user_risk_level} profile` : ""}
-                </span>
+                <h2 className="text-sm font-semibold text-foreground">
+                    Verdict{data?.user_risk_level ? ` for a ${data.user_risk_level.toLowerCase()} investor` : ""}
+                </h2>
                 {data?.final_score != null && (
-                    <span className="text-xs font-mono text-muted-foreground">{data.final_score}/100</span>
+                    <span className="text-xs text-muted-foreground" title="Overall score behind the verdict">Score <span className="font-mono tabular-nums">{data.final_score}/100</span></span>
                 )}
             </div>
-            <div className={cn("mt-2 inline-block border px-3 py-1 text-xl font-black uppercase tracking-wider", weakNumbers ? WEAK_TONE : TONE[verdict])}>
+            <div className={cn("mt-2 inline-block rounded-md border px-3 py-1 text-lg font-semibold", weakNumbers ? WEAK_TONE : TONE[verdict])}>
                 {isLoading ? "…" : fromData ? dataCallLabel(verdict) : verdict}
             </div>
             {data && verdict !== "Unrated" && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
+                <p className="mt-1 text-xs text-muted-foreground">
                     {fromData ? "From the stock's numbers. The AI verdict replaces this once research is generated." : "From AI research, risk and signals."}
                 </p>
             )}
@@ -62,20 +62,20 @@ export default function VerdictCard({ ticker, version }: { ticker: string; versi
                 <p className="mt-2 text-xs text-muted-foreground">Not enough data on this stock yet to make a call.</p>
             )}
             {data?.reasons?.length ? (
-                <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground list-disc pl-4">
+                <ul className="mt-3 space-y-0.5 text-sm text-muted-foreground list-disc pl-4">
                     {data.reasons.map(r => <li key={r}>{r}</li>)}
                 </ul>
             ) : null}
             {(data?.pros?.length || data?.cons?.length) ? (
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
-                        <h4 className="font-bold text-green-500">Pros</h4>
+                        <h3 className="font-medium text-foreground">Pros</h3>
                         {data.pros?.length ? (
                             <ul className="mt-1 space-y-0.5 list-disc pl-4 text-muted-foreground">{data.pros.map(p => <li key={p}>{p}</li>)}</ul>
                         ) : <p className="mt-1 text-muted-foreground">None stand out.</p>}
                     </div>
                     <div>
-                        <h4 className="font-bold text-red-500">Cons</h4>
+                        <h3 className="font-medium text-foreground">Cons</h3>
                         {data.cons?.length ? (
                             <ul className="mt-1 space-y-0.5 list-disc pl-4 text-muted-foreground">{data.cons.map(c => <li key={c}>{c}</li>)}</ul>
                         ) : <p className="mt-1 text-muted-foreground">None stand out.</p>}

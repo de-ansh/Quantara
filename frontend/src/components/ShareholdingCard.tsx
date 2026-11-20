@@ -32,7 +32,7 @@ export default function ShareholdingCard({ ticker }: { ticker: string }) {
     const change = (key: Key) => (latest[key] !== null && previous?.[key] != null ? latest[key]! - previous[key]! : null)
 
     return (
-        <section aria-label="Shareholding pattern" className="mb-4 bg-card border border-border rounded-lg p-4">
+        <section aria-label="Shareholding pattern" className="bg-card border border-border rounded-lg p-4">
             <h2 className="text-sm font-semibold text-foreground mb-3">Shareholding pattern</h2>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
