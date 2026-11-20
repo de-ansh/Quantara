@@ -116,6 +116,19 @@ test.describe('Portfolios', () => {
     ]);
   });
 
+  test('an ".xls" that is really an HTML table imports, and a binary .xls says how to fix it', async ({ page }) => {
+    const state = await mockApi(page);
+    await page.goto('/portfolios');
+    await page.getByRole('button', { name: 'New portfolio' }).first().click();
+    const html = '<html><body><table><tr><th>Stock Name</th><th>ISIN</th><th>Qty</th><th>Avg Cost Price</th></tr>' +
+      '<tr><td>ITC LTD</td><td>INE154A01025</td><td>10</td><td>400.00</td></tr></table></body></html>';
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'holdings.xls', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from(html) });
+    await expect(page.getByRole('status')).toContainText('Imported 1 holding');
+    await page.getByLabel('Import holdings CSV').setInputFiles({ name: 'old.xls', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0]) });
+    await expect(page.getByRole('alert')).toHaveText(/save it as .xlsx or CSV/);
+    expect(state.posted).toEqual([]);
+  });
+
   test('a file without symbol and quantity columns explains itself', async ({ page }) => {
     await mockApi(page);
     await page.goto('/portfolios');
