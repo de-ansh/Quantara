@@ -1,5 +1,7 @@
+import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Briefcase, CalendarClock } from "lucide-react"
+import { CalendarClock } from "lucide-react"
+import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { cn } from "@/lib/utils"
 import { money, pct, tone } from "@/lib/money"
 import DayChange from "@/components/DayChange"
@@ -32,7 +34,10 @@ function UpdateLine({ u }: { u: HoldingUpdate }) {
     )
 }
 
+const COLLAPSED = 6 // holdings shown before "Show all": the ones with news, then the biggest movers
+
 function PortfolioBlock({ p }: { p: PortfolioUpdates }) {
+    const [expanded, setExpanded] = useState(false)
     const { holdings, totals } = p.performance
     // Holdings with news first, then the biggest movers; tickers with news but no share count still show
     const rows = [...holdings]
@@ -49,12 +54,12 @@ function PortfolioBlock({ p }: { p: PortfolioUpdates }) {
     const withNews = rows.filter(h => news(h).length).length
 
     return (
-        <article aria-label={p.name} className="border-b border-q-border last:border-b-0">
-            <div className="px-4 py-2.5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 bg-background/30">
+        <article aria-label={p.name} className="border-b border-border last:border-b-0">
+            <div className="px-4 py-2.5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 bg-muted/30">
                 <Link to={`/portfolios/${p.portfolio_id}`} className="text-sm font-bold text-foreground hover:text-primary">{p.name}</Link>
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] font-mono">
                     {totals.map(t => (
-                        <span key={t.currency} className="flex gap-3">
+                        <span key={t.currency} className="flex flex-wrap gap-x-3 gap-y-0.5 [&>span]:whitespace-nowrap">
                             <span className="text-foreground font-bold">{money(t.market_value, t.currency)}</span>
                             <span className={tone(t.day_change)}>Today {money(t.day_change, t.currency, true)}</span>
                             <span className={tone(t.unrealized_pnl)}>P&amp;L {money(t.unrealized_pnl, t.currency, true)} ({pct(t.unrealized_pnl_pct)})</span>
@@ -66,20 +71,26 @@ function PortfolioBlock({ p }: { p: PortfolioUpdates }) {
             {rows.length === 0 ? (
                 <p className="px-4 py-2 text-[11px] text-muted-foreground">Add share counts to this portfolio to track it here.</p>
             ) : (
-                <ul className="divide-y divide-q-border/40">
-                    {rows.map(h => (
+                <>
+                <div className="hidden sm:flex justify-end gap-3 px-4 pt-1.5 pb-1 text-[11px] text-muted-foreground border-b border-border">
+                    <span className="w-14 text-right">Today</span>
+                    <span className="w-24 text-right">Value</span>
+                    <span className="w-16 text-right">Gain/loss</span>
+                </div>
+                <ul className="divide-y divide-border">
+                    {(expanded ? rows : rows.slice(0, Math.max(COLLAPSED, withNews))).map(h => (
                         <li key={`${h.kind}-${h.ticker}`} className="px-4 py-2">
-                            <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-3">
                                 {h.kind === "fund" ? (
-                                    <span className="text-xs font-bold text-foreground truncate">{h.name}</span>
+                                    <span className="text-sm font-medium text-foreground sm:truncate">{h.name}</span>
                                 ) : (
-                                    <Link to={`/research/${h.ticker}`} className="text-xs font-black font-mono text-foreground hover:text-primary truncate">
-                                        {h.ticker} <span className="font-sans font-normal text-muted-foreground">{h.name !== h.ticker ? h.name : ""}</span>
+                                    <Link to={`/research/${h.ticker}`} className="text-sm font-medium text-foreground hover:text-primary sm:truncate">
+                                        {h.ticker} <span className="font-normal text-muted-foreground">{h.name !== h.ticker ? h.name : ""}</span>
                                     </Link>
                                 )}
-                                <span className="flex gap-3 text-[11px] font-mono shrink-0">
-                                    <DayChange pct={dayPct(h)} />
-                                    <span className="text-foreground">{money(h.market_value, h.currency)}</span>
+                                <span className="flex justify-end gap-3 text-xs font-mono tabular-nums shrink-0">
+                                    <span className="w-14 text-right"><DayChange pct={dayPct(h)} /></span>
+                                    <span className="w-24 text-right text-foreground">{money(h.market_value, h.currency)}</span>
                                     <span className={cn("w-16 text-right", tone(h.unrealized_pnl_pct))}>{pct(h.unrealized_pnl_pct)}</span>
                                 </span>
                             </div>
@@ -91,6 +102,13 @@ function PortfolioBlock({ p }: { p: PortfolioUpdates }) {
                         </li>
                     ))}
                 </ul>
+                {rows.length > Math.max(COLLAPSED, withNews) && (
+                    <button type="button" onClick={() => setExpanded(e => !e)} aria-expanded={expanded}
+                        className="w-full px-4 py-2 text-xs font-medium text-primary hover:bg-muted/40 text-left">
+                        {expanded ? "Show fewer" : `Show all ${rows.length} holdings`}
+                    </button>
+                )}
+                </>
             )}
         </article>
     )
@@ -102,18 +120,11 @@ export default function PortfolioUpdatesCard() {
     if (!isLoading && !isError && portfolios?.length === 0) return null  // nothing saved yet: keep the dashboard as it was
 
     return (
-        <section aria-labelledby="portfolio-updates-heading" className="bg-q-surface border border-q-border shrink-0 flex flex-col max-h-[45vh]">
-            <div className="px-4 py-2 border-b border-q-border flex items-center justify-between shrink-0">
-                <h2 id="portfolio-updates-heading" className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                    <Briefcase className="size-3.5 text-primary" /> Your portfolios
-                </h2>
-                <span className="text-[11px] text-muted-foreground">Last 7 days, and what's due in the next 14</span>
-            </div>
-            <div className="overflow-y-auto custom-scrollbar">
-                {isLoading && <p className="px-4 py-3 text-[11px] text-muted-foreground">Valuing holdings…</p>}
-                {isError && <p role="alert" className="px-4 py-3 text-[11px] text-q-risk-high">Couldn't load portfolio updates.</p>}
-                {portfolios?.map(p => <PortfolioBlock key={p.portfolio_id} p={p} />)}
-            </div>
-        </section>
+        <Panel id="portfolio-updates" title="Your portfolios" description="Value today, and news on each holding: the last 7 days and what's due in the next 14"
+            action={<Link to="/portfolios" className="text-xs font-medium text-primary hover:underline">Manage portfolios</Link>}>
+            {isLoading ? <PanelSkeleton /> : isError ? <PanelMessage alert>Couldn't load portfolio updates.</PanelMessage> : (
+                portfolios?.map(p => <PortfolioBlock key={p.portfolio_id} p={p} />)
+            )}
+        </Panel>
     )
 }

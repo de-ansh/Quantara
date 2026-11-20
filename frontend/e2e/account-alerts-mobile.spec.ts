@@ -94,7 +94,7 @@ test.describe('phone layout', () => {
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await expect.poll(async () => (await nav.boundingBox())!.x).toBe(0);
 
-    await page.getByRole('link', { name: 'Portfolios' }).click();
+    await page.getByRole('link', { name: 'Portfolios', exact: true }).click();
     await expect(page).toHaveURL(/\/portfolios$/);
     await expect.poll(offscreen).toBe(true);
   });

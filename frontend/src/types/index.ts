@@ -42,7 +42,9 @@ export interface Opportunity {
 export interface SignalEvent {
     time: string
     type: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILITY"
-    text: string
+    text: string // "TCS.NS: <summary>"
+    ticker?: string
+    summary?: string // the signal in words, without the ticker
 }
 
 export interface User {

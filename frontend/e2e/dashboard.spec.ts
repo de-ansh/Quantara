@@ -75,24 +75,20 @@ test.describe('Dashboard E2E Tests', () => {
     });
   });
 
-  test('should load the dashboard with correct metrics and mocked data', async ({ page }) => {
+  test('dashboard shows the market, ideas with plain columns, and signals in words', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
 
-    // Verify Title
-    await expect(page.getByText('QUANTARA').first()).toBeVisible();
+    const ideas = page.getByRole('region', { name: /Ideas for a moderate investor/ });
+    const aaplRow = ideas.getByRole('row', { name: /AAPL/ });
+    await expect(aaplRow).toContainText('88.0'); // match score
+    await expect(aaplRow).toContainText('Low · 31.5'); // risk, in words and number
+    await expect(aaplRow).toContainText('Strong'); // signal score above 70
 
-    // Verify Portfolio Risk Card
-    await expect(page.locator('text=Avg Opportunity Risk')).toBeVisible();
-
-    // Verify Opportunities Table
-    await expect(page.locator('table')).toBeVisible();
-    const aaplRow = page.getByRole('row', { name: /AAPL/ });
-    await expect(aaplRow).toContainText('31.5'); // the stock's real risk score
-    await expect(aaplRow).toContainText('88.0'); // final score, not a fake % return
-
-    // Verify Signals
-    await expect(page.locator('text=AAPL: BULLISH TREND. Strength')).toBeVisible();
+    const signals = page.getByRole('region', { name: 'Recent signals' });
+    await expect(signals).toContainText('AAPL · Bullish trend');
+    await expect(signals).toContainText('Neutral'); // direction in words, not only colour (no direction in its data)
   });
 
   test('should navigate to Settings page and check theme toggles', async ({ page }) => {
