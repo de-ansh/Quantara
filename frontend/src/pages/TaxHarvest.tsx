@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Upload } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import apiClient, { apiErrorDetail } from "@/lib/api"
+import { fileAsCsv } from "@/lib/holdingsCsv"
 import { parseTradebookCsv, type TradeRow } from "@/lib/tradebookCsv"
 
 interface Plan {
@@ -49,7 +50,7 @@ export default function TaxHarvest() {
             const notes: string[] = []
             for (const file of Array.from(files)) {
                 try {
-                    const parsed = parseTradebookCsv(await file.text())
+                    const parsed = parseTradebookCsv(await fileAsCsv(file))
                     trades.push(...parsed.trades)
                     notes.push(...parsed.skipped.map(s => `${file.name}, ${s}`))
                 } catch (err) {
@@ -76,14 +77,14 @@ export default function TaxHarvest() {
             <header className="space-y-1 max-w-3xl">
                 <h1 className="text-2xl font-bold text-foreground">Tax harvesting</h1>
                 <p className="text-sm text-muted-foreground">
-                    Upload your tradebook (in Zerodha: Console, then Reports, then Tradebook, equity segment, downloaded as CSV).
+                    Upload your tradebook (in Zerodha: Console, then Reports, then Tradebook, equity segment, downloaded as Excel or CSV).
                     Pick files covering every buy of the shares you still hold. Trades are used for this answer only and aren't saved.
                 </p>
             </header>
 
             <label className="inline-flex w-fit items-center gap-2 border border-primary text-primary px-4 py-2 text-sm font-bold cursor-pointer hover:bg-primary/10 focus-within:ring-2 focus-within:ring-primary">
-                <Upload className="size-4" /> {busy ? "Working…" : "Choose tradebook CSV files"}
-                <input type="file" accept=".csv,text/csv" multiple className="sr-only" aria-label="Tradebook CSV files" disabled={busy}
+                <Upload className="size-4" /> {busy ? "Working…" : "Choose tradebook files"}
+                <input type="file" accept=".csv,.xlsx,text/csv" multiple className="sr-only" aria-label="Tradebook CSV files" disabled={busy}
                     onChange={e => {
                         const files = e.target.files
                         if (files?.length) void load(files)

@@ -44,3 +44,27 @@ test('a Zerodha tradebook becomes a harvesting plan', async ({ page }) => {
   await expect(page.getByRole('note')).toContainText('IRFC: sold 100 more shares');
   await expect(page.getByText('1 row skipped')).toBeVisible();
 });
+
+test('a tradebook saved as .xlsx is read too, date cells included', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('quantara_user', JSON.stringify({ id: '1', email: 'analyst@quantara.com' }));
+  });
+  await page.route('**/api/v1/**', route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/watchlist/**', route =>
+    route.fulfill({ json: route.request().url().includes('alerts') ? { alerts: [], unread_count: 0 } : { items: [] } })
+  );
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: { access_token: 'tok' } }));
+  let sent: unknown = null;
+  await page.route('**/api/v1/tax/harvest', route => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/tax');
+  // e2e/fixtures/tradebook.xlsx: a title row, then Console's columns; ITC's date is a real Excel date cell
+  await page.getByLabel('Tradebook CSV files').setInputFiles(new URL('./fixtures/tradebook.xlsx', import.meta.url).pathname);
+  await expect.poll(() => sent).toEqual({ trades: [
+    { symbol: 'ITC', date: '2024-06-01', side: 'buy', quantity: 1000, price: 300.5 },
+    { symbol: 'M&M', date: '2025-03-15', side: 'sell', quantity: 5, price: 2800 },
+  ] });
+});
