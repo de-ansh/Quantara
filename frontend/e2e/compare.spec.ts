@@ -44,7 +44,7 @@ test('compares two stocks with real correlation data', async ({ page }) => {
   const betaRow = page.getByRole('row', { name: /^Beta/ });
   await expect(betaRow).toContainText('1.21');
   await expect(betaRow).toContainText('0.95');
-  await expect(page.getByRole('row', { name: /Annualized volatility/ })).toContainText('24.0%');
+  await expect(page.getByRole('row', { name: /Yearly volatility/ })).toContainText('24.0%');
   await expect(page.getByRole('cell', { name: '0.61' }).first()).toBeVisible();
 });
 

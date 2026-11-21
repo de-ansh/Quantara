@@ -1,7 +1,8 @@
 import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { Briefcase, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wallet, X } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useNavigate } from "react-router-dom"
+import { Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wallet, X } from "lucide-react"
+import PageHeader from "@/components/PageHeader"
+import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { Button } from "@/components/ui/button"
 import { cn, timeAgo } from "@/lib/utils"
 import { getCurrencySymbol } from "@/lib/currency"
@@ -181,51 +182,43 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
         }
     }
 
-    const inputClass = "w-full bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground focus:border-primary focus:ring-0 outline-none"
+    const inputClass = "w-full bg-background border border-border text-sm px-3 py-2 rounded-md text-foreground focus:border-primary focus:ring-0 outline-none"
+    const labelClass = "text-xs font-medium text-muted-foreground"
 
     return (
-        <Card className="bg-card border-border shadow-none">
-            <CardHeader className="p-4 border-b border-border flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider">
-                    {draft.id ? "Edit Portfolio" : "New Portfolio"}
-                </CardTitle>
-                <button onClick={onClose} aria-label="Close editor" className="text-muted-foreground hover:text-foreground">
-                    <X className="size-4" />
-                </button>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
+        <Panel id="portfolio-editor" title={draft.id ? "Edit portfolio" : "New portfolio"}
+            action={<button onClick={onClose} aria-label="Close editor" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>}>
+            <div className="p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Name</span>
+                        <span className={labelClass}>Name</span>
                         <input className={inputClass} value={draft.name} maxLength={100}
                             onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Core growth" />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Initial investment</span>
-                        <input className={cn(inputClass, "font-mono")} type="number" min={1} value={draft.initialInvestment}
+                        <span className={labelClass}>Amount invested</span>
+                        <input className={cn(inputClass, "font-mono tabular-nums")} type="number" min={1} value={draft.initialInvestment}
                             onChange={e => setDraft(d => ({ ...d, initialInvestment: e.target.value }))} />
                     </label>
                 </div>
                 <label className="space-y-1 block">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Description (optional)</span>
+                    <span className={labelClass}>Description (optional)</span>
                     <input className={inputClass} value={draft.description}
                         onChange={e => setDraft(d => ({ ...d, description: e.target.value }))} />
                 </label>
 
                 <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Holdings</span>
-                        <div className="flex items-center gap-2 font-mono text-[11px]">
-                            <span className={cn("px-1.5 py-0.5 rounded-sm font-bold",
-                                Math.abs(total - 100) <= 0.5 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400")}>
-                                Total: {total.toFixed(1)}%
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Holdings</span>
+                        <div className="flex items-center gap-3 text-xs">
+                            <span className={cn("font-mono tabular-nums", Math.abs(total - 100) <= 0.5 ? "text-q-risk-low" : "text-amber-600 dark:text-amber-400")}>
+                                Weights total {total.toFixed(1)}%
                             </span>
-                            <button type="button" onClick={normalize} title="Scale weights to 100%"
-                                className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
-                                <RefreshCw className="size-3" /> Normalize
+                            <button type="button" onClick={normalize} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                                <RefreshCw className="size-3" /> Scale to 100%
                             </button>
                             <label title="Fill the holdings from your broker's holdings export (CSV or Excel)"
-                                className="flex items-center gap-1 text-muted-foreground hover:text-foreground cursor-pointer focus-within:text-foreground">
+                                className="flex items-center gap-1 text-primary hover:underline cursor-pointer focus-within:ring-2 focus-within:ring-primary rounded-sm">
                                 <Upload className="size-3" /> Import file
                                 <input type="file" accept=".csv,.xlsx,.xls,text/csv" className="sr-only" aria-label="Import holdings CSV"
                                     onChange={e => {
@@ -236,25 +229,25 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                             </label>
                         </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                        Weights drive the simulator. Add shares and average cost to track value and P&amp;L, or leave
+                    <p className="text-xs text-muted-foreground">
+                        Weights drive the simulator. Add shares and average cost to track value and gain or loss, or leave
                         weights blank to weight by market value.
                     </p>
                     {draft.rows.map(row => (
                         <div key={row.key} className="flex items-center gap-2">
-                            <input className={cn(inputClass, "font-mono uppercase flex-1")} placeholder="Ticker (e.g. AAPL, TCS.NS)"
+                            <input className={cn(inputClass, "uppercase flex-1")} placeholder="Ticker (e.g. AAPL, TCS.NS)"
                                 aria-label="Ticker" value={row.ticker}
                                 onChange={e => updateRow(row.key, { ticker: e.target.value })} />
                             <div className="relative w-28">
-                                <input className={cn(inputClass, "font-mono pr-7")} type="number" min={0} max={100} step={0.1}
+                                <input className={cn(inputClass, "font-mono tabular-nums pr-7")} type="number" min={0} max={100} step={0.1}
                                     aria-label={`Weight for ${row.ticker || "holding"}`} value={row.weight}
                                     onChange={e => updateRow(row.key, { weight: e.target.value })} />
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
                             </div>
-                            <input className={cn(inputClass, "font-mono w-24")} type="number" min={0} step="any" placeholder="Shares"
+                            <input className={cn(inputClass, "font-mono tabular-nums w-24")} type="number" min={0} step="any" placeholder="Shares"
                                 aria-label={`Shares of ${row.ticker || "holding"}`} value={row.shares}
                                 onChange={e => updateRow(row.key, { shares: e.target.value })} />
-                            <input className={cn(inputClass, "font-mono w-28")} type="number" min={0} step="any" placeholder="Avg cost"
+                            <input className={cn(inputClass, "font-mono tabular-nums w-28")} type="number" min={0} step="any" placeholder="Avg cost"
                                 aria-label={`Average cost of ${row.ticker || "holding"}`} value={row.cost}
                                 onChange={e => updateRow(row.key, { cost: e.target.value })} />
                             <button type="button" aria-label="Remove holding" disabled={draft.rows.length <= 1}
@@ -265,23 +258,23 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                         </div>
                     ))}
                     <button type="button" onClick={() => setDraft(d => ({ ...d, rows: [...d.rows, newRow()] }))}
-                        className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                        <Plus className="size-3" /> Add holding
+                        className="flex items-center gap-1 text-sm text-primary hover:underline">
+                        <Plus className="size-4" /> Add holding
                     </button>
                 </div>
 
                 {draft.funds.length > 0 && (
                     <div className="space-y-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Mutual funds</span>
-                        <p className="text-[11px] text-muted-foreground">
-                            Valued at the latest NAV. They count in value and P&amp;L, not in the simulator. Import a fund file again to change them.
+                        <span className="text-sm font-medium text-foreground">Mutual funds</span>
+                        <p className="text-xs text-muted-foreground">
+                            Valued at the latest NAV. They count in value and gain or loss, not in the simulator. Import a fund file again to change them.
                         </p>
                         <ul className="space-y-1">
                             {draft.funds.map(f => (
-                                <li key={f.scheme_code} className="flex items-center gap-2 text-xs border border-border rounded-sm px-3 py-2">
+                                <li key={f.scheme_code} className="flex items-center gap-2 text-sm border border-border rounded-md px-3 py-2">
                                     <span className="flex-1 text-foreground">{f.name}</span>
-                                    <span className="font-mono text-muted-foreground">
-                                        {f.units.toLocaleString()} units{f.cost_basis ? ` @ ₹${f.cost_basis.toLocaleString()}` : ""}
+                                    <span className="font-mono tabular-nums text-muted-foreground">
+                                        {f.units.toLocaleString()} units{f.cost_basis ? ` @ ₹${f.cost_basis.toLocaleString("en-IN")}` : ""}
                                     </span>
                                     <button type="button" aria-label={`Remove ${f.name}`}
                                         onClick={() => setDraft(d => ({ ...d, funds: d.funds.filter(x => x.scheme_code !== f.scheme_code) }))}
@@ -294,17 +287,17 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
                     </div>
                 )}
 
-                {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
-                {error && <p role="alert" className="text-xs text-q-risk-high">{error}</p>}
+                {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+                {error && <p role="alert" className="text-sm text-q-risk-high">{error}</p>}
 
                 <div className="flex justify-end gap-2">
                     <Button variant="ghost" onClick={onClose}>Cancel</Button>
                     <Button onClick={handleSave} disabled={save.isPending}>
-                        {save.isPending ? "Saving..." : "Save portfolio"}
+                        {save.isPending ? "Saving…" : "Save portfolio"}
                     </Button>
                 </div>
-            </CardContent>
-        </Card>
+            </div>
+        </Panel>
     )
 }
 
@@ -313,119 +306,102 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
     const remove = useDeletePortfolio()
     const [confirming, setConfirming] = useState(false)
     const sym = portfolioCurrency(portfolio)
+    const holdingsCount = `${portfolio.positions.length} holding${portfolio.positions.length === 1 ? "" : "s"}` +
+        (portfolio.funds?.length ? ` and ${portfolio.funds.length} fund${portfolio.funds.length === 1 ? "" : "s"}` : "")
 
     return (
-        <Card className="bg-q-surface border-q-border shadow-none flex flex-col">
-            <CardHeader className="p-4 pb-2 space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-sm font-bold text-foreground">
-                        <Link to={`/portfolios/${portfolio.id}`} className="hover:text-primary">{portfolio.name}</Link>
-                    </CardTitle>
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                        Updated {timeAgo(portfolio.updated_at)}
+        <Panel id={`portfolio-${portfolio.id}`} title={portfolio.name} className="flex flex-col"
+            description={portfolio.description || `Updated ${timeAgo(portfolio.updated_at)}`}>
+            <div className="p-4 space-y-3 flex-1 flex flex-col">
+                <div className="flex items-baseline justify-between">
+                    <span className="text-lg font-semibold font-mono tabular-nums text-foreground">
+                        {sym}{portfolio.initial_investment.toLocaleString(sym === "₹" ? "en-IN" : "en-US")}
+                        <span className="ml-1.5 font-sans text-xs font-normal text-muted-foreground">invested</span>
                     </span>
-                </div>
-                {portfolio.description && <p className="text-xs text-muted-foreground">{portfolio.description}</p>}
-            </CardHeader>
-            <CardContent className="p-4 pt-2 space-y-3 flex-1 flex flex-col">
-                <div className="flex items-baseline justify-between font-mono">
-                    <span className="text-lg font-bold text-foreground">{sym}{portfolio.initial_investment.toLocaleString()}</span>
-                    <span className="text-[11px] uppercase text-muted-foreground">
-                        {portfolio.positions.length} holdings{portfolio.funds?.length ? ` + ${portfolio.funds.length} funds` : ""}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{holdingsCount}</span>
                 </div>
 
-                {/* Allocation bar */}
-                <div className="flex h-2 w-full overflow-hidden rounded-full bg-q-border" aria-hidden="true">
-                    {portfolio.positions.map((pos, i) => (
-                        <div key={pos.ticker} className={SEGMENT_COLORS[i % SEGMENT_COLORS.length]} style={{ width: `${pos.weight * 100}%` }} />
-                    ))}
-                </div>
-                <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono">
-                    {portfolio.positions.map((pos, i) => (
-                        <li key={pos.ticker} className="flex items-center gap-1.5">
-                            <span className={cn("size-2 rounded-full", SEGMENT_COLORS[i % SEGMENT_COLORS.length])} />
-                            <span className="text-foreground font-bold">{pos.ticker}</span>
-                            <span className="text-muted-foreground">{(pos.weight * 100).toFixed(1)}%</span>
-                        </li>
-                    ))}
-                </ul>
+                {portfolio.positions.length > 0 && (
+                    <>
+                        <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                            {portfolio.positions.map((pos, i) => (
+                                <div key={pos.ticker} className={SEGMENT_COLORS[i % SEGMENT_COLORS.length]} style={{ width: `${pos.weight * 100}%` }} />
+                            ))}
+                        </div>
+                        <ul aria-label="Weights" className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                            {portfolio.positions.map((pos, i) => (
+                                <li key={pos.ticker} className="flex items-center gap-1.5">
+                                    <span className={cn("size-2 rounded-full", SEGMENT_COLORS[i % SEGMENT_COLORS.length])} aria-hidden="true" />
+                                    <span className="text-foreground font-medium">{pos.ticker}</span>
+                                    <span className="font-mono tabular-nums text-muted-foreground">{(pos.weight * 100).toFixed(1)}%</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </>
+                )}
 
-                <div className="flex items-center gap-2 pt-2 mt-auto border-t border-q-border/50">
-                    <Button size="sm" onClick={() => navigate(`/simulation?portfolio=${portfolio.id}`)} className="gap-1">
-                        <Play className="size-3" /> Simulate
+                <div className="flex items-center gap-2 pt-3 mt-auto border-t border-border">
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/portfolios/${portfolio.id}`)} className="gap-1.5">
+                        <Wallet className="size-4" /> Holdings
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => navigate(`/portfolios/${portfolio.id}`)} className="gap-1">
-                        <Wallet className="size-3" /> Holdings
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/simulation?portfolio=${portfolio.id}`)} className="gap-1.5">
+                        <Play className="size-4" /> Simulate
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={onEdit} className="gap-1">
-                        <Pencil className="size-3" /> Edit
+                    <Button size="sm" variant="ghost" onClick={onEdit} className="gap-1.5">
+                        <Pencil className="size-4" /> Edit
                     </Button>
                     <div className="ml-auto">
                         {confirming ? (
-                            <span className="flex items-center gap-2 text-[11px]">
+                            <span className="flex items-center gap-2 text-sm">
                                 Delete?
-                                <button className="font-bold text-q-risk-high hover:underline" disabled={remove.isPending}
+                                <button className="font-medium text-q-risk-high hover:underline" disabled={remove.isPending}
                                     onClick={() => remove.mutate(portfolio.id)}>Yes</button>
                                 <button className="text-muted-foreground hover:underline" onClick={() => setConfirming(false)}>No</button>
                             </span>
                         ) : (
                             <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} aria-label={`Delete ${portfolio.name}`}
                                 className="text-muted-foreground hover:text-q-risk-high">
-                                <Trash2 className="size-3.5" />
+                                <Trash2 className="size-4" />
                             </Button>
                         )}
                     </div>
                 </div>
-            </CardContent>
-        </Card>
+            </div>
+        </Panel>
     )
 }
 
 export default function Portfolios() {
     const { data: portfolios = [], isLoading, isError } = usePortfolios()
     const [editing, setEditing] = useState<Draft | null>(null)
+    const newButton = <Button onClick={() => setEditing(emptyDraft())} className="gap-1.5"><Plus className="size-4" /> New portfolio</Button>
 
     return (
-        <div className="p-6 space-y-6 bg-background min-h-full">
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-border">
-                <div>
-                    <h1 className="text-2xl font-black uppercase tracking-tight flex items-center gap-2 text-foreground">
-                        <Briefcase className="size-6 text-primary" /> Portfolios
-                    </h1>
-                    <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
-                        Save allocations and run them through the simulator
-                    </p>
-                </div>
-                {!editing && (
-                    <Button onClick={() => setEditing(emptyDraft())} className="gap-1">
-                        <Plus className="size-4" /> New portfolio
-                    </Button>
-                )}
-            </div>
+        <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
+            <PageHeader
+                title="Portfolios"
+                description="Your holdings, imported from a broker file or typed in. Open one to see its value, or run it through the simulator."
+                actions={!editing && newButton}
+            />
 
             {editing && <PortfolioEditor key={editing.id ?? "new"} initial={editing} onClose={() => setEditing(null)} />}
 
-            {isLoading && <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Loading portfolios...</p>}
-            {isError && <p role="alert" className="text-xs text-q-risk-high">Could not load portfolios.</p>}
-
-            {!isLoading && !isError && portfolios.length === 0 && !editing && (
-                <div className="border border-dashed border-border p-10 text-center space-y-3">
-                    <p className="text-sm text-foreground font-bold">No portfolios yet</p>
-                    <p className="text-xs text-muted-foreground">
-                        Create one here, or build an allocation in Simulation and save it.
-                    </p>
-                    <Button onClick={() => setEditing(emptyDraft())} className="gap-1">
-                        <Plus className="size-4" /> New portfolio
-                    </Button>
-                </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {portfolios.map(p => (
-                    <PortfolioCard key={p.id} portfolio={p} onEdit={() => setEditing(toDraft(p))} />
-                ))}
-            </div>
+            {isLoading ? <Panel id="portfolio-list" title="Portfolios"><PanelSkeleton /></Panel>
+                : isError ? <Panel id="portfolio-list" title="Portfolios"><PanelMessage alert>Couldn't load portfolios.</PanelMessage></Panel>
+                : portfolios.length === 0 && !editing ? (
+                    <Panel id="portfolio-list" title="No portfolios yet">
+                        <div className="p-4 space-y-3">
+                            <p className="text-sm text-muted-foreground">
+                                Create one here (you can import your broker's holdings file), or build an allocation in Simulation and save it.
+                            </p>
+                            {newButton}
+                        </div>
+                    </Panel>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        {portfolios.map(p => <PortfolioCard key={p.id} portfolio={p} onEdit={() => setEditing(toDraft(p))} />)}
+                    </div>
+                )}
         </div>
     )
 }
