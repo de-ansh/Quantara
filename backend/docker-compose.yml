@@ -46,15 +46,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Daily custom-format dump; written as .partial first so a failed dump never looks complete
+    # Daily custom-format dump; written as .partial first so a failed dump never looks complete.
+    # Checks hourly against the newest dump's age: a plain `sleep 86400` stalls while the Mac sleeps
+    # (the Docker VM's clock pauses), which once left the newest backup four days old.
     entrypoint: ["sh", "-c"]
     command:
       - |
         while true; do
-          f=/backups/quantara-$$(date -u +%Y%m%d-%H%M%S).dump
-          if pg_dump -Fc -f "$$f.partial"; then mv "$$f.partial" "$$f"; echo "backup written: $$f"; else rm -f "$$f.partial"; echo "backup FAILED" >&2; fi
+          if [ -z "$$(find /backups -name 'quantara-*.dump' -mmin -1440)" ]; then
+            f=/backups/quantara-$$(date -u +%Y%m%d-%H%M%S).dump
+            if pg_dump -Fc -f "$$f.partial"; then mv "$$f.partial" "$$f"; echo "backup written: $$f"; else rm -f "$$f.partial"; echo "backup FAILED" >&2; fi
+          fi
           find /backups -name 'quantara-*.dump' -mtime +$$BACKUP_KEEP_DAYS -delete
-          sleep 86400
+          sleep 3600
         done
 
   backend:
