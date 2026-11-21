@@ -48,12 +48,16 @@ test('breakdown adds up, explains the drawdown floor and exports', async ({ page
   await expect(page.getByTestId('factor-beta')).not.toContainText('Estimated');
   // weighted factors total 52.5, the score is 60
   await expect(page.getByText('Factors add up to 52.5. Raised by 7.5')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Severe Slowdown/ })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: /\bT11$/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /\bT12$/ })).toHaveCount(0);
+  // every scenario listed, worst first
+  const rows = page.getByRole('region', { name: 'How it might react to shocks' }).getByRole('row');
+  await expect(rows.nth(1)).toContainText('Severe Slowdown');
+  await expect(rows.nth(1)).toContainText('-25.0%');
+  await expect(rows.nth(2)).toContainText('Mild Rate Rise');
+  await expect(page.getByRole('button', { name: 'T11.NS', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'T12.NS', exact: true })).toHaveCount(0);
 
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export Data' }).click();
+  await page.getByRole('button', { name: 'Export CSV' }).click();
   expect((await download).suggestedFilename()).toBe('risk-TCS.NS.csv');
 });
 
