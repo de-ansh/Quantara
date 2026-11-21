@@ -1,34 +1,17 @@
 import { useState } from "react"
-import apiClient, { resolveTicker } from "@/lib/api"
+import { useSearchParams } from "react-router-dom"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import {
-    Play,
-    SlidersHorizontal,
-    AlertTriangle,
-    Plus,
-    Trash2,
-    RefreshCw,
-    LineChart,
-    Grid,
-    ShieldCheck,
-    Download,
-    Save,
-} from "lucide-react"
+import { Download, Play, Plus, RefreshCw, Save, Trash2 } from "lucide-react"
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import apiClient, { resolveTicker } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { exportToCsv } from "@/lib/export"
 import { isIndianAsset } from "@/lib/currency"
-import {
-    ResponsiveContainer,
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip
-} from "recharts"
 import { useQuickTickers } from "@/hooks/useStockUniverse"
 import { usePortfolios, useSavePortfolio } from "@/hooks/usePortfolios"
-import { useSearchParams } from "react-router-dom"
+import PageHeader from "@/components/PageHeader"
+import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
+import { Button } from "@/components/ui/button"
 
 interface Holding {
     id: string
@@ -36,23 +19,28 @@ interface Holding {
     weight: number
 }
 
-const defaultHoldings: Holding[] = [
-    { id: "1", ticker: "AAPL", weight: 35 },
-    { id: "2", ticker: "NVDA", weight: 25 },
-    { id: "3", ticker: "TLT", weight: 20 },
-    { id: "4", ticker: "GLD", weight: 12 },
-    { id: "5", ticker: "BIL", weight: 8 },
+const US_PRESET: Holding[] = [
+    { id: "us-1", ticker: "AAPL", weight: 35 },
+    { id: "us-2", ticker: "NVDA", weight: 25 },
+    { id: "us-3", ticker: "TLT", weight: 20 },
+    { id: "us-4", ticker: "GLD", weight: 12 },
+    { id: "us-5", ticker: "BIL", weight: 8 },
+]
+const INDIA_PRESET: Holding[] = [
+    { id: "in-1", ticker: "RELIANCE.NS", weight: 35 },
+    { id: "in-2", ticker: "TCS.NS", weight: 25 },
+    { id: "in-3", ticker: "HDFCBANK.NS", weight: 25 },
+    { id: "in-4", ticker: "INFY.NS", weight: 15 },
 ]
 
 type Scenario = "conservative" | "base" | "aggressive"
 
 // API values stay as-is; labels describe what each mode does to the projection.
 const SCENARIOS: { value: Scenario; label: string; title: string }[] = [
-    { value: "conservative", label: "Stress", title: "Higher volatility, lower returns" },
-    { value: "base", label: "Base", title: "Historical estimates as measured" },
-    { value: "aggressive", label: "Optimistic", title: "Lower volatility, higher returns" },
+    { value: "conservative", label: "Stress", title: "Volatility 20% higher, returns 10% lower" },
+    { value: "base", label: "Base", title: "Estimates as measured" },
+    { value: "aggressive", label: "Optimistic", title: "Volatility 15% lower, returns 10% higher" },
 ]
-const scenarioLabel = (v: Scenario) => SCENARIOS.find(s => s.value === v)?.label ?? v
 
 interface TrajectoryPoint {
     month: number
@@ -66,13 +54,10 @@ interface SimulationResult {
     expected_volatility: number
     sharpe_ratio: number
     max_drawdown: number
-    risk_adjusted_return: number
     portfolio_beta: number
     trajectory: TrajectoryPoint[]
     diversification_benefit_pct: number
-    asset_volatilities: Record<string, number>
     correlation_matrix: Record<string, Record<string, number>>
-    covariance_matrix: number[][]
     estimated_tickers: string[]
 }
 
@@ -82,14 +67,12 @@ const toPayloadStocks = (holdings: Holding[]) => {
 }
 
 const INVESTMENT_OPTIONS = [100000, 500000, 1000000, 2500000, 5000000]
+const HORIZONS = [5, 10, 20, 30]
+const fieldClass = "bg-background border border-border text-sm px-2 py-1.5 rounded-md text-foreground outline-none focus:border-primary"
 
-const INDIAN_PRESET: Holding[] = [
-    { id: "in-1", ticker: "RELIANCE.NS", weight: 35 },
-    { id: "in-2", ticker: "TCS.NS", weight: 25 },
-    { id: "in-3", ticker: "HDFCBANK.NS", weight: 25 },
-    { id: "in-4", ticker: "INFY.NS", weight: 15 },
-]
-
+/** Correlation cell tint, same bands as Compare: red moves together, green diversifies. */
+const corrClass = (c: number) =>
+    c >= 0.7 ? "bg-q-risk-high/15 text-q-risk-high" : c >= 0.4 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-q-risk-low/15 text-q-risk-low"
 
 export default function Simulation() {
     const quickTickers = useQuickTickers()
@@ -104,15 +87,16 @@ export default function Simulation() {
         const tickers = [...new Set((searchParams.get("tickers") ?? "").split(",").map(t => t.trim().toUpperCase()).filter(Boolean))]
         return tickers.length
             ? tickers.map(t => ({ id: `q-${t}`, ticker: t, weight: Math.round(1000 / tickers.length) / 10 }))
-            : defaultHoldings
+            : US_PRESET
     })
     const [holdings, setHoldings] = useState<Holding[]>(initialHoldings)
     const [newTickerInput, setNewTickerInput] = useState("")
-    // Holdings as of the last Recalculate/load; editing sliders doesn't refetch until then
+    // Holdings as of the last run; editing weights doesn't refetch until then
     const [runHoldings, setRunHoldings] = useState<Holding[]>(initialHoldings)
     const [horizonYears, setHorizonYears] = useState(10)
-    const [volatilityAssumption, setVolatilityAssumption] = useState<Scenario>("base")
+    const [scenario, setScenario] = useState<Scenario>("base")
     const [initialInvestment, setInitialInvestment] = useState(1000000)
+    const [view, setView] = useState<"chart" | "correlation">("chart")
 
     // Load ?portfolio=<id> once its data arrives (state adjusted during render, not in an effect)
     const requested = portfolios.find(p => String(p.id) === searchParams.get("portfolio"))
@@ -152,30 +136,16 @@ export default function Simulation() {
         }
         setTimeout(() => setSaveMessage(null), 3000)
     }
-    const [activeView, setActiveView] = useState<"chart" | "correlation">("chart")
 
-    const { data: marketData } = useQuery({
-        queryKey: ["marketStatus"],
-        queryFn: async () => {
-            const { data } = await apiClient.get("/market/status")
-            return data
-        },
-        refetchInterval: 5000,
-    })
-
-    const isIndianPortfolio = holdings.some(h => isIndianAsset(h.ticker))
-    const currSym = isIndianPortfolio ? "₹" : "$"
-
+    const isIndian = holdings.some(h => isIndianAsset(h.ticker))
+    const currSym = isIndian ? "₹" : "$"
+    const locale = isIndian ? "en-IN" : "en-US"
+    const amount = (v: number) => `${currSym}${Math.round(v).toLocaleString(locale)}`
     const totalWeight = holdings.reduce((sum, h) => sum + h.weight, 0)
 
     const handleNormalize = () => {
         if (totalWeight <= 0) return
-        setHoldings(prev =>
-            prev.map(h => ({
-                ...h,
-                weight: Math.round((h.weight / totalWeight) * 100 * 10) / 10
-            }))
-        )
+        setHoldings(prev => prev.map(h => ({ ...h, weight: Math.round((h.weight / totalWeight) * 1000) / 10 })))
     }
 
     const handleAddTicker = async (tickerToAdd?: string) => {
@@ -183,596 +153,264 @@ export default function Simulation() {
         if (!typed) return
         // The listing the user means ("ITC" -> ITC.NS); unknown input is kept so the run reports it
         const sym = (await resolveTicker(typed)) ?? typed.toUpperCase()
-        if (holdings.some(h => h.ticker === sym)) {
-            setNewTickerInput("")
-            return
-        }
-        setHoldings(prev => [
-            ...prev,
-            { id: `${Date.now()}-${sym}`, ticker: sym, weight: 10 }
-        ])
+        if (!holdings.some(h => h.ticker === sym)) setHoldings(prev => [...prev, { id: `${Date.now()}-${sym}`, ticker: sym, weight: 10 }])
         setNewTickerInput("")
     }
 
-    const handleRemoveTicker = (id: string) => {
-        if (holdings.length <= 1) return
-        setHoldings(prev => prev.filter(h => h.id !== id))
-    }
-
-    const handleWeightChange = (id: string, newWeight: number) => {
-        setHoldings(prev =>
-            prev.map(h => (h.id === id ? { ...h, weight: newWeight } : h))
-        )
-    }
-
     const runStocks = toPayloadStocks(runHoldings)
-    const { data: result = null, isFetching: isLoading, refetch } = useQuery<SimulationResult>({
-        queryKey: ["simulate", runStocks, initialInvestment, horizonYears, volatilityAssumption],
-        queryFn: async () => {
-            const { data } = await apiClient.post<SimulationResult>("/portfolio/simulate", {
-                stocks: runStocks,
-                initial_investment: initialInvestment,
-                time_horizon_months: horizonYears * 12,
-                volatility_mode: volatilityAssumption,
-            })
-            return data
-        },
+    const { data: result = null, isFetching, isError, refetch } = useQuery<SimulationResult>({
+        queryKey: ["simulate", runStocks, initialInvestment, horizonYears, scenario],
+        queryFn: async () => (await apiClient.post<SimulationResult>("/portfolio/simulate", {
+            stocks: runStocks,
+            initial_investment: initialInvestment,
+            time_horizon_months: horizonYears * 12,
+            volatility_mode: scenario,
+        })).data,
         enabled: runStocks.length > 0,
         placeholderData: keepPreviousData,
     })
 
     const runSimulation = () => {
-        const unchanged = JSON.stringify(toPayloadStocks(holdings)) === JSON.stringify(runStocks)
-        if (unchanged) refetch()
+        if (JSON.stringify(toPayloadStocks(holdings)) === JSON.stringify(runStocks)) refetch()
         else setRunHoldings(holdings)
     }
+    const edited = JSON.stringify(toPayloadStocks(holdings)) !== JSON.stringify(runStocks)
 
-    // Bind metrics from simulation result
-    const metrics = [
-        { 
-            label: "Forward Sharpe", 
-            value: result ? result.sharpe_ratio.toFixed(2) : "—", 
-            sub: "Risk-free 2.5%", 
-            color: "text-green-400" 
-        },
-        { 
-            label: "Portfolio Beta", 
-            value: result ? result.portfolio_beta.toFixed(2) : "—", 
-            sub: isIndianPortfolio ? "Rel. to NIFTY 50" : "Rel. to S&P 500" 
-        },
-        { 
-            label: "Est. Annual Return", 
-            value: result ? `${result.expected_return.toFixed(1)}%` : "—", 
-            sub: `${scenarioLabel(volatilityAssumption).toUpperCase()} Scenario`, 
-            color: "text-green-500" 
-        },
-        { 
-            label: "Volatility (Std Dev)", 
-            value: result ? `${result.expected_volatility.toFixed(1)}%` : "—", 
-            sub: "Annualized MPT" 
-        },
-        { 
-            label: "Diversification Benefit", 
-            value: result ? `+${(result.diversification_benefit_pct || 0).toFixed(1)}%` : "—", 
-            sub: "Covariance Dampening", 
-            color: "text-emerald-400" 
-        },
-        { 
-            label: "Max Drawdown Projection", 
-            value: result ? `${result.max_drawdown.toFixed(1)}%` : "—", 
-            sub: "Trailing 1Y", 
-            color: "text-red-500" 
-        },
-    ]
+    const chartData = result?.trajectory ?? []
+    const end = chartData[chartData.length - 1]
 
-    const chartData = result?.trajectory || []
+    const handleExport = () => exportToCsv("quantara_portfolio_projection.csv", chartData.map(pt => ({
+        year: Number((pt.month / 12).toFixed(1)),
+        month: pt.month,
+        median_value: Math.round(pt.median),
+        upper_95_ci: Math.round(pt.upper_95),
+        lower_5_ci: Math.round(pt.lower_5),
+        expected_return_pct: result?.expected_return.toFixed(2) ?? "",
+        volatility_pct: result?.expected_volatility.toFixed(2) ?? "",
+        sharpe_ratio: result?.sharpe_ratio.toFixed(2) ?? "",
+    })))
 
-    const handleExportSimulation = () => {
-        if (!chartData || chartData.length === 0) return
-
-        const rows = chartData.map((pt) => ({
-            year: Number((pt.month / 12).toFixed(1)),
-            month: pt.month,
-            median_value: Math.round(pt.median || 0),
-            upper_95_ci: Math.round(pt.upper_95 || 0),
-            lower_5_ci: Math.round(pt.lower_5 || 0),
-            expected_return_pct: result?.expected_return?.toFixed(2) ?? "",
-            volatility_pct: result?.expected_volatility?.toFixed(2) ?? "",
-            sharpe_ratio: result?.sharpe_ratio?.toFixed(2) ?? "",
-        }))
-
-        exportToCsv("quantara_portfolio_projection.csv", rows)
-    }
+    const metrics = result ? [
+        { label: "Estimated yearly return", value: `${result.expected_return.toFixed(1)}%`, note: "From each holding's beta: 2.5% plus beta × 5.5%" },
+        { label: "Volatility", value: `${result.expected_volatility.toFixed(1)}%`, note: "Typical yearly swing (one standard deviation)" },
+        { label: "Return per unit of risk", value: result.sharpe_ratio.toFixed(2), note: "Sharpe ratio, above a 2.5% risk-free rate" },
+        { label: `Beta vs ${isIndian ? "Nifty 50" : "S&P 500"}`, value: result.portfolio_beta.toFixed(2), note: "1.00 moves with the market" },
+        { label: "Worst fall in the past year", value: `${result.max_drawdown.toFixed(1)}%`, note: "Peak to trough, at these weights" },
+        { label: "Risk cut by diversifying", value: `${(result.diversification_benefit_pct || 0).toFixed(1)}%`, note: "Lower volatility than the holdings' own swings averaged, because they don't all move together" },
+    ] : []
 
     return (
-        <div className="flex flex-col h-full bg-background overflow-hidden transition-colors">
-            {/* Header */}
-            <div className="h-12 border-b border-border flex items-center justify-between px-4 bg-card shrink-0">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80">
-                        <h1 className="text-primary text-[11px] font-bold">Portfolio Simulation</h1>
-                        <div className="h-3 w-[1px] bg-border" />
-                        <span className="flex items-center gap-1 text-emerald-400">
-                            <ShieldCheck className="size-3" />
-                            MPT Covariance Engine Active
-                        </span>
-                    </div>
-                </div>
-                <div className="hidden sm:flex items-center gap-4">
-                    {marketData?.vix?.value && (
-                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-widest">
-                            VIX: {marketData.vix.value} ({marketData.vix.change_percent >= 0 ? "+" : ""}{marketData.vix.change_percent}%)
-                        </div>
-                    )}
-                    {(() => {
-                        // Real session state for the portfolio's market (from /market/status)
-                        const session = isIndianPortfolio ? marketData?.india_market?.status : marketData?.us_market?.status
-                        if (!session) return null
-                        const open = session === "OPEN"
-                        return (
-                            <div className={cn(
-                                "flex items-center gap-2 px-2 py-1 border text-[10px] font-bold uppercase tracking-widest",
-                                open ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-muted/40 border-border text-muted-foreground"
-                            )}>
-                                <div className={cn("size-1.5 rounded-full", open ? "bg-green-500 animate-pulse" : "bg-zinc-500")} />
-                                {isIndianPortfolio ? "NSE" : "US"} market {open ? "open" : session.toLowerCase()}
-                            </div>
-                        )
-                    })()}
-                </div>
-            </div>
+        <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
+            <PageHeader
+                title="Simulation"
+                description="Project how a mix of holdings might grow, with a range of likely outcomes. Estimates from past prices, not a forecast."
+                actions={<Button variant="outline" size="sm" onClick={handleExport} disabled={chartData.length === 0} className="gap-1.5"><Download className="size-4" /> Export CSV</Button>}
+            />
 
-            {/* Macro Alert Banner */}
-            {marketData?.alerts?.[0] && (
-                <div className="flex items-center gap-3 px-4 py-2 border-b border-amber-500/25 bg-amber-500/5 text-amber-500 text-[11px] font-mono uppercase tracking-wider shrink-0">
-                    <span className="flex items-center gap-1.5 shrink-0 font-bold">
-                        <AlertTriangle className="size-3.5 animate-pulse" />
-                        MACRO_ALERT
-                    </span>
-                    <span className="h-3 w-[1px] bg-amber-500/30 shrink-0" />
-                    <span className="truncate">{marketData.alerts[0].time} - {marketData.alerts[0].text}</span>
-                </div>
-            )}
-
-            <main className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
-                {/* Controls Sidebar (stacks above the projection on phones) */}
-                <aside className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-card flex flex-col shrink-0 md:overflow-y-auto custom-scrollbar">
-                    <div className="p-3 border-b border-border bg-muted/20 flex items-center justify-between">
-                        <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                            <SlidersHorizontal className="size-3.5" />
-                            Holdings & Allocation
-                        </h2>
-                        <div className="flex items-center gap-2 font-mono text-[11px]">
-                            <span className={cn(
-                                "px-1.5 py-0.5 rounded-sm font-bold",
-                                Math.abs(totalWeight - 100) < 0.5 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400"
-                            )}>
-                                Total: {totalWeight.toFixed(0)}%
+            <div className="grid grid-cols-1 lg:grid-cols-[22rem_1fr] gap-6 items-start">
+                <aside className="space-y-6">
+                    <Panel id="sim-holdings" title="Holdings"
+                        description={loaded ? <>From the portfolio <span className="text-foreground font-medium">{loaded.name}</span></> : "Weights are scaled to 100% when the simulation runs"}
+                        action={
+                            <span className="flex items-center gap-2 text-xs">
+                                <span className={cn("font-mono tabular-nums", Math.abs(totalWeight - 100) < 0.5 ? "text-q-risk-low" : "text-amber-600 dark:text-amber-400")}>
+                                    Total {totalWeight.toFixed(0)}%
+                                </span>
+                                <button type="button" onClick={handleNormalize} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                                    <RefreshCw className="size-3" /> Scale to 100%
+                                </button>
                             </span>
-                            <button
-                                onClick={handleNormalize}
-                                title="Normalize weights to 100%"
-                                className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                            >
-                                <RefreshCw className="size-3" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="p-4 space-y-6">
-                        {/* Quick Presets */}
-                        <div className="space-y-1.5">
-                            <span className="text-[10px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
-                                Quick Portfolio Presets
-                            </span>
+                        }>
+                        <div className="p-4 space-y-4">
                             <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setHoldings(defaultHoldings)}
-                                    className="flex-1 py-1 px-2 text-[11px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
-                                >
-                                    <span>🇺🇸</span> US Core
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setHoldings(INDIAN_PRESET)}
-                                    className="flex-1 py-1 px-2 text-[11px] font-bold border border-border bg-muted/40 hover:bg-muted text-foreground rounded-sm transition-colors flex items-center justify-center gap-1"
-                                >
-                                    <span>🇮🇳</span> NIFTY Core
-                                </button>
+                                <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => setHoldings(US_PRESET)}>US example</Button>
+                                <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => setHoldings(INDIA_PRESET)}>India example</Button>
                             </div>
-                        </div>
-
-                        {/* Dynamic Stock List */}
-                        <section className="space-y-3">
-                            <div className="space-y-3">
-                                {holdings.map((item) => (
-                                    <div key={item.id} className="p-2 border border-border/70 bg-background/50 rounded-sm space-y-1.5">
-                                        <div className="flex items-center justify-between text-[11px] font-mono">
-                                            <span className="font-bold text-foreground tracking-wider">{item.ticker}</span>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-primary">{item.weight.toFixed(1)}%</span>
-                                                {holdings.length > 1 && (
-                                                    <button
-                                                        onClick={() => handleRemoveTicker(item.id)}
-                                                        className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
-                                                    >
-                                                        <Trash2 className="size-3" />
-                                                    </button>
-                                                )}
-                                            </div>
+                            <ul className="space-y-3">
+                                {holdings.map(item => (
+                                    <li key={item.id} className="space-y-1">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="font-medium text-foreground">{item.ticker}</span>
+                                            <span className="flex items-center gap-2">
+                                                <span className="font-mono tabular-nums">{item.weight.toFixed(1)}%</span>
+                                                <button type="button" aria-label={`Remove ${item.ticker}`} disabled={holdings.length <= 1}
+                                                    onClick={() => setHoldings(prev => prev.filter(h => h.id !== item.id))}
+                                                    className="p-0.5 text-muted-foreground hover:text-q-risk-high disabled:opacity-30">
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </span>
                                         </div>
-                                        <input
-                                            type="range"
-                                            className="w-full h-[2px] bg-border appearance-none cursor-pointer accent-primary"
-                                            value={item.weight}
-                                            min="0"
-                                            max="100"
-                                            step="1"
-                                            onChange={(e) => handleWeightChange(item.id, parseFloat(e.target.value))}
-                                        />
-                                    </div>
+                                        <input type="range" min={0} max={100} step={1} value={item.weight} aria-label={`Weight for ${item.ticker}`}
+                                            onChange={e => setHoldings(prev => prev.map(h => (h.id === item.id ? { ...h, weight: Number(e.target.value) } : h)))}
+                                            className="w-full accent-primary" />
+                                    </li>
                                 ))}
-                            </div>
-
-                            {/* Add Ticker Input */}
-                            <div className="pt-2">
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Add ticker (e.g. MSFT)..."
-                                        value={newTickerInput}
-                                        onChange={(e) => setNewTickerInput(e.target.value.toUpperCase())}
-                                        onKeyDown={(e) => e.key === "Enter" && handleAddTicker()}
-                                        className="flex-1 bg-background border border-border px-2.5 py-1.5 text-[11px] font-mono uppercase focus:outline-none focus:border-primary rounded-sm"
-                                    />
-                                    <button
-                                        onClick={() => handleAddTicker()}
-                                        disabled={!newTickerInput.trim()}
-                                        className="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 text-[11px] font-bold uppercase rounded-sm flex items-center gap-1 disabled:opacity-40"
-                                    >
-                                        <Plus className="size-3" /> Add
-                                    </button>
-                                </div>
-
-                                {/* Quick Chips */}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                    {quickTickers.filter(t => !holdings.some(h => h.ticker === t)).map(chip => (
-                                        <button
-                                            key={chip}
-                                            onClick={() => handleAddTicker(chip)}
-                                            className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border rounded-sm transition-colors"
-                                        >
-                                            +{chip}
+                            </ul>
+                            <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void handleAddTicker() }}>
+                                <input value={newTickerInput} onChange={e => setNewTickerInput(e.target.value)} placeholder="Add a stock, e.g. ITC"
+                                    aria-label="Add a stock" className={cn(fieldClass, "flex-1 min-w-0")} />
+                                <Button type="submit" size="sm" disabled={!newTickerInput.trim()} className="gap-1"><Plus className="size-4" /> Add</Button>
+                            </form>
+                            {quickTickers.some(t => !holdings.some(h => h.ticker === t)) && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {quickTickers.filter(t => !holdings.some(h => h.ticker === t)).slice(0, 12).map(t => (
+                                        <button key={t} type="button" onClick={() => void handleAddTicker(t)} aria-label={`Add ${t}`}
+                                            className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground">
+                                            + {t}
                                         </button>
                                     ))}
                                 </div>
-                            </div>
-                        </section>
-
-                        {/* Volatility Assumptions */}
-                        <section>
-                            <h3 className="text-[10px] font-bold uppercase text-muted-foreground/70 mb-2 tracking-tighter">
-                                Volatility Scenario
-                            </h3>
-                            <div className="grid grid-cols-3 border border-border overflow-hidden rounded-sm">
-                                {SCENARIOS.map((sc, idx) => (
-                                    <button
-                                        key={sc.value}
-                                        onClick={() => setVolatilityAssumption(sc.value)}
-                                        title={sc.title}
-                                        aria-pressed={volatilityAssumption === sc.value}
-                                        className={cn(
-                                            "py-2 text-[10px] font-bold uppercase transition-colors",
-                                            idx === 1 && "border-x border-border",
-                                            volatilityAssumption === sc.value ? "bg-primary text-white" : "hover:bg-muted"
-                                        )}
-                                    >
-                                        {sc.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </section>
-
-                        {/* Parameters */}
-                        <section className="space-y-3">
-                            <h3 className="text-[10px] font-bold uppercase text-muted-foreground/70 tracking-tighter">
-                                Parameters
-                            </h3>
-                            <div className="flex items-center justify-between">
-                                <span className="text-[11px] text-muted-foreground">Initial Capital</span>
-                                <select 
-                                    value={initialInvestment}
-                                    onChange={(e) => setInitialInvestment(Number(e.target.value))}
-                                    className="bg-background border border-border text-[11px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
-                                >
-                                    {(INVESTMENT_OPTIONS.includes(initialInvestment)
-                                        ? INVESTMENT_OPTIONS
-                                        : [...INVESTMENT_OPTIONS, initialInvestment].sort((a, b) => a - b)
-                                    ).map(v => (
-                                        <option key={v} value={v}>{currSym}{v.toLocaleString()}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-[11px] text-muted-foreground">Time Horizon</span>
-                                <select 
-                                    value={horizonYears}
-                                    onChange={(e) => setHorizonYears(Number(e.target.value))}
-                                    className="bg-background border border-border text-[11px] py-1 px-2 focus:ring-0 rounded-sm text-foreground font-mono"
-                                >
-                                    <option value={5}>5 Years</option>
-                                    <option value={10}>10 Years</option>
-                                    <option value={20}>20 Years</option>
-                                    <option value={30}>30 Years</option>
-                                </select>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-muted-foreground">MPT Covariance</span>
-                                <span className="font-mono font-bold text-emerald-400">ENABLED</span>
-                            </div>
-                        </section>
-
-                        <button 
-                            onClick={runSimulation}
-                            disabled={isLoading}
-                            className="w-full bg-primary hover:bg-primary/90 text-white text-[11px] font-black uppercase py-3 mt-4 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
-                        >
-                            <Play className="size-3.5 fill-current" />
-                            {isLoading ? "Simulating..." : "Recalculate Simulation"}
-                        </button>
-
-                        {/* Save to portfolios */}
-                        <section className="space-y-2 pt-2 border-t border-border">
-                            {loaded && (
-                                <p className="text-[11px] text-muted-foreground font-mono uppercase tracking-wider truncate">
-                                    Loaded: <span className="text-foreground font-bold">{loaded.name}</span>
-                                </p>
                             )}
+                        </div>
+                    </Panel>
+
+                    <Panel id="sim-settings" title="Assumptions">
+                        <div className="p-4 space-y-4 text-sm">
+                            <label className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Starting amount</span>
+                                <select value={initialInvestment} onChange={e => setInitialInvestment(Number(e.target.value))} className={cn(fieldClass, "font-mono tabular-nums")}>
+                                    {(INVESTMENT_OPTIONS.includes(initialInvestment) ? INVESTMENT_OPTIONS : [...INVESTMENT_OPTIONS, initialInvestment].sort((a, b) => a - b))
+                                        .map(v => <option key={v} value={v}>{amount(v)}</option>)}
+                                </select>
+                            </label>
+                            <label className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Years</span>
+                                <select value={horizonYears} onChange={e => setHorizonYears(Number(e.target.value))} className={fieldClass}>
+                                    {HORIZONS.map(y => <option key={y} value={y}>{y} years</option>)}
+                                </select>
+                            </label>
+                            <div className="space-y-1.5">
+                                <span className="text-muted-foreground">Scenario</span>
+                                <div role="group" aria-label="Scenario" className="grid grid-cols-3 gap-1">
+                                    {SCENARIOS.map(sc => (
+                                        <button key={sc.value} type="button" title={sc.title} aria-pressed={scenario === sc.value} onClick={() => setScenario(sc.value)}
+                                            className={cn("rounded-md border px-2 py-1.5", scenario === sc.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                                            {sc.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{SCENARIOS.find(s => s.value === scenario)?.title}</p>
+                            </div>
+                            <Button onClick={runSimulation} disabled={isFetching} className="w-full gap-1.5">
+                                <Play className="size-4" /> {isFetching ? "Running…" : edited ? "Run with these holdings" : "Run again"}
+                            </Button>
+                        </div>
+                    </Panel>
+
+                    <Panel id="sim-save" title="Save">
+                        <div className="p-4 space-y-2">
                             {saveName === null ? (
                                 <div className="flex gap-2">
                                     {loaded && (
-                                        <button
-                                            onClick={() => handleSavePortfolio(false)}
-                                            disabled={savePortfolio.isPending}
-                                            className="flex-1 border border-border hover:bg-muted text-[11px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1 disabled:opacity-50"
-                                        >
-                                            <Save className="size-3" /> Update
-                                        </button>
+                                        <Button variant="outline" size="sm" className="flex-1 gap-1.5" disabled={savePortfolio.isPending} onClick={() => handleSavePortfolio(false)}>
+                                            <Save className="size-4" /> Update {loaded.name}
+                                        </Button>
                                     )}
-                                    <button
-                                        onClick={() => setSaveName(loaded ? `${loaded.name} (copy)` : "")}
-                                        className="flex-1 border border-border hover:bg-muted text-[11px] font-bold uppercase py-2 rounded-sm flex items-center justify-center gap-1"
-                                    >
-                                        <Save className="size-3" /> {loaded ? "Save as new" : "Save as portfolio"}
-                                    </button>
+                                    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setSaveName(loaded ? `${loaded.name} (copy)` : "")}>
+                                        <Save className="size-4" /> {loaded ? "Save as new" : "Save as portfolio"}
+                                    </Button>
                                 </div>
                             ) : (
-                                <form
-                                    className="flex gap-2"
-                                    onSubmit={(e) => { e.preventDefault(); handleSavePortfolio(true) }}
-                                >
-                                    <input
-                                        autoFocus
-                                        value={saveName}
-                                        maxLength={100}
-                                        onChange={(e) => setSaveName(e.target.value)}
-                                        placeholder="Portfolio name"
-                                        aria-label="Portfolio name"
-                                        className="flex-1 min-w-0 bg-background border border-border text-[11px] px-2 py-1.5 rounded-sm text-foreground outline-none focus:border-primary"
-                                    />
-                                    <button type="submit" disabled={!saveName.trim() || savePortfolio.isPending}
-                                        className="bg-primary text-white text-[11px] font-bold uppercase px-3 rounded-sm disabled:opacity-40">
-                                        Save
-                                    </button>
-                                    <button type="button" onClick={() => setSaveName(null)}
-                                        className="text-[11px] text-muted-foreground hover:text-foreground px-1">
-                                        Cancel
-                                    </button>
+                                <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void handleSavePortfolio(true) }}>
+                                    <input autoFocus value={saveName} maxLength={100} onChange={e => setSaveName(e.target.value)} placeholder="Portfolio name"
+                                        aria-label="Portfolio name" className={cn(fieldClass, "flex-1 min-w-0")} />
+                                    <Button type="submit" size="sm" disabled={!saveName.trim() || savePortfolio.isPending}>Save</Button>
+                                    <Button type="button" size="sm" variant="ghost" onClick={() => setSaveName(null)}>Cancel</Button>
                                 </form>
                             )}
-                            {saveMessage && (
-                                <p role="status" className={cn("text-[11px] font-mono", saveMessage.ok ? "text-emerald-400" : "text-q-risk-high")}>
-                                    {saveMessage.text}
-                                </p>
-                            )}
-                        </section>
-                    </div>
+                            {saveMessage && <p role="status" className={cn("text-sm", saveMessage.ok ? "text-q-risk-low" : "text-q-risk-high")}>{saveMessage.text}</p>}
+                        </div>
+                    </Panel>
                 </aside>
 
-                {/* Workspace Panel */}
-                <div className="flex-1 flex flex-col min-w-0">
-                    <div className="flex-1 p-3 md:p-6 flex flex-col min-h-[420px]">
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                            <div>
-                                <h2 className="text-2xl font-black tracking-tight uppercase text-foreground">Portfolio Projection</h2>
-                                <p className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">
-                                    Lognormal 5th–95th Percentile Bands | {scenarioLabel(volatilityAssumption).toUpperCase()} SCENARIO
-                                </p>
-                                {result && result.estimated_tickers.length > 0 && (
-                                    <p className="text-[11px] text-amber-500 font-bold uppercase tracking-widest mt-1">
-                                        No price history for {result.estimated_tickers.join(", ")}: using asset-class estimates
-                                    </p>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {/* View Toggle */}
-                                <div className="flex border border-border rounded-sm overflow-hidden bg-card mr-2">
-                                    <button
-                                        onClick={() => setActiveView("chart")}
-                                        className={cn(
-                                            "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
-                                            activeView === "chart" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
-                                        )}
-                                    >
-                                        <LineChart className="size-3" /> Trajectory
+                <div className="space-y-6 min-w-0">
+                    <Panel id="sim-projection" title={`Value over ${horizonYears} years`}
+                        description={end
+                            ? <>Middle outcome <span className="font-mono tabular-nums text-foreground">{amount(end.median)}</span>; 9 in 10 outcomes fall between <span className="font-mono tabular-nums">{amount(end.lower_5)}</span> and <span className="font-mono tabular-nums">{amount(end.upper_95)}</span></>
+                            : "The line is the middle outcome; the band holds 9 in 10 outcomes"}
+                        action={
+                            <div role="group" aria-label="View" className="flex gap-1">
+                                {([["chart", "Growth"], ["correlation", "How they move together"]] as const).map(([v, label]) => (
+                                    <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+                                        className={cn("rounded-full border px-3 py-1 text-xs", view === v ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                                        {label}
                                     </button>
-                                    <button
-                                        onClick={() => setActiveView("correlation")}
-                                        className={cn(
-                                            "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors border-l border-border",
-                                            activeView === "correlation" ? "bg-primary text-white" : "hover:bg-muted text-muted-foreground"
-                                        )}
-                                    >
-                                        <Grid className="size-3" /> Correlation Matrix
-                                    </button>
-                                </div>
-
-                                <button
-                                    onClick={handleExportSimulation}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors border border-border rounded-sm hover:bg-muted text-foreground/80 font-mono bg-card"
-                                >
-                                    <Download className="size-3" /> Export CSV
-                                </button>
-
-                                {result && result.diversification_benefit_pct > 0 && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-bold uppercase tracking-widest text-emerald-400 font-mono">
-                                        <ShieldCheck className="size-3" />
-                                        +{result.diversification_benefit_pct.toFixed(1)}% MPT Gain
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Main View Area */}
-                        <div className="flex-1 relative border border-border bg-card/30 overflow-hidden shadow-inner flex flex-col">
-                            {isLoading && chartData.length === 0 ? (
-                                <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground uppercase tracking-widest">
-                                    RUNNING_PORTFOLIO_PROJECTION...
-                                </div>
-                            ) : activeView === "chart" ? (
-                                <div className="flex-1 p-4">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={chartData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.1} />
-                                            <XAxis 
-                                                dataKey="month" 
-                                                stroke="hsl(var(--muted-foreground))"
-                                                fontSize={11}
-                                                fontWeight="bold"
-                                                type="number"
-                                                domain={[0, "dataMax"]}
-                                                ticks={Array.from({ length: horizonYears + 1 }, (_, y) => y * 12)}
-                                                tickFormatter={(v) => `Yr ${v / 12}`}
-                                            />
-                                            <YAxis 
-                                                stroke="hsl(var(--muted-foreground))"
-                                                fontSize={11}
-                                                fontWeight="bold"
-                                                tickFormatter={(v) => `${currSym}${(v / 1e6).toFixed(1)}M`}
-                                            />
-                                            <Tooltip 
-                                                contentStyle={{
-                                                    backgroundColor: 'hsl(var(--card))',
-                                                    borderColor: 'hsl(var(--border))',
-                                                    fontSize: '10px',
-                                                    fontFamily: 'monospace'
-                                                }}
-                                                formatter={(val) => [`${currSym}${Number(val).toLocaleString()}`, ""]}
-                                                labelFormatter={(label) => `Month: ${label}`}
-                                            />
-                                            <Area type="monotone" dataKey="upper_95" stroke="none" fill="rgba(30, 93, 241, 0.05)" />
-                                            <Area type="monotone" dataKey="lower_5" stroke="none" fill="rgba(30, 93, 241, 0.1)" />
-                                            <Area type="monotone" dataKey="median" stroke="hsl(var(--primary))" strokeWidth={3} fill="none" />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            ) : (
-                                /* Correlation Matrix Table */
-                                <div className="flex-1 p-6 overflow-auto">
-                                    <div className="mb-4">
-                                        <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                                            Asset Pairwise Correlation Matrix ($\rho_{'{i,j}'}$)
-                                        </h3>
-                                        <p className="text-[11px] text-muted-foreground font-mono">
-                                            Evaluated by Quantara Portfolio Analytics Engine. Green indicates negative correlation (risk reduction).
-                                        </p>
-                                    </div>
-                                    <div className="overflow-x-auto border border-border">
-                                        <table className="w-full text-xs font-mono">
-                                            <thead>
-                                                <tr className="border-b border-border bg-muted/40">
-                                                    <th className="p-3 text-left font-bold text-muted-foreground uppercase">Ticker</th>
-                                                    {holdings.map(h => (
-                                                        <th key={h.ticker} className="p-3 text-center font-bold text-foreground">
-                                                            {h.ticker}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {holdings.map(h1 => (
-                                                    <tr key={h1.ticker} className="border-b border-border/50 hover:bg-muted/20">
-                                                        <td className="p-3 font-bold text-foreground bg-muted/20">{h1.ticker}</td>
-                                                        {holdings.map(h2 => {
-                                                            const corr = result?.correlation_matrix?.[h1.ticker]?.[h2.ticker] ?? (h1.ticker === h2.ticker ? 1.0 : 0.4)
-                                                            const isSelf = h1.ticker === h2.ticker
-                                                            const isNegative = corr < 0
-                                                            const isHigh = corr > 0.6 && !isSelf
-                                                            return (
-                                                                <td 
-                                                                    key={h2.ticker} 
-                                                                    className={cn(
-                                                                        "p-3 text-center tabular-nums font-semibold",
-                                                                        isSelf ? "text-muted-foreground bg-muted/10" :
-                                                                        isNegative ? "text-green-400 bg-green-500/10 font-bold" :
-                                                                        isHigh ? "text-blue-400 bg-blue-500/10" :
-                                                                        "text-foreground"
-                                                                    )}
-                                                                >
-                                                                    {corr.toFixed(2)}
-                                                                </td>
-                                                            )
-                                                        })}
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Stats Bar */}
-                    <div className="h-72 border-t border-border grid grid-cols-12 shrink-0 bg-background transition-colors">
-                        <div className="col-span-12 xl:col-span-4 border-r border-border p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Historical Stress Overlay</h3>
-                                <span className="text-[11px] text-destructive font-black tracking-tighter uppercase">
-                                    {result ? `${result.max_drawdown.toFixed(1)}% MAX DD` : "— MAX DD"}
-                                </span>
-                            </div>
-                            <div className="flex-1 h-32 bg-card/20 border border-border/50 relative p-3 overflow-hidden group">
-                                <div className="absolute inset-0 flex items-end opacity-40">
-                                    <div className="w-full h-full flex items-end gap-[1px]">
-                                        {[20, 30, 45, 80, 50, 40, 90, 60, 40, 30, 55].map((h, i) => (
-                                            <div key={i} className="flex-1 bg-red-500/30 group-hover:bg-red-500/50 transition-colors" style={{ height: `${h}%` }} />
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="relative z-10 flex flex-col justify-between h-full text-[10px] font-mono text-muted-foreground/60 uppercase">
-                                    <span>2008 GFC Event Benchmark</span>
-                                    <div className="text-right">Risk Factor: Systemic</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="col-span-12 xl:col-span-8 bg-card/20 p-6">
-                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-4">Projected Portfolio Metrics</h3>
-                            <div className="grid grid-cols-3 gap-px bg-border border border-border">
-                                {metrics.map((m, i) => (
-                                    <div key={i} className="bg-card p-4 flex flex-col gap-1 hover:bg-muted/50 cursor-help transition-colors">
-                                        <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tight">{m.label}</span>
-                                        <span className={cn("text-2xl font-black tabular-nums tracking-tighter", m.color || "text-foreground")}>{m.value}</span>
-                                        <span className="text-[10px] text-muted-foreground/80 font-bold uppercase tracking-tighter">{m.sub}</span>
-                                    </div>
                                 ))}
                             </div>
-                        </div>
-                    </div>
+                        }>
+                        {result && result.estimated_tickers.length > 0 && (
+                            <p role="note" className="mx-4 mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                                No price history for {result.estimated_tickers.join(", ")}, so typical figures for that kind of asset are used.
+                            </p>
+                        )}
+                        {isFetching && !result ? <PanelSkeleton rows={6} /> : isError && !result ? (
+                            <PanelMessage alert>Couldn't run the simulation. Check the tickers and try again.</PanelMessage>
+                        ) : !result ? <PanelMessage>Add holdings and run the simulation.</PanelMessage> : view === "chart" ? (
+                            <div className="h-80 p-4">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                                        <XAxis dataKey="month" type="number" domain={[0, "dataMax"]} stroke="hsl(var(--muted-foreground))" fontSize={12}
+                                            ticks={Array.from({ length: horizonYears / 5 + 1 }, (_, i) => i * 60)} tickFormatter={v => `Year ${v / 12}`} />
+                                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} width={70}
+                                            tickFormatter={v => isIndian ? `₹${(v / 1e5).toLocaleString("en-IN", { maximumFractionDigits: 1 })}L` : `$${(v / 1e6).toFixed(1)}M`} />
+                                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", fontSize: 12 }}
+                                            labelFormatter={m => `Year ${(Number(m) / 12).toFixed(1)}`}
+                                            formatter={v => (Array.isArray(v) ? [`${amount(Number(v[0]))} to ${amount(Number(v[1]))}`, "9 in 10 outcomes"] : [amount(Number(v)), "Middle outcome"])} />
+                                        <Area type="monotone" dataKey={(p: TrajectoryPoint) => [p.lower_5, p.upper_95]} name="range" stroke="none" fill="hsl(var(--primary))" fillOpacity={0.12} />
+                                        <Area type="monotone" dataKey="median" name="median" stroke="hsl(var(--primary))" strokeWidth={2} fill="none" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="p-4 overflow-x-auto">
+                                <table className="text-sm">
+                                    <thead>
+                                        <tr>
+                                            <td />
+                                            {runHoldings.map(h => <th key={h.ticker} scope="col" className="px-3 py-1 text-xs font-medium text-muted-foreground">{h.ticker}</th>)}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {runHoldings.map(a => (
+                                            <tr key={a.ticker}>
+                                                <th scope="row" className="pr-3 py-1 text-left text-xs font-medium text-muted-foreground">{a.ticker}</th>
+                                                {runHoldings.map(b => {
+                                                    const c = result.correlation_matrix?.[a.ticker]?.[b.ticker]
+                                                    return (
+                                                        <td key={b.ticker} className={cn("px-3 py-1.5 text-center font-mono tabular-nums rounded-sm", c !== undefined && a.ticker !== b.ticker && corrClass(c))}>
+                                                            {c === undefined ? "—" : c.toFixed(2)}
+                                                        </td>
+                                                    )
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <p className="mt-3 text-xs text-muted-foreground">
+                                    1.00 means two holdings move exactly together. Red (0.70 and up) moves together, amber is in between,
+                                    green (below 0.40) helps diversify. From one year of daily returns.
+                                </p>
+                            </div>
+                        )}
+                    </Panel>
+
+                    {result && (
+                        <Panel id="sim-metrics" title="Risk and return"
+                            description={`${SCENARIOS.find(s => s.value === scenario)?.label} scenario. Figures are yearly unless stated.`}>
+                            <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 divide-y sm:divide-y-0 divide-border">
+                                {metrics.map(m => (
+                                    <div key={m.label} className="p-4 space-y-0.5">
+                                        <dt className="text-xs text-muted-foreground">{m.label}</dt>
+                                        <dd className="text-xl font-semibold font-mono tabular-nums text-foreground">{m.value}</dd>
+                                        <dd className="text-xs text-muted-foreground">{m.note}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </Panel>
+                    )}
                 </div>
-            </main>
+            </div>
         </div>
     )
 }
