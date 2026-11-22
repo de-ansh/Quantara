@@ -212,14 +212,14 @@ test('deals filter by investor and side, with totals', async ({ page }) => {
     deal('COHANCE.NS', 'JASUB PROPERTY HOLDINGS LLP', 'SELL', 94_000_000),
   ] }));
   await page.goto('/deals');
-  await expect(page.getByText('bought ₹34.9 Cr')).toBeVisible();
+  await expect(page.getByText(/Bought ₹34.9 Cr/)).toBeVisible();
   await page.getByLabel('Search deals').fill('motilal');
   await expect(page.getByText('COHANCE Ltd')).toHaveCount(0);
   await expect(page.getByText('CPPLUS Ltd')).toBeVisible();
   await page.getByLabel('Search deals').fill('');
   await page.getByRole('button', { name: 'Sells', exact: true }).click();
   await expect(page.getByText('CPPLUS Ltd')).toHaveCount(0);
-  await expect(page.getByText('1 deals')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '1 deal', exact: true })).toBeVisible();
 });
 
 test('tax calculators match hand-worked FY 2025-26 figures', async ({ page }) => {
@@ -273,7 +273,7 @@ test('indices open their constituents and ETFs filter by category', async ({ pag
   await page.getByRole('button', { name: 'All', exact: true }).click();
   await page.getByRole('button', { name: 'NIFTY 50', exact: true }).click();
   await expect(page.getByRole('link', { name: 'TCS', exact: true })).toBeVisible();
-  await expect(page.getByText('1 stocks, largest first')).toBeVisible();
+  await expect(page.getByText('1 stock, largest first')).toBeVisible();
 
   await page.getByRole('tab', { name: 'ETFs' }).click();
   await expect(page.getByText('₹419 Cr')).toBeVisible();

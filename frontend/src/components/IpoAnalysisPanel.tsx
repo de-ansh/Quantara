@@ -15,9 +15,9 @@ interface IpoAnalysis {
 }
 
 const TONE: Record<string, string> = {
-    Apply: "text-green-500 border-green-500/40 bg-green-500/10",
-    "Apply for listing gains": "text-amber-500 border-amber-500/40 bg-amber-500/10",
-    Avoid: "text-red-500 border-red-500/40 bg-red-500/10",
+    Apply: "text-q-risk-low border-q-risk-low/40 bg-q-risk-low/10",
+    "Apply for listing gains": "text-amber-600 dark:text-amber-400 border-amber-500/40 bg-amber-500/10",
+    Avoid: "text-q-risk-high border-q-risk-high/40 bg-q-risk-high/10",
 }
 const SUBSCRIPTION = [["qib", "Institutions (QIB)"], ["nii", "HNI (NII)"], ["retail", "Retail"], ["employee", "Employees"], ["total", "Total"]]
 
@@ -37,7 +37,7 @@ export default function IpoAnalysisPanel({ symbol, series }: { symbol: string; s
     return (
         <div className="space-y-4 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-                <span className={cn("border px-3 py-1 text-base font-black uppercase tracking-wide", data.recommendation ? TONE[data.recommendation] : "text-muted-foreground border-border")}>
+                <span className={cn("rounded-full border px-3 py-1 text-sm font-semibold", data.recommendation ? TONE[data.recommendation] : "text-muted-foreground border-border")}>
                     {data.recommendation ?? "No call"}
                 </span>
                 {data.confidence !== null && <span className="text-xs text-muted-foreground">Confidence {Math.round(data.confidence)}/100</span>}
@@ -47,11 +47,11 @@ export default function IpoAnalysisPanel({ symbol, series }: { symbol: string; s
             {data.summary && <p className="text-muted-foreground">{data.summary}</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <h4 className="font-semibold text-green-500">Pros</h4>
+                    <h4 className="font-semibold text-foreground">Pros</h4>
                     <ul className="mt-1 list-disc pl-4 space-y-0.5 text-muted-foreground">{data.pros.map(p => <li key={p}>{p}</li>)}</ul>
                 </div>
                 <div>
-                    <h4 className="font-semibold text-red-500">Cons</h4>
+                    <h4 className="font-semibold text-foreground">Cons</h4>
                     <ul className="mt-1 list-disc pl-4 space-y-0.5 text-muted-foreground">{data.cons.map(c => <li key={c}>{c}</li>)}</ul>
                 </div>
             </div>

@@ -4,7 +4,10 @@ import { Link } from "react-router-dom"
 import apiClient from "@/lib/api"
 import { useWatchlist } from "@/hooks/useWatchlist"
 import { cleanTickerDisplay } from "@/lib/currency"
-import { cn } from "@/lib/utils"
+import { chipClass } from "@/lib/utils"
+import PageHeader from "@/components/PageHeader"
+import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
+import { Button } from "@/components/ui/button"
 
 interface Filing { ticker: string; company: string | null; category: string | null; summary: string | null; filed_at: string | null; pdf_url: string | null }
 
@@ -36,52 +39,52 @@ export default function Filings() {
         && (!q || f.ticker.toLowerCase().includes(q) || (f.company ?? "").toLowerCase().includes(q) || (f.summary ?? "").toLowerCase().includes(q)))
 
     return (
-        <div className="flex flex-col flex-1 p-6 bg-background space-y-4 overflow-y-auto custom-scrollbar">
-            <header>
-                <h1 className="text-2xl font-bold text-foreground">Filings</h1>
-                <p className="text-sm text-muted-foreground">Announcements from every NSE company as they're filed. Updates every 2 minutes.</p>
-            </header>
+        <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
+            <PageHeader title="Filings" description="Announcements from every NSE company as they're filed. Updates every 2 minutes." />
             <div className="flex flex-wrap items-center gap-3">
-                <div className="flex gap-1.5" role="group" aria-label="Period">
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Period">
                     {RANGES.map(([d, label]) => (
                         <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
-                            className={cn("px-3 py-1.5 text-sm rounded-sm border", days === d ? "bg-primary border-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted")}>
+                            className={chipClass(days === d)}>
                             {label}
                         </button>
                     ))}
                 </div>
                 <input aria-label="Search filings" value={query} onChange={e => setQuery(e.target.value)} placeholder="Company, symbol or text…"
-                    className="h-9 w-56 px-3 bg-background border border-border rounded-sm text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                    className="h-9 w-56 px-3 bg-background border border-border rounded-md text-sm text-foreground outline-none focus:border-primary" />
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} /> Watchlist only
+                    <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="accent-primary" /> Watchlist only
                 </label>
             </div>
             {categories.length > 0 && (
                 <div className="flex flex-wrap gap-1.5" role="group" aria-label="Category">
                     {categories.map(([c, n]) => (
                         <button key={c} type="button" aria-pressed={category === c} onClick={() => setCategory(category === c ? null : c)}
-                            className={cn("px-2 py-1 text-xs rounded-sm border", category === c ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:bg-muted")}>
-                            {c} <span className="opacity-60">{n}</span>
+                            className={chipClass(category === c)}>
+                            {c} <span className="font-mono tabular-nums opacity-60">{n}</span>
                         </button>
                     ))}
                 </div>
             )}
-            {isLoading && <p className="text-sm text-muted-foreground">Loading filings…</p>}
+            <Panel id="filing-list" title={data ? `${rows.length} filing${rows.length === 1 ? "" : "s"}` : "Filings"}
+                description={rows.length > 300 ? `Showing the newest 300. Narrow by category or search.` : "Newest first"}>
+            {isLoading && <PanelSkeleton rows={6} />}
             {(isError || data === null) && (
-                <div role="alert" className="text-sm text-muted-foreground">
-                    NSE filings are unavailable right now. <button type="button" className="text-primary underline" onClick={() => refetch()}>Try again</button>
+                <div role="alert" className="p-4 space-y-3 text-sm">
+                    <p className="text-q-risk-high">NSE filings are unavailable right now.</p>
+                    <Button variant="outline" size="sm" onClick={() => refetch()}>Try again</Button>
                 </div>
             )}
-            {data && (
-                <ul className="bg-q-surface border border-q-border rounded-lg divide-y divide-border/50">
-                    {rows.length === 0 && <li className="p-4 text-sm text-muted-foreground">No filings match.</li>}
+            {data && rows.length === 0 && <PanelMessage>No filings match.</PanelMessage>}
+            {data && rows.length > 0 && (
+                <ul className="divide-y divide-border">
                     {rows.slice(0, 300).map((f, i) => (
-                        <li key={`${f.ticker}${f.filed_at}${i}`} className="p-3 text-sm space-y-1">
+                        <li key={`${f.ticker}${f.filed_at}${i}`} className="px-4 py-2.5 text-sm space-y-1">
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">{time(f.filed_at)}</span>
-                                <Link to={`/research/${f.ticker}`} className="font-mono font-bold text-foreground hover:text-primary">{cleanTickerDisplay(f.ticker)}</Link>
+                                <Link to={`/research/${f.ticker}`} className="font-medium text-foreground hover:text-primary">{cleanTickerDisplay(f.ticker)}</Link>
                                 <span className="text-xs text-muted-foreground">{f.company}</span>
-                                {f.category && <span className="text-[11px] px-1.5 py-0.5 rounded-sm border border-border text-muted-foreground">{f.category}</span>}
+                                {f.category && <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">{f.category}</span>}
                                 {f.pdf_url && <a href={f.pdf_url} target="_blank" rel="noreferrer" className="ml-auto text-xs text-primary hover:underline">PDF</a>}
                             </div>
                             {f.summary && <p className="text-muted-foreground">{f.summary}</p>}
@@ -89,7 +92,7 @@ export default function Filings() {
                     ))}
                 </ul>
             )}
-            {rows.length > 300 && <p className="text-xs text-muted-foreground">Showing the newest 300 of {rows.length}. Narrow by category or search.</p>}
+            </Panel>
         </div>
     )
 }

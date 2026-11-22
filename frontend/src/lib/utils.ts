@@ -19,3 +19,7 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
     if (hours < 48) return `${hours}h ago`
     return `${Math.round(hours / 24)}d ago`
 }
+
+/** A filter chip (period, type, category): the one pill style every list page uses. */
+export const chipClass = (active: boolean) =>
+    cn("rounded-full border px-3 py-1 text-sm", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")
