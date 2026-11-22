@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Upload } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import PageHeader from "@/components/PageHeader"
+import Panel from "@/components/Panel"
 import apiClient, { apiErrorDetail } from "@/lib/api"
 import { fileAsCsv } from "@/lib/holdingsCsv"
 import { parseTradebookCsv, type TradeRow } from "@/lib/tradebookCsv"
@@ -24,15 +25,14 @@ interface Plan {
 
 const inr = (n: number) => `${n < 0 ? "−" : ""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`
 const ticker = (s: string) => s.replace(/\.(NS|BO)$/, "")
-const th = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
-const td = "px-3 py-2 font-mono"
+const th = "px-3 py-2 text-left text-xs font-medium text-muted-foreground"
+const td = "px-3 py-2 font-mono tabular-nums"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
     return (
-        <Card className="bg-q-surface border-q-border shadow-none">
-            <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-bold">{title}</CardTitle></CardHeader>
-            <CardContent className="p-4 pt-0 space-y-3 text-sm overflow-x-auto">{children}</CardContent>
-        </Card>
+        <Panel id={`tax-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} title={title}>
+            <div className="p-4 space-y-3 text-sm overflow-x-auto">{children}</div>
+        </Panel>
     )
 }
 
@@ -73,16 +73,11 @@ export default function TaxHarvest() {
     }
 
     return (
-        <div className="flex flex-col flex-1 p-6 bg-background space-y-6 overflow-y-auto custom-scrollbar">
-            <header className="space-y-1 max-w-3xl">
-                <h1 className="text-2xl font-bold text-foreground">Tax harvesting</h1>
-                <p className="text-sm text-muted-foreground">
-                    Upload your tradebook (in Zerodha: Console, then Reports, then Tradebook, equity segment, downloaded as Excel or CSV).
-                    Pick files covering every buy of the shares you still hold. Trades are used for this answer only and aren't saved.
-                </p>
-            </header>
+        <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
+            <PageHeader title="Tax harvesting"
+                description="Upload your tradebook (in Zerodha: Console, then Reports, then Tradebook, equity segment, downloaded as Excel or CSV). Pick files covering every buy of the shares you still hold. Trades are used for this answer only and aren't saved." />
 
-            <label className="inline-flex w-fit items-center gap-2 border border-primary text-primary px-4 py-2 text-sm font-bold cursor-pointer hover:bg-primary/10 focus-within:ring-2 focus-within:ring-primary">
+            <label className="inline-flex w-fit items-center gap-2 rounded-md border border-primary text-primary px-4 py-2 text-sm font-medium cursor-pointer hover:bg-primary/10 focus-within:ring-2 focus-within:ring-primary">
                 <Upload className="size-4" /> {busy ? "Working…" : "Choose tradebook files"}
                 <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="sr-only" aria-label="Tradebook CSV files" disabled={busy}
                     onChange={e => {
@@ -153,7 +148,7 @@ export default function TaxHarvest() {
             )}
 
             {plan && (plan.warnings.length > 0 || plan.no_price.length > 0) && (
-                <div role="note" className="max-w-6xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs space-y-1">
+                <div role="note" className="max-w-6xl rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs space-y-1">
                     {plan.warnings.map(w => <p key={w}>{w}</p>)}
                     {plan.no_price.length > 0 && <p>No current price for {plan.no_price.map(ticker).join(", ")}, so they're left out.</p>}
                 </div>

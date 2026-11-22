@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react"
 import { useTheme } from "@/context/use-theme"
-import apiClient from "@/lib/api"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import apiClient, { apiErrorDetail } from "@/lib/api"
+import { cn } from "@/lib/utils"
+import PageHeader from "@/components/PageHeader"
+import Panel from "@/components/Panel"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Key, Globe, Eye, EyeOff, Save, RotateCcw, Settings as SettingsIcon, Sun, Moon, ShieldCheck } from "lucide-react"
+import { Eye, EyeOff, Moon, Save, Sun, Trash2 } from "lucide-react"
+
+interface Credentials { has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }
+type Status = { kind: "idle" | "saving" } | { kind: "done" | "error"; text: string }
 
 export default function Settings() {
     const { theme, setTheme } = useTheme()
@@ -13,7 +17,8 @@ export default function Settings() {
     const [hasServerKey, setHasServerKey] = useState(false)
     const [serverConfiguredKey, setServerConfiguredKey] = useState<string | null>(null)
     const [showKey, setShowKey] = useState(false)
-    const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
+    const [status, setStatus] = useState<Status>({ kind: "idle" })
+    const [confirmRemove, setConfirmRemove] = useState(false)
 
     useEffect(() => {
         // Credentials live encrypted on the server; scrub copies older builds left in the browser.
@@ -21,7 +26,7 @@ export default function Settings() {
         localStorage.removeItem("sec_user_agent")
 
         // Hydrate from server-side credentials storage
-        apiClient.get<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials")
+        apiClient.get<Credentials>("/users/credentials")
             .then(res => {
                 if (res.data) {
                     if (res.data.has_openai_key) {
@@ -39,189 +44,102 @@ export default function Settings() {
     }, [])
 
     const handleSave = async () => {
-        setSaveStatus("saving")
+        setStatus({ kind: "saving" })
         try {
             const payload: { openai_api_key?: string; sec_user_agent?: string } = {}
-            if (openaiKey.trim()) {
-                payload.openai_api_key = openaiKey.trim()
-            }
-            if (secUserAgent.trim()) {
-                payload.sec_user_agent = secUserAgent.trim()
-            }
-
-            const res = await apiClient.put<{ has_openai_key: boolean; openai_key_masked: string | null; sec_user_agent: string | null }>("/users/credentials", payload)
-            if (res.data) {
-                setHasServerKey(res.data.has_openai_key)
-                setServerConfiguredKey(res.data.openai_key_masked)
-            }
+            if (openaiKey.trim()) payload.openai_api_key = openaiKey.trim()
+            if (secUserAgent.trim()) payload.sec_user_agent = secUserAgent.trim()
+            const res = await apiClient.put<Credentials>("/users/credentials", payload)
+            setHasServerKey(res.data.has_openai_key)
+            setServerConfiguredKey(res.data.openai_key_masked)
             setOpenaiKey("")
-            setSaveStatus("saved")
-            setTimeout(() => setSaveStatus("idle"), 2500)
-        } catch {
-            setSaveStatus("idle")
+            setStatus({ kind: "done", text: "Saved." })
+        } catch (err) {
+            setStatus({ kind: "error", text: apiErrorDetail(err) ?? "Couldn't save. Please try again." })
         }
     }
 
-    const handleReset = async () => {
-        setSaveStatus("saving")
+    const handleRemove = async () => {
+        setStatus({ kind: "saving" })
         try {
             await apiClient.put("/users/credentials", { openai_api_key: "", sec_user_agent: "" })
-        } catch {
-            // Ignore server reset errors in offline mode
+            setOpenaiKey("")
+            setSecUserAgent("")
+            setHasServerKey(false)
+            setServerConfiguredKey(null)
+            setConfirmRemove(false)
+            setStatus({ kind: "done", text: "Your keys were removed." })
+        } catch (err) {
+            setStatus({ kind: "error", text: apiErrorDetail(err) ?? "Couldn't remove your keys. Please try again." })
         }
-        setOpenaiKey("")
-        setSecUserAgent("")
-        setHasServerKey(false)
-        setServerConfiguredKey(null)
-        setSaveStatus("saved")
-        setTimeout(() => setSaveStatus("idle"), 2000)
     }
 
+    const inputClass = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary placeholder:text-muted-foreground/60"
+
     return (
-        <div className="p-6 max-w-4xl mx-auto space-y-6 bg-background min-h-screen text-foreground transition-colors">
-            {/* Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-border">
-                <div>
-                    <h1 className="text-2xl font-black uppercase tracking-tight flex items-center gap-2">
-                        <SettingsIcon className="size-6 text-primary" />
-                        System Settings
-                    </h1>
-                    <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-widest mt-1">
-                        Configure visual aesthetics and security credentials
-                    </p>
+        <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
+            <PageHeader title="Settings" description="How the app looks, and the keys it uses for AI answers and US filings." />
+
+            <Panel id="theme" title="Theme">
+                <div role="group" aria-label="Theme" className="p-4 grid grid-cols-2 gap-3 max-w-md">
+                    {([["dark", "Dark", Moon], ["light", "Light", Sun]] as const).map(([value, label, Icon]) => (
+                        <button key={value} type="button" aria-pressed={theme === value} onClick={() => setTheme(value)}
+                            className={cn("flex items-center justify-center gap-2 rounded-md border p-3 text-sm",
+                                theme === value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                            <Icon className="size-4" aria-hidden="true" /> {label}
+                        </button>
+                    ))}
                 </div>
-                <Badge variant="outline" className="font-mono text-[10px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 bg-primary/5 text-primary">
-                    Node Configuration
-                </Badge>
-            </div>
+            </Panel>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Visual Settings */}
-                <Card className="bg-card border-border shadow-none">
-                    <CardHeader className="p-4 pb-2 border-b border-border/50">
-                        <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Visual Theme</CardTitle>
-                        <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
-                            Select terminal theme mode
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <button
-                                onClick={() => setTheme("dark")}
-                                className={`flex flex-col items-center justify-center p-4 border rounded-sm transition-all ${
-                                    theme === "dark"
-                                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary"
-                                        : "border-border bg-muted/20 text-muted-foreground hover:bg-muted"
-                                }`}
-                            >
-                                <Moon className="size-6 mb-2" />
-                                <span className="text-[11px] font-black uppercase tracking-widest">Institutional Dark</span>
-                            </button>
-                            <button
-                                onClick={() => setTheme("light")}
-                                className={`flex flex-col items-center justify-center p-4 border rounded-sm transition-all ${
-                                    theme === "light"
-                                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary"
-                                        : "border-border bg-muted/20 text-muted-foreground hover:bg-muted"
-                                }`}
-                            >
-                                <Sun className="size-6 mb-2" />
-                                <span className="text-[11px] font-black uppercase tracking-widest">Aero Light</span>
+            <Panel id="keys" title="Keys" description="Stored encrypted on your server, never in the browser.">
+                <div className="p-4 space-y-5">
+                    <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <label htmlFor="openai-key" className="text-sm font-medium">OpenAI API key</label>
+                            <span className="text-xs text-muted-foreground">
+                                {serverConfiguredKey ? <>In use: <span className="font-mono">{serverConfiguredKey}</span></> : "None saved; the server's key is used if it has one"}
+                            </span>
+                        </div>
+                        <div className="relative">
+                            <input id="openai-key" type={showKey ? "text" : "password"} value={openaiKey} onChange={e => setOpenaiKey(e.target.value)}
+                                autoComplete="off" placeholder={hasServerKey ? "Leave blank to keep the saved key" : "sk-proj-…"} className={cn(inputClass, "pr-10 font-mono")} />
+                            <button type="button" onClick={() => setShowKey(!showKey)} aria-label={showKey ? "Hide key" : "Show key"}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                             </button>
                         </div>
-                        <p className="text-[11px] text-muted-foreground uppercase font-bold text-center leading-relaxed">
-                            Current visual theme: <span className="text-primary font-black">{theme.toUpperCase()}</span>
-                        </p>
-                    </CardContent>
-                </Card>
+                        <p className="text-xs text-muted-foreground">Used for research reports, chat and earnings-call summaries.</p>
+                    </div>
 
-                {/* API Credentials */}
-                <Card className="bg-card border-border shadow-none">
-                    <CardHeader className="p-4 pb-2 border-b border-border/50">
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">API Credentials & Overrides</CardTitle>
-                            {hasServerKey && (
-                                <Badge variant="outline" className="text-[10px] font-mono text-green-400 border-green-500/30 bg-green-500/10 flex items-center gap-1 font-bold uppercase">
-                                    <ShieldCheck className="size-3" /> Server-Encrypted
-                                </Badge>
-                            )}
-                        </div>
-                        <CardDescription className="text-[11px] text-muted-foreground uppercase font-bold">
-                            Encrypted server-side using AES-CBC Fernet and synchronized with your session
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-4">
-                        {/* OpenAI API Key */}
-                        <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                                    <Key className="size-3.5 text-primary" />
-                                    OpenAI API Key
-                                </label>
-                                {serverConfiguredKey && (
-                                    <span className="text-[11px] font-mono text-muted-foreground">
-                                        Active: {serverConfiguredKey}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="relative">
-                                <input
-                                    type={showKey ? "text" : "password"}
-                                    value={openaiKey}
-                                    onChange={(e) => setOpenaiKey(e.target.value)}
-                                    placeholder={hasServerKey ? "•••••••••••• (Leave blank to retain active server key)" : "sk-proj-..."}
-                                    className="w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm pl-4 pr-10 py-2.5 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50 font-mono"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowKey(!showKey)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                </button>
-                            </div>
-                        </div>
+                    <div className="space-y-1.5">
+                        <label htmlFor="sec-agent" className="text-sm font-medium">SEC contact (for US filings)</label>
+                        <input id="sec-agent" type="text" value={secUserAgent} onChange={e => setSecUserAgent(e.target.value)}
+                            placeholder="Your name you@example.com" className={inputClass} />
+                        <p className="text-xs text-muted-foreground">The SEC asks every automated request for a name and email. Only needed for US stocks.</p>
+                    </div>
 
-                        {/* SEC User Agent */}
-                        <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                                <Globe className="size-3.5 text-primary" />
-                                SEC User-Agent
-                            </label>
-                            <input
-                                type="text"
-                                value={secUserAgent}
-                                onChange={(e) => setSecUserAgent(e.target.value)}
-                                placeholder="Company AdminName admin@company.com"
-                                className="w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm px-4 py-2.5 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50 font-mono"
-                            />
-                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">
-                                SEC EDGAR requests require a valid User-Agent containing name and email.
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                    {status.kind === "done" && <p role="status" className="text-sm text-q-risk-low">{status.text}</p>}
+                    {status.kind === "error" && <p role="alert" className="text-sm text-q-risk-high">{status.text}</p>}
 
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-border bg-card/20 p-4 rounded-sm">
-                <Button
-                    variant="outline"
-                    onClick={handleReset}
-                    className="flex items-center gap-2 border-border text-muted-foreground hover:text-foreground h-10 px-4 text-xs font-bold uppercase"
-                >
-                    <RotateCcw className="size-4" />
-                    Reset local variables
-                </Button>
-                <Button
-                    onClick={handleSave}
-                    disabled={saveStatus === "saving"}
-                    className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90 h-10 px-6 text-xs font-black uppercase"
-                >
-                    <Save className="size-4" />
-                    {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Values Updated" : "Save Changes"}
-                </Button>
-            </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
+                        {confirmRemove ? (
+                            <span className="flex items-center gap-2 text-sm">
+                                Remove both saved keys?
+                                <Button variant="outline" size="sm" className="text-q-risk-high" disabled={status.kind === "saving"} onClick={handleRemove}>Remove</Button>
+                                <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(false)}>Cancel</Button>
+                            </span>
+                        ) : (
+                            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" disabled={!hasServerKey && !secUserAgent} onClick={() => setConfirmRemove(true)}>
+                                <Trash2 className="size-4" /> Remove saved keys
+                            </Button>
+                        )}
+                        <Button onClick={handleSave} disabled={status.kind === "saving"} className="gap-1.5">
+                            <Save className="size-4" /> {status.kind === "saving" ? "Saving…" : "Save"}
+                        </Button>
+                    </div>
+                </div>
+            </Panel>
         </div>
     )
 }
