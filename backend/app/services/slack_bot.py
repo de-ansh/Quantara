@@ -95,6 +95,20 @@ async def answer_event(event: dict, client: Any) -> None:
     await client.chat_update(channel=channel, ts=placeholder["ts"], text=to_slack(text))
 
 
+def home_view(slack_user: str) -> dict:
+    """The bot's Home tab in Slack: how to use it, and whether this Slack user is linked."""
+    if slack_user in linked_users(settings.slack_users):
+        status = "You're linked to your Quantara account. Ask away."
+    else:
+        status = (f"You aren't linked yet. Add `SLACK_USERS={slack_user}:<your Quantara user ID>` to the "
+                  "Quantara server's .env and restart the backend.")
+    text = ("*Quantara research assistant*\n"
+            "Message me here, or @mention me in a channel, with a question about a stock or your holdings, "
+            "for example _is TCS a buy?_ I answer in a thread; reply in it to follow up.\n\n"
+            f"Your Slack ID: `{slack_user}`\n{status}")
+    return {"type": "home", "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]}
+
+
 async def run_slack_bot() -> None:
     """Hold the Socket Mode connection open; Slack delivers DMs and mentions over it."""
     from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -111,6 +125,12 @@ async def run_slack_bot() -> None:
         # Direct messages only (channels need a mention); skip edits, joins and the bot's own posts
         if event.get("channel_type") == "im" and not event.get("subtype") and not event.get("bot_id"):
             await answer_event(event, client)
+
+    @app.event("app_home_opened")
+    async def on_home(event: dict, client: Any) -> None:
+        # Without a published view Slack's Home tab spins forever
+        if event.get("tab") == "home":
+            await client.views_publish(user_id=event["user"], view=home_view(event["user"]))
 
     logger.info("Slack bot connecting (Socket Mode)")
     await AsyncSocketModeHandler(app, settings.slack_app_token).start_async()
