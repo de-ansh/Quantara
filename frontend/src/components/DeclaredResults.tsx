@@ -26,7 +26,7 @@ function Leaders({ title, rows }: { title: string; rows: Result[] }) {
             <ul className="space-y-1">
                 {rows.map(r => (
                     <li key={r.ticker} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="min-w-0 truncate"><Link to={`/research/${r.ticker}`} className="font-mono font-bold text-foreground hover:text-primary">{cleanTickerDisplay(r.ticker)}</Link> <span className="text-xs text-muted-foreground">{crore(r.profit)}</span></span>
+                        <span className="min-w-0 truncate"><Link to={`/research/${r.ticker}`} className="font-medium text-foreground hover:text-primary">{cleanTickerDisplay(r.ticker)}</Link> <span className="text-xs text-muted-foreground">{crore(r.profit)}</span></span>
                         <DayChange pct={r.profit_yoy_pct} className="text-xs shrink-0" />
                     </li>
                 ))}
@@ -95,11 +95,11 @@ export default function DeclaredResults({ only }: { only: Set<string> | null }) 
                     <tbody>{rows.slice(0, 400).map(r => (
                         <tr key={r.ticker} className="border-t border-border/50">
                             <td className="p-3 whitespace-nowrap text-muted-foreground">{day(r.filed_at)}</td>
-                            <td className="p-3"><Link to={`/research/${r.ticker}`} className="font-mono font-bold text-foreground hover:text-primary">{cleanTickerDisplay(r.ticker)}</Link><div className="text-xs text-muted-foreground truncate max-w-[180px]">{r.name}</div></td>
+                            <td className="p-3"><Link to={`/research/${r.ticker}`} className="font-medium text-foreground hover:text-primary">{cleanTickerDisplay(r.ticker)}</Link><div className="text-xs text-muted-foreground truncate max-w-[180px]">{r.name}</div></td>
                             <td className="p-3 whitespace-nowrap text-muted-foreground">{day(r.quarter_end)}{r.consolidated ? "" : " · standalone"}</td>
-                            <td className="p-3 whitespace-nowrap font-mono text-foreground">{crore(r.revenue)}</td>
+                            <td className="p-3 whitespace-nowrap font-mono tabular-nums text-foreground">{crore(r.revenue)}</td>
                             <td className="p-3"><DayChange pct={r.revenue_yoy_pct} className="text-xs" /></td>
-                            <td className="p-3 whitespace-nowrap font-mono text-foreground">{crore(r.profit)}</td>
+                            <td className="p-3 whitespace-nowrap font-mono tabular-nums text-foreground">{crore(r.profit)}</td>
                             <td className="p-3"><DayChange pct={r.profit_yoy_pct} className="text-xs" /></td>
                             <td className="p-3"><DayChange pct={r.profit_qoq_pct} className="text-xs" /></td>
                             <td className="p-3">{r.pdf_url && <a href={r.pdf_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">PDF</a>}</td>
