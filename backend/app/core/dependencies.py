@@ -1,7 +1,7 @@
 """FastAPI dependencies for dependency injection."""
 
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -66,6 +66,11 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    return user_dict(user)
+
+
+def user_dict(user: Any) -> dict:
+    """The current-user shape every endpoint receives (also used by the Slack bot)."""
     return {
         "id": str(user.id),
         "email": user.email,
