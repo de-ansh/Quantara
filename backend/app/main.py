@@ -167,6 +167,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             asyncio.create_task(run_periodic_daily_digest()),
         ]
         logger.info("Background signal, price, filing watch, directory, nightly research and daily digest tasks started")
+    if settings.slack_bot_token and settings.slack_app_token:
+        from app.services.slack_bot import run_slack_bot
+
+        bg_tasks.append(asyncio.create_task(run_slack_bot()))
     app.state.bg_tasks = bg_tasks
 
     yield
