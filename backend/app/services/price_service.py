@@ -1,8 +1,9 @@
 """Keep stock market data current: 15-minute quotes, daily fundamentals, and the background loop."""
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 import pandas as pd
 import sentry_sdk
@@ -29,7 +30,10 @@ YAHOO_CALL_TIMEOUT_SECONDS = 120
 PASS_TIMEOUT_SECONDS = 45 * 60  # a normal pass takes ~6 minutes, a slow one ~30
 
 
-async def _yahoo(fn, *args):
+_T = TypeVar("_T")
+
+
+async def _yahoo(fn: Callable[..., _T], *args: Any) -> _T:
     """Run a blocking Yahoo call off the event loop, raising TimeoutError if it takes too long."""
     # shortcut: the abandoned thread runs on until Yahoo answers or drops it; fine while hangs are rare
     return await asyncio.wait_for(asyncio.to_thread(fn, *args), YAHOO_CALL_TIMEOUT_SECONDS)
