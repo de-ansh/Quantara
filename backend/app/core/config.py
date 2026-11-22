@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # Slack incoming webhook for price alerts, watchlist signals and password-reset links (unset: off).
     # Every reset link goes to this one channel, so only use it when you own every account.
     slack_webhook_url: str | None = None
+    # Slack bot in Socket Mode (no public URL): chat with the assistant from Slack. Both tokens unset: off.
+    slack_bot_token: str | None = None  # xoxb-...
+    slack_app_token: str | None = None  # xapp-..., with the connections:write scope
+    # Who may use it: comma-separated SlackUserID:QuantaraUserID pairs, e.g. "U0123ABCD:8". Others are refused.
+    slack_users: str = ""
     # Public URL of the web UI, used to build password-reset links
     frontend_url: str = "http://localhost:5173"
 
