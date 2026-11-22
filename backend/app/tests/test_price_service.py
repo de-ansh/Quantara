@@ -154,3 +154,26 @@ async def test_fundamentals_refresh_is_capped_and_never_fetched_go_first(db_sess
     monkeypatch.setattr(price_service, "fetch_fundamentals", lambda t: calls.append(t) or {"name": t})
     assert await price_service.refresh_fundamentals(db_session, limit=2) == 2
     assert sorted(calls) == ["NEW1.NS", "NEW2.NS"]
+
+
+@pytest.mark.asyncio
+async def test_a_hung_yahoo_call_is_abandoned_and_the_pass_carries_on(db_session, monkeypatch):
+    import threading
+
+    db_session.add_all([Stock(ticker=f"S{i}.NS", name=f"S{i}") for i in range(4)])
+    await db_session.commit()
+    release = threading.Event()  # lets the hung thread finish when the test ends
+
+    def fetch(tickers):
+        if tickers[0] == "S0.NS":
+            release.wait(5)  # the first batch never answers in time
+        return dict.fromkeys(tickers, (10.0, 9.0))
+
+    monkeypatch.setattr(price_service, "fetch_quotes", fetch)
+    monkeypatch.setattr(price_service, "PRICE_BATCH", 2)
+    monkeypatch.setattr(price_service, "PRICE_BATCH_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(price_service, "YAHOO_CALL_TIMEOUT_SECONDS", 0.1)
+    try:
+        assert await price_service.refresh_prices(db_session) == 2  # the second batch still lands
+    finally:
+        release.set()
