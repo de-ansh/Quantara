@@ -1,8 +1,9 @@
 """Keep stock market data current: 15-minute quotes, daily fundamentals, and the background loop."""
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 import pandas as pd
 import sentry_sdk
@@ -24,6 +25,18 @@ PRICE_BATCH = 250
 PRICE_BATCH_PAUSE_SECONDS = 2.0
 FUNDAMENTALS_PER_PASS = 150  # ~2,600 stocks refresh daily in about 18 passes
 RISK_SCORES_PER_PASS = 50
+# A Yahoo call that never returned once held the refresh lock for 20 hours; give up and move on instead.
+YAHOO_CALL_TIMEOUT_SECONDS = 120
+PASS_TIMEOUT_SECONDS = 45 * 60  # a normal pass takes ~6 minutes, a slow one ~30
+
+
+_T = TypeVar("_T")
+
+
+async def _yahoo(fn: Callable[..., _T], *args: Any) -> _T:
+    """Run a blocking Yahoo call off the event loop, raising TimeoutError if it takes too long."""
+    # shortcut: the abandoned thread runs on until Yahoo answers or drops it; fine while hangs are rare
+    return await asyncio.wait_for(asyncio.to_thread(fn, *args), YAHOO_CALL_TIMEOUT_SECONDS)
 
 
 def fetch_quotes(tickers: list[str]) -> dict[str, tuple[float, float | None]]:
@@ -86,7 +99,7 @@ async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> 
         if start:
             await asyncio.sleep(PRICE_BATCH_PAUSE_SECONDS)
         try:
-            quotes.update(await asyncio.to_thread(fetch_quotes, tickers_all[start:start + PRICE_BATCH]))
+            quotes.update(await _yahoo(fetch_quotes, tickers_all[start:start + PRICE_BATCH]))
         except Exception as e:  # one failed batch keeps the rest of the pass
             logger.warning(f"Price refresh batch {start // PRICE_BATCH + 1} failed: {e}")
     if not quotes:
@@ -168,7 +181,11 @@ async def refresh_fundamentals(
     ).scalars().all()
     updated = 0
     for stock in due:
-        data = await asyncio.to_thread(fetch_fundamentals, stock.ticker)
+        try:
+            data = await _yahoo(fetch_fundamentals, stock.ticker)
+        except TimeoutError:
+            logger.warning(f"Fundamentals for {stock.ticker} timed out")
+            continue
         if data is None:
             continue
         for field, value in data.items():
@@ -247,7 +264,7 @@ async def refresh_technicals(db: AsyncSession, max_age: timedelta = TECHNICALS_M
             await asyncio.sleep(PRICE_BATCH_PAUSE_SECONDS)
         batch = tickers[start:start + PRICE_BATCH]
         try:
-            history = await asyncio.to_thread(fetch_year_history, batch)
+            history = await _yahoo(fetch_year_history, batch)
         except Exception as e:  # one failed batch keeps the rest of the pass
             logger.warning(f"Technicals batch {start // PRICE_BATCH + 1} failed: {e}")
             continue
@@ -286,7 +303,7 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
 
     while True:
         try:
-            await run_exclusive(PRICE_REFRESH_LOCK_ID, _job)
+            await asyncio.wait_for(run_exclusive(PRICE_REFRESH_LOCK_ID, _job), PASS_TIMEOUT_SECONDS)
         except asyncio.CancelledError:
             raise
         except Exception as e:
