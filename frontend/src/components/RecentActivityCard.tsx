@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { History } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import Panel from "@/components/Panel"
 import api from "@/lib/api"
 import { parseUtc } from "@/lib/utils"
 
@@ -31,15 +30,10 @@ export default function RecentActivityCard() {
     })
 
     return (
-        <Card className="bg-card border-border shadow-none">
-            <CardHeader className="p-4 border-b border-border">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                    <History className="size-4 text-primary" /> Recent Activity
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
+        <Panel id="recent-activity" title="Recent activity" description={"Sign-ins and account changes, newest first."}>
+            <div>
                 {isLoading && <p className="p-4 text-xs text-muted-foreground">Loading...</p>}
-                {isError && <p className="p-4 text-xs text-red-400">Could not load activity.</p>}
+                {isError && <p className="p-4 text-xs text-q-risk-high">Could not load activity.</p>}
                 {!isLoading && !isError && logs.length === 0 && (
                     <p className="p-4 text-xs text-muted-foreground">No activity recorded yet.</p>
                 )}
@@ -49,7 +43,7 @@ export default function RecentActivityCard() {
                             <span className="text-foreground">
                                 {ACTION_LABELS[log.action] ?? log.action.replace(/_/g, " ")}
                                 {log.status !== "success" && (
-                                    <span className="ml-2 text-[11px] font-bold uppercase text-red-400">{log.status}</span>
+                                    <span className="ml-2 text-xs text-q-risk-high">{log.status}</span>
                                 )}
                             </span>
                             <time dateTime={log.timestamp} className="font-mono text-[11px] text-muted-foreground">
@@ -58,7 +52,7 @@ export default function RecentActivityCard() {
                         </li>
                     ))}
                 </ul>
-            </CardContent>
-        </Card>
+            </div>
+        </Panel>
     )
 }

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Download, Loader2, Trash2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import Panel from "@/components/Panel"
 import { Button } from "@/components/ui/button"
 import api, { apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
@@ -49,19 +49,15 @@ export default function YourDataCard() {
     }
 
     return (
-        <Card className="bg-card border-border shadow-none">
-            <CardHeader className="p-4 border-b border-border">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider">Your Data</CardTitle>
-                <CardDescription className="text-[11px] uppercase font-bold">Download or permanently delete everything we store</CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
+        <Panel id="your-data" title="Your data" description={"Download, or permanently delete, everything stored about you."}>
+            <div className="p-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={handleExport} disabled={exporting} className="gap-2">
                         {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                         Download my data
                     </Button>
                     {!confirming && (
-                        <Button variant="outline" onClick={() => setConfirming(true)} className="gap-2 text-red-400 border-red-500/40 hover:bg-red-500/10">
+                        <Button variant="outline" onClick={() => setConfirming(true)} className="gap-2 text-q-risk-high border-q-risk-high/40 hover:bg-q-risk-high/10">
                             <Trash2 className="size-4" /> Delete account
                         </Button>
                     )}
@@ -73,7 +69,7 @@ export default function YourDataCard() {
                             This permanently deletes your account, portfolios, watchlist, alerts and activity history. It cannot be undone.
                         </p>
                         <label className="block space-y-1">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Confirm with your password</span>
+                            <span className="text-sm font-medium text-foreground">Confirm with your password</span>
                             <input type="password" autoComplete="current-password" required value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 className="w-full max-w-sm bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground outline-none focus:border-red-400" />
@@ -92,8 +88,8 @@ export default function YourDataCard() {
                         </div>
                     </form>
                 )}
-                {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-            </CardContent>
-        </Card>
+                {error && <p role="alert" className="text-xs text-q-risk-high">{error}</p>}
+            </div>
+        </Panel>
     )
 }

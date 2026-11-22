@@ -1,11 +1,8 @@
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { KeyRound, Mail } from "lucide-react"
+import AuthLayout, { AuthError, AuthField } from "@/components/AuthLayout"
+import { Button } from "@/components/ui/button"
 import { api, apiErrorDetail } from "@/lib/api"
-
-const inputClass =
-    "w-full bg-[#0A0E12] border border-[#282d39] text-white text-sm px-10 py-3 focus:border-[#1e5df1] focus:ring-0 outline-none placeholder:text-[#9ca5ba]/50"
-const labelClass = "text-[11px] font-bold uppercase tracking-wider text-[#9ca5ba]"
 
 // Without ?token= this requests a reset link (posted to Slack); with it, it sets the new password.
 export default function ResetPassword() {
@@ -45,93 +42,35 @@ export default function ResetPassword() {
     }
 
     return (
-        <div className="min-h-screen bg-[#f5f6f8] dark:bg-[#0A0E12] flex items-center justify-center p-4 font-inter antialiased">
-            <div className="w-full max-w-[420px] bg-[#151B23] border border-[#282d39] shadow-2xl">
-                <div className="p-6 border-b border-[#282d39] bg-[#0A0E12]/30">
-                    <h2 className="text-xl font-bold text-white tracking-tight">
-                        {token ? "Set a New Password" : "Reset Password"}
-                    </h2>
-                    <p className="text-[#9ca5ba] text-xs mt-1">
-                        {token ? "The link works once and expires after 15 minutes." : "A reset link will be posted to the configured Slack channel."}
-                    </p>
+        <AuthLayout title={token ? "Set a new password" : "Reset your password"}
+            description={token ? "The link works once and expires after 15 minutes." : "A reset link will be posted to the configured Slack channel."}>
+            {done ? (
+                <div className="space-y-4">
+                    <p className="text-sm" role="status">{done}</p>
+                    <Link to="/login" className="text-sm text-primary hover:underline">Back to sign in</Link>
                 </div>
-
-                {done ? (
-                    <div className="p-6 space-y-5">
-                        <p className="text-sm text-white" role="status">{done}</p>
-                        <Link to="/login" className="text-[11px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
-                    </div>
-                ) : (
-                    <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                        <div className="space-y-1.5">
-                            <label className={labelClass} htmlFor="reset-value">{token ? "New Password" : "Email"}</label>
-                            <div className="relative">
-                                {token
-                                    ? <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />
-                                    : <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />}
-                                <input
-                                    className={inputClass}
-                                    id="reset-value"
-                                    type={token ? "password" : "email"}
-                                    autoComplete={token ? "new-password" : "email"}
-                                    minLength={token ? 8 : undefined}
-                                    value={value}
-                                    onChange={(e) => setValue(e.target.value)}
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        {token && (
-                            <div className="space-y-1.5">
-                                <label className={labelClass} htmlFor="reset-confirm">Confirm Password</label>
-                                <div className="relative">
-                                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca5ba] size-4" />
-                                    <input
-                                        className={inputClass}
-                                        id="reset-confirm"
-                                        type="password"
-                                        autoComplete="new-password"
-                                        value={confirm}
-                                        onChange={(e) => setConfirm(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {token && (
-                            <label className="flex items-start gap-2 text-xs text-[#9ca5ba]">
-                                <input
-                                    type="checkbox"
-                                    checked={disableTwoFactor}
-                                    onChange={(e) => setDisableTwoFactor(e.target.checked)}
-                                    className="mt-0.5"
-                                />
-                                <span>I lost my authenticator app and my recovery codes: also turn off two-factor login.</span>
-                            </label>
-                        )}
-
-                        {error && (
-                            <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-bold uppercase tracking-wider">
-                                {error}
-                            </div>
-                        )}
-
-                        <button
-                            className="w-full bg-[#1e5df1] hover:bg-[#1e5df1]/90 text-white font-bold py-3.5 uppercase tracking-widest text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            type="submit"
-                            disabled={isLoading}
-                        >
-                            {isLoading ? "Working..." : token ? "Update Password" : "Send Reset Link"}
-                        </button>
-
-                        <div className="text-right">
-                            <Link to="/login" className="text-[11px] text-[#1e5df1] hover:underline font-bold uppercase">Back to sign in</Link>
-                        </div>
-                    </form>
-                )}
-            </div>
-        </div>
+            ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <AuthField id="reset-value" label={token ? "New password" : "Email"} type={token ? "password" : "email"}
+                        autoComplete={token ? "new-password" : "email"} minLength={token ? 8 : undefined}
+                        value={value} onChange={e => setValue(e.target.value)} required />
+                    {token && (
+                        <AuthField id="reset-confirm" label="Confirm password" type="password" autoComplete="new-password"
+                            value={confirm} onChange={e => setConfirm(e.target.value)} required />
+                    )}
+                    {token && (
+                        <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <input type="checkbox" checked={disableTwoFactor} onChange={e => setDisableTwoFactor(e.target.checked)} className="mt-1 accent-primary" />
+                            <span>I lost my authenticator app and my recovery codes: also turn off two-factor login.</span>
+                        </label>
+                    )}
+                    {error && <AuthError>{error}</AuthError>}
+                    <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Working…" : token ? "Update password" : "Send reset link"}
+                    </Button>
+                    <p className="text-center text-sm"><Link to="/login" className="text-primary hover:underline">Back to sign in</Link></p>
+                </form>
+            )}
+        </AuthLayout>
     )
 }

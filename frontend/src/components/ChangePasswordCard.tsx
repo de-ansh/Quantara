@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { KeyRound, Loader2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
+import Panel from "@/components/Panel"
 import { Button } from "@/components/ui/button"
 import api, { apiErrorDetail } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
@@ -42,32 +42,26 @@ export default function ChangePasswordCard() {
     const inputClass = "w-full bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground focus:border-primary outline-none"
 
     return (
-        <Card className="bg-card border-border shadow-none">
-            <CardHeader className="p-4 border-b border-border">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                    <KeyRound className="size-4 text-primary" /> Change Password
-                </CardTitle>
-                <CardDescription className="text-[11px] uppercase font-bold">Signs out all other sessions</CardDescription>
-            </CardHeader>
-            <CardContent className="p-4">
+        <Panel id="change-password" title="Change password" description={"Signs out all your other sessions."}>
+            <div className="p-4">
                 <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                     <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Current password</span>
+                        <span className="text-sm font-medium text-foreground">Current password</span>
                         <input type="password" autoComplete="current-password" required value={current}
                             onChange={e => setCurrent(e.target.value)} className={inputClass} />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">New password</span>
+                        <span className="text-sm font-medium text-foreground">New password</span>
                         <input type="password" autoComplete="new-password" required minLength={8} value={next}
                             onChange={e => setNext(e.target.value)} className={inputClass} />
                     </label>
                     <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Confirm new password</span>
+                        <span className="text-sm font-medium text-foreground">Confirm new password</span>
                         <input type="password" autoComplete="new-password" required minLength={8} value={confirm}
                             onChange={e => setConfirm(e.target.value)} className={inputClass} />
                     </label>
                     <div className="md:col-span-3 flex items-center justify-between gap-3">
-                        <p role="status" className={message?.ok ? "text-xs text-green-400" : "text-xs text-red-400"}>
+                        <p role="status" className={message?.ok ? "text-xs text-q-risk-low" : "text-xs text-q-risk-high"}>
                             {message?.text}
                         </p>
                         <Button type="submit" disabled={saving} className="gap-2">
@@ -75,7 +69,7 @@ export default function ChangePasswordCard() {
                         </Button>
                     </div>
                 </form>
-            </CardContent>
-        </Card>
+            </div>
+        </Panel>
     )
 }
