@@ -39,6 +39,14 @@ def test_bold_becomes_slack_bold():
     assert slack_bot.to_slack("**Hold** at **₹3,900**") == "*Hold* at *₹3,900*"
 
 
+def test_home_tab_shows_the_slack_id_and_whether_it_is_linked(monkeypatch):
+    monkeypatch.setattr(slack_bot.settings, "slack_users", "U1:8")
+    linked = slack_bot.home_view("U1")["blocks"][0]["text"]["text"]
+    unlinked = slack_bot.home_view("U2")["blocks"][0]["text"]["text"]
+    assert "`U1`" in linked and "You're linked" in linked
+    assert "SLACK_USERS=U2:" in unlinked
+
+
 @pytest.mark.asyncio
 async def test_unlinked_slack_user_is_refused_without_an_answer(monkeypatch):
     monkeypatch.setattr(slack_bot.settings, "slack_users", "U1:8")
