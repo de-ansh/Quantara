@@ -101,21 +101,15 @@ test.describe('Dashboard E2E Tests', () => {
 
     // Verify we navigated to Settings
     await expect(page).toHaveURL(/\/settings/);
-    await expect(page.locator('h1')).toContainText('System Settings');
+    await expect(page.locator('h1')).toContainText('Settings');
 
-    // Verify theme controls are present
-    const lightThemeBtn = page.locator('text=Aero Light');
-    const darkThemeBtn = page.locator('text=Institutional Dark');
-    
-    await expect(lightThemeBtn).toBeVisible();
-    await expect(darkThemeBtn).toBeVisible();
-
-    // Toggle theme to Aero Light
+    // Theme buttons say which is on, and switching changes the page
+    const themes = page.getByRole('group', { name: 'Theme' });
+    const lightThemeBtn = themes.getByRole('button', { name: 'Light' });
+    await expect(themes.getByRole('button', { name: 'Dark' })).toBeVisible();
     await lightThemeBtn.click();
-    
-    // Check if the html/body class reflects light theme or localStorage holds light theme
-    const activeThemeText = page.locator('text=Current visual theme:');
-    await expect(activeThemeText).toContainText('LIGHT');
+    await expect(lightThemeBtn).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('html')).toHaveClass(/light/);
   });
 });
 

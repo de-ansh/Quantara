@@ -17,14 +17,12 @@ test.describe('Authentication Flow', () => {
     // Expect redirection to login
     await expect(page).toHaveURL(/\/login/);
     
-    // Check that institutional login title is present
-    await expect(page.getByText('Institutional Login')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   });
 
   test('should display login fields and allow typing credentials', async ({ page }) => {
     await page.goto('/login');
     
-    // Selectors for work email and access key
     const emailInput = page.locator('#email');
     const passwordInput = page.locator('#password');
     const submitBtn = page.locator('button[type="submit"]');
