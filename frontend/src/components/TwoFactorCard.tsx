@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { Loader2, Smartphone } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import Panel from "@/components/Panel"
 import { Button } from "@/components/ui/button"
 import api, { apiErrorDetail } from "@/lib/api"
 
@@ -68,21 +68,13 @@ export default function TwoFactorCard() {
     }
 
     const inputClass = "w-full bg-background border border-border text-sm px-3 py-2 rounded-sm text-foreground focus:border-primary outline-none"
-    const labelClass = "text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
+    const labelClass = "text-sm font-medium text-foreground"
 
     return (
-        <Card className="bg-card border-border shadow-none">
-            <CardHeader className="p-4 border-b border-border">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                    <Smartphone className="size-4 text-primary" /> Two-Factor Login
-                </CardTitle>
-                <CardDescription className="text-[11px] uppercase font-bold">
-                    {status?.two_factor_enabled
-                        ? `On · ${status.recovery_codes_left} recovery codes left`
-                        : "Off · asks for an authenticator-app code at sign-in"}
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4 text-sm">
+        <Panel id="two-factor" title="Two-factor login" description={status?.two_factor_enabled
+                    ? `On. ${status.recovery_codes_left} recovery codes left.`
+                    : "Off. When on, sign-in also asks for a code from an authenticator app."}>
+            <div className="p-4 space-y-4 text-sm">
                 {recoveryCodes && (
                     <div className="space-y-2" role="status">
                         <p className="font-bold text-foreground">Save these recovery codes now.</p>
@@ -151,8 +143,8 @@ export default function TwoFactorCard() {
                     </form>
                 )}
 
-                {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-            </CardContent>
-        </Card>
+                {error && <p role="alert" className="text-xs text-q-risk-high">{error}</p>}
+            </div>
+        </Panel>
     )
 }
