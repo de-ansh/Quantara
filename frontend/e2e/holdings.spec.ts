@@ -30,7 +30,7 @@ test('holdings page shows value, P&L and separate currency totals', async ({ pag
           market_value: 8000, cost_value: 7000, unrealized_pnl: 1000, unrealized_pnl_pct: 14.29, day_change: -200, weight_by_value: 100 },
         { kind: 'fund', ticker: '200001', name: 'Example Flexi Cap Fund - Direct Plan - Growth', sector: 'Equity Scheme - Flexi Cap Fund',
           currency: 'INR', shares: 20, avg_cost: 40, price: 50, market_value: 1000, cost_value: 800, unrealized_pnl: 200,
-          unrealized_pnl_pct: 25, day_change: 10, weight_by_value: 11.1 },
+          unrealized_pnl_pct: 25, day_change: 10, weight_by_value: 11.1, price_date: '2020-01-03' },
       ],
       totals: [
         { currency: 'INR', market_value: 8000, cost_value: 7000, unrealized_pnl: 1000, unrealized_pnl_pct: 14.29, day_change: -200, sector_allocation: { IT: 100 } },
@@ -54,6 +54,43 @@ test('holdings page shows value, P&L and separate currency totals', async ({ pag
   await expect(fund).toContainText('Mutual fund · Equity Scheme - Flexi Cap Fund');
   await expect(fund).toContainText('₹1,000.00');
   await expect(fund.getByRole('link')).toHaveCount(0);
+  await expect(fund).toContainText('NAV of 3 Jan');  // an old NAV says so, instead of passing for today's move
+
+  // Worst performer first; clicking the header flips the order
+  const firstHolding = () => page.getByRole('rowheader').first();
+  await expect(firstHolding()).toContainText('TCS.NS');  // +14.29%, below the fund (+25%) and AAPL (+33.33%)
+  await page.getByRole('button', { name: 'Gain or loss' }).click();
+  await expect(firstHolding()).toContainText('AAPL');
+  await expect(page.getByRole('columnheader', { name: 'Gain or loss' })).toHaveAttribute('aria-sort', 'descending');
+});
+
+test('portfolios page totals every portfolio and shows each one\'s value, today and gain or loss', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  const portfolio = (id: number, name: string) => ({ id, name, description: null, initial_investment: 5000, positions: [], funds: [], created_at: now, updated_at: now });
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({
+    json: { portfolios: [portfolio(1, 'Stocks'), portfolio(2, 'Funds'), portfolio(3, 'Ideas')], total_count: 3 },
+  }));
+  const totals = (mv: number, cost: number, day: number) => [{ currency: 'INR', market_value: mv, cost_value: cost,
+    unrealized_pnl: mv - cost, unrealized_pnl_pct: ((mv - cost) / cost) * 100, day_change: day, sector_allocation: {} }];
+  const perf = (id: number, t: object[]) => ({ portfolio_id: id, prices_as_of: now, weight_only_tickers: [], holdings: [], totals: t });
+  await page.route('**/api/v1/portfolio/updates', route => route.fulfill({ json: { portfolios: [
+    { portfolio_id: 1, name: 'Stocks', updates: {}, performance: perf(1, totals(9000, 10000, -300)) },
+    { portfolio_id: 2, name: 'Funds', updates: {}, performance: perf(2, totals(6000, 5000, 60)) },
+    { portfolio_id: 3, name: 'Ideas', updates: {}, performance: perf(3, []) },  // weights only: not valued
+  ] } }));
+
+  await page.goto('/portfolios');
+  const all = page.getByRole('region', { name: 'All 2 portfolios together' });
+  await expect(all).toContainText('₹15,000.00');   // 9,000 + 6,000
+  await expect(all).toContainText('-₹240.00');     // -300 + 60
+  await expect(all).toContainText('0.00%');        // -1,000 + 1,000: even overall
+  const stocks = page.getByRole('region', { name: 'Stocks' });
+  await expect(stocks).toContainText('₹9,000.00');
+  await expect(stocks).toContainText('-₹1,000.00');
+  await expect(stocks).toContainText('-10.00%');
+  await expect(stocks).not.toContainText('invested');
+  await expect(page.getByRole('region', { name: 'Ideas' })).toContainText(/5,000\s*invested/);  // no share counts: what was put in
 });
 
 test('stock detail shows a price chart with range switching', async ({ page }) => {

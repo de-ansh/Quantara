@@ -5,6 +5,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.clock import utcnow
+from app.models.listed_security import ListedSecurity
 from app.models.stock import Stock
 from app.services import price_service, stock_lookup
 
@@ -40,6 +41,8 @@ async def test_performance_values_holdings_per_currency(client: AsyncClient, db_
         Stock(ticker="TCS.NS", name="TCS", sector="IT", price=4000.0,
               previous_close=4100.0, price_updated_at=now),
         Stock(ticker="GLD", name="Gold", price=180.0, price_updated_at=now),
+        Stock(ticker="NIFTYBEES.NS", name="Nifty BeES", price=290.0, previous_close=292.0, price_updated_at=now),
+        ListedSecurity(ticker="NIFTYBEES.NS", name="Nifty BeES", exchange="NSE", isin="INF204KB14I2", is_etf=True),
     ])
     await db_session.commit()
     headers = await _headers(client)
@@ -50,7 +53,8 @@ async def test_performance_values_holdings_per_currency(client: AsyncClient, db_
             {"ticker": "AAPL", "weight": 0.4, "shares": 10, "cost_basis": 150},
             {"ticker": "MSFT", "weight": 0.3, "shares": 5, "cost_basis": 0},     # no cost given
             {"ticker": "TCS.NS", "weight": 0.2, "shares": 2, "cost_basis": 3500},
-            {"ticker": "GLD", "weight": 0.1},                                   # weight-only
+            {"ticker": "GLD", "weight": 0.05},                                  # weight-only
+            {"ticker": "NIFTYBEES.NS", "weight": 0.05, "shares": 10, "cost_basis": 280},  # an ETF: no sector
         ],
     })
     assert created.status_code == 201
@@ -72,7 +76,9 @@ async def test_performance_values_holdings_per_currency(client: AsyncClient, db_
     assert totals["USD"]["unrealized_pnl"] == 500.0  # only positions with a cost basis
     assert totals["USD"]["cost_value"] == 1500.0
     assert totals["USD"]["sector_allocation"] == {"Technology": 100.0}
-    assert totals["INR"]["unrealized_pnl"] == 1000.0 and totals["INR"]["day_change"] == -200.0
+    assert totals["INR"]["unrealized_pnl"] == 1000.0 + 100.0 and totals["INR"]["day_change"] == -200.0 - 20.0
+    assert by["NIFTYBEES.NS"]["sector"] == "ETF"  # labelled, not lumped into "Unclassified"
+    assert set(totals["INR"]["sector_allocation"]) == {"IT", "ETF"}
 
 
 @pytest.mark.asyncio

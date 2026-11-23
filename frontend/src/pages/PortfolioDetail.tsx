@@ -1,35 +1,21 @@
+import { useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Play } from "lucide-react"
+import { ArrowDown, ArrowLeft, ArrowUp, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import PageHeader from "@/components/PageHeader"
 import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { cn, timeAgo } from "@/lib/utils"
-import { usePortfolioPerformance, usePortfolios, type CurrencyTotals } from "@/hooks/usePortfolios"
-import { money, pct, tone } from "@/lib/money"
+import PortfolioTotals from "@/components/PortfolioTotals"
+import { staleNav } from "@/lib/format"
+import { usePortfolioPerformance, usePortfolios, type CurrencyTotals, type HoldingPerformance } from "@/hooks/usePortfolios"
+import { dayPct, money, pct, tone } from "@/lib/money"
 
 function Totals({ t }: { t: CurrencyTotals }) {
     const sectors = Object.entries(t.sector_allocation ?? {}).sort((a, b) => b[1] - a[1])
     return (
         <Panel id={`totals-${t.currency}`} title={`${t.currency} holdings`}>
             <div className="p-4 space-y-4">
-                <dl className="grid grid-cols-3 gap-3">
-                    <div>
-                        <dt className="text-xs text-muted-foreground">Value now</dt>
-                        <dd className="text-xl font-semibold font-mono tabular-nums text-foreground">{money(t.market_value, t.currency)}</dd>
-                    </div>
-                    <div>
-                        <dt className="text-xs text-muted-foreground">Gain or loss so far</dt>
-                        <dd className={cn("font-mono tabular-nums", tone(t.unrealized_pnl))}>
-                            {money(t.unrealized_pnl, t.currency, true)} <span className="text-xs">({pct(t.unrealized_pnl_pct)})</span>
-                        </dd>
-                    </div>
-                    <div>
-                        <dt className="text-xs text-muted-foreground">Today</dt>
-                        <dd className={cn("font-mono tabular-nums", tone(t.day_change))}>
-                            {money(t.day_change, t.currency, true)}
-                        </dd>
-                    </div>
-                </dl>
+                <PortfolioTotals totals={[t]} size="lg" />
                 {sectors.length > 0 && (
                     <div className="space-y-2 pt-3 border-t border-border">
                         <p className="text-xs font-medium text-muted-foreground">By sector</p>
@@ -48,7 +34,26 @@ function Totals({ t }: { t: CurrencyTotals }) {
     )
 }
 
-const COLUMNS = ["Holding", "Shares / units", "Avg cost", "Price / NAV", "Value", "Weight", "Today", "Gain or loss"]
+type SortKey = "name" | "value" | "today" | "gain"
+// Columns, and the sort each header offers (null: not sortable)
+const COLUMNS: [string, SortKey | null][] = [["Holding", "name"], ["Shares / units", null], ["Avg cost", null], ["Price / NAV", null],
+    ["Value", "value"], ["Weight", null], ["Today", "today"], ["Gain or loss", "gain"]]
+const SORT_VALUE: Record<SortKey, (h: HoldingPerformance) => number | string | null> = {
+    name: h => (h.kind === "fund" ? h.name : h.ticker),
+    value: h => h.market_value,
+    today: h => dayPct(h.market_value, h.day_change),
+    gain: h => h.unrealized_pnl_pct,
+}
+
+/** Holdings in the chosen order; unknown values (no price, no cost) always last. */
+function sortHoldings(holdings: HoldingPerformance[], key: SortKey, ascending: boolean) {
+    return [...holdings].sort((a, b) => {
+        const x = SORT_VALUE[key](a), y = SORT_VALUE[key](b)
+        if (x === null || y === null) return x === null ? (y === null ? 0 : 1) : -1
+        const order = typeof x === "string" ? x.localeCompare(String(y)) : x - (y as number)
+        return ascending ? order : -order
+    })
+}
 
 export default function PortfolioDetail() {
     const id = Number(useParams().id)
@@ -56,6 +61,9 @@ export default function PortfolioDetail() {
     const { data: portfolios = [] } = usePortfolios()
     const portfolio = portfolios.find(p => p.id === id)
     const { data: perf, isLoading, isError } = usePortfolioPerformance(id)
+    // Worst first: what's losing money is what needs a look
+    const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({ key: "gain", ascending: true })
+    const sortBy = (key: SortKey) => setSort(s => ({ key, ascending: s.key === key ? !s.ascending : key === "name" || key === "gain" || key === "today" }))
 
     return (
         <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -87,13 +95,21 @@ export default function PortfolioDetail() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="text-xs text-muted-foreground">
-                                            {COLUMNS.map((h, i) => (
-                                                <th key={h} scope="col" className={cn("px-4 py-2 font-medium whitespace-nowrap", i === 0 ? "text-left" : "text-right")}>{h}</th>
+                                            {COLUMNS.map(([h, key], i) => (
+                                                <th key={h} scope="col" className={cn("px-4 py-2 font-medium whitespace-nowrap", i === 0 ? "text-left" : "text-right")}
+                                                    aria-sort={key && sort.key === key ? (sort.ascending ? "ascending" : "descending") : undefined}>
+                                                    {key ? (
+                                                        <button type="button" onClick={() => sortBy(key)} className="inline-flex items-center gap-1 hover:text-foreground">
+                                                            {h}
+                                                            {sort.key === key && (sort.ascending ? <ArrowUp className="size-3" aria-hidden="true" /> : <ArrowDown className="size-3" aria-hidden="true" />)}
+                                                        </button>
+                                                    ) : h}
+                                                </th>
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
-                                        {perf.holdings.map(h => (
+                                        {sortHoldings(perf.holdings, sort.key, sort.ascending).map(h => (
                                             <tr key={`${h.kind}-${h.ticker}`} className="hover:bg-muted/40">
                                                 <th scope="row" className="px-4 py-2 text-left font-normal">
                                                     {h.kind === "fund" ? (
@@ -110,7 +126,11 @@ export default function PortfolioDetail() {
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums">{money(h.price, h.currency)}</td>
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums font-medium">{money(h.market_value, h.currency)}</td>
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums">{h.weight_by_value === null ? "—" : `${h.weight_by_value.toFixed(1)}%`}</td>
-                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums", tone(h.day_change))}>{money(h.day_change, h.currency, true)}</td>
+                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums", tone(h.day_change))}>
+                                                    {money(h.day_change, h.currency, true)}
+                                                    <span className="block text-xs">{pct(dayPct(h.market_value, h.day_change))}</span>
+                                                    {staleNav(h.price_date) && <span className="block text-[11px] font-sans text-muted-foreground">{staleNav(h.price_date)}</span>}
+                                                </td>
                                                 <td className={cn("px-4 py-2 text-right font-mono tabular-nums", tone(h.unrealized_pnl))}>
                                                     {money(h.unrealized_pnl, h.currency, true)}
                                                     <span className="block text-xs">{pct(h.unrealized_pnl_pct)}</span>
