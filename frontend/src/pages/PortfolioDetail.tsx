@@ -126,12 +126,12 @@ export default function PortfolioDetail() {
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums">{money(h.price, h.currency)}</td>
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums font-medium">{money(h.market_value, h.currency)}</td>
                                                 <td className="px-4 py-2 text-right font-mono tabular-nums">{h.weight_by_value === null ? "—" : `${h.weight_by_value.toFixed(1)}%`}</td>
-                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums", tone(h.day_change))}>
+                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap", tone(h.day_change))}>
                                                     {money(h.day_change, h.currency, true)}
                                                     <span className="block text-xs">{pct(dayPct(h.market_value, h.day_change))}</span>
                                                     {staleNav(h.price_date) && <span className="block text-[11px] font-sans text-muted-foreground">{staleNav(h.price_date)}</span>}
                                                 </td>
-                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums", tone(h.unrealized_pnl))}>
+                                                <td className={cn("px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap", tone(h.unrealized_pnl))}>
                                                     {money(h.unrealized_pnl, h.currency, true)}
                                                     <span className="block text-xs">{pct(h.unrealized_pnl_pct)}</span>
                                                 </td>

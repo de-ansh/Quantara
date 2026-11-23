@@ -128,3 +128,39 @@ async def test_chat_stream_runs_tools_then_streams_the_answer(client, db_session
     assistant_call, tool_msg = FakeStreamingOpenAI.calls[1][-2:]
     assert assistant_call["tool_calls"][0]["function"] == {"name": "stock_snapshot", "arguments": '{"ticker": "AAPL"}'}
     assert json.loads(tool_msg["content"])["stock"]["name"] == "Apple Inc."
+
+
+@pytest.mark.asyncio
+async def test_my_holdings_includes_funds_valued_like_the_portfolio_page(db_session):
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from app.core.clock import utcnow
+    from app.core.dependencies import user_dict
+    from app.models.mutual_fund import MutualFund
+    from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
+    from app.models.user import User
+
+    user = (await db_session.execute(select(User))).scalars().first()
+    db_session.add_all([
+        Stock(ticker="TCS.NS", name="TCS", price=4000.0, previous_close=3900.0, price_updated_at=utcnow()),
+        MutualFund(scheme_code=200001, name="Example Flexi Cap Fund - Direct Plan - Growth", nav=50.0, prev_nav=49.0,
+                   nav_date=date(2026, 11, 20)),
+    ])
+    await db_session.flush()
+    pf = Portfolio(user_id=user.id, name="Everything")
+    pf.positions.append(PortfolioPosition(ticker="TCS.NS", weight=1.0, shares=2, cost_basis=3500))
+    pf.funds.append(PortfolioFund(scheme_code=200001, units=10, cost_basis=40))
+    db_session.add(pf)
+    await db_session.commit()
+
+    out = await chat_api.my_holdings(user_dict(user), db_session)
+    [p] = out["portfolios"]
+    by = {h["ticker"]: h for h in p["holdings"]}
+    assert by["TCS.NS"]["unrealized_pnl"] == 1000.0 and by["TCS.NS"]["day_change"] == 200.0
+    fund = by["200001"]
+    assert fund["kind"] == "fund" and fund["name"].startswith("Example Flexi Cap")
+    assert fund["market_value"] == 500.0 and fund["unrealized_pnl_pct"] == 25.0 and fund["price_date"] == "2026-11-20"
+    assert p["totals"][0]["market_value"] == 8500.0 and "sector_allocation" not in p["totals"][0]
+    json.dumps(out)  # goes to the model as JSON
