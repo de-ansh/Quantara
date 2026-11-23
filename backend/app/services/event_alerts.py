@@ -20,7 +20,7 @@ from app.models.price_alert import PriceAlert
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.watchlist import WatchlistItem
-from app.services.notify import notify_slack
+from app.services.notify import notify_slack, slack_configured
 from app.services.nse_market import event_feeds
 
 logger = get_logger(__name__)
@@ -129,7 +129,7 @@ async def send_daily_digest_if_due(now: datetime | None = None) -> bool:
     from app.core.database import AsyncSessionLocal
 
     now = now or datetime.now(IST)
-    if now.weekday() >= 5 or now.hour < DIGEST_HOUR_IST or not settings.slack_webhook_url:
+    if now.weekday() >= 5 or now.hour < DIGEST_HOUR_IST or not slack_configured():
         return False
     today = now.date()
     key = f"digest:sent:{today.isoformat()}"
@@ -145,9 +145,19 @@ async def send_daily_digest_if_due(now: datetime | None = None) -> bool:
             return False
     finally:
         await redis.aclose()
-    await notify_slack(text)
+    if not await notify_slack(text):
+        await _release(key)  # so the next check tries again
+        return False
     logger.info("Daily Slack digest sent")
     return True
+
+
+async def _release(key: str) -> None:
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await redis.delete(key)
+    finally:
+        await redis.aclose()
 
 
 async def run_periodic_daily_digest(interval_seconds: int = DIGEST_CHECK_SECONDS) -> None:

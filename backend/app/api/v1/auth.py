@@ -26,7 +26,7 @@ from app.core.two_factor import (
     verify_totp,
 )
 from app.models.user import User
-from app.services.notify import notify_slack
+from app.services.notify import notify_slack, slack_configured
 
 router = APIRouter()
 
@@ -309,10 +309,10 @@ async def forgot_password(
     background_tasks: BackgroundTasks,
 ) -> dict[str, str]:
     """Post a reset link to Slack. Same reply whether or not the email exists."""
-    if not settings.slack_webhook_url:
+    if not slack_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Password reset is not configured (set SLACK_WEBHOOK_URL)",
+            detail="Password reset is not configured (set up the Slack bot or SLACK_WEBHOOK_URL)",
         )
     client_ip = http_request.client.host if http_request.client else "unknown"
     await enforce_rate_limit(

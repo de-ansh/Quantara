@@ -1,4 +1,5 @@
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -326,13 +327,38 @@ async def test_notify_slack_is_noop_unset_and_never_raises(monkeypatch):
             raise RuntimeError("network down")
 
     monkeypatch.setattr(notify.httpx, "AsyncClient", Boom)
+    monkeypatch.setattr(notify.settings, "slack_bot_token", None)
     monkeypatch.setattr(notify.settings, "slack_webhook_url", None)
-    await notify.notify_slack("hi")
+    assert await notify.notify_slack("hi") is False
     assert calls == []
 
     monkeypatch.setattr(notify.settings, "slack_webhook_url", "https://hooks.slack.test/x")
-    await notify.notify_slack("hi")  # logged, not raised
+    assert await notify.notify_slack("hi") is False  # logged, not raised
     assert calls == [{"text": "hi"}]
+
+
+@pytest.mark.asyncio
+async def test_notify_slack_prefers_bot_dms_to_linked_users(monkeypatch):
+    import httpx
+
+    from app.services import notify
+
+    posts = []
+
+    def slack(request: httpx.Request) -> httpx.Response:
+        posts.append((str(request.url), request.headers["authorization"], json.loads(request.content)))
+        return httpx.Response(200, json={"ok": request.url.host == "slack.com"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(notify.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(slack), **kw))
+    monkeypatch.setattr(notify.settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    monkeypatch.setattr(notify.settings, "slack_bot_token", "xoxb-test")
+    monkeypatch.setattr(notify.settings, "slack_users", "U1:8,U2:9")
+    assert await notify.notify_slack("hi") is True
+    assert [(p[0], p[1], p[2]["channel"]) for p in posts] == [
+        ("https://slack.com/api/chat.postMessage", "Bearer xoxb-test", "U1"),
+        ("https://slack.com/api/chat.postMessage", "Bearer xoxb-test", "U2"),
+    ]
 
 
 def test_signal_score_uses_direction_not_just_strength():

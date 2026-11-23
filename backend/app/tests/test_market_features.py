@@ -258,9 +258,11 @@ async def test_daily_digest_goes_out_once_on_weekdays_after_the_close(monkeypatc
     from app.services import event_alerts
 
     sent: list[str] = []
+    slack_up = [False]
 
-    async def fake_slack(text: str) -> None:
+    async def fake_slack(text: str) -> bool:
         sent.append(text)
+        return slack_up[0]
 
     async def no_indices() -> dict:
         return {}
@@ -281,9 +283,12 @@ async def test_daily_digest_goes_out_once_on_weekdays_after_the_close(monkeypatc
     try:
         assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 5, 17, tzinfo=event_alerts.IST))  # Saturday
         assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 15, tzinfo=event_alerts.IST))  # market open
-        assert await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 5, tzinfo=event_alerts.IST))
-        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 15, tzinfo=event_alerts.IST))
-        assert sent == ["digest 2030-01-07"]
+        # Slack refused it: not counted as sent, so the next check tries again
+        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 5, tzinfo=event_alerts.IST))
+        slack_up[0] = True
+        assert await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 15, tzinfo=event_alerts.IST))
+        assert not await event_alerts.send_daily_digest_if_due(datetime(2030, 1, 7, 16, 25, tzinfo=event_alerts.IST))
+        assert sent == ["digest 2030-01-07"] * 2
     finally:
         await redis.delete("digest:sent:2030-01-07")
         await redis.aclose()
