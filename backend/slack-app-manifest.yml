@@ -1,6 +1,7 @@
 # Paste at https://api.slack.com/apps -> Create New App -> From a manifest. Socket Mode: no public URL needed.
 # Then: Basic Information -> App-Level Tokens -> generate one with connections:write (SLACK_APP_TOKEN, xapp-),
-# Install App -> copy the Bot User OAuth Token (SLACK_BOT_TOKEN, xoxb-). Add both and SLACK_USERS to .env.
+# Install App -> copy the Bot User OAuth Token (SLACK_BOT_TOKEN, xoxb-); Incoming Webhooks -> copy the URL
+# (SLACK_WEBHOOK_URL). Add them and SLACK_USERS to .env. Keep token rotation off: the bot can't refresh tokens.
 display_information:
   name: Quantara
   description: Quantara's research assistant
@@ -18,6 +19,7 @@ oauth_config:
       - chat:write         # answer, then edit the "Looking that up…" placeholder
       - im:history         # direct messages and their threads
       - channels:history   # earlier messages in a channel thread, for follow-ups
+      - incoming-webhook   # SLACK_WEBHOOK_URL: price alerts, signals, reset links (pick the channel at install)
 settings:
   event_subscriptions:
     bot_events:
