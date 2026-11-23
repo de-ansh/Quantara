@@ -3,23 +3,15 @@ import { Link } from "react-router-dom"
 import { CalendarClock } from "lucide-react"
 import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { cn } from "@/lib/utils"
-import { money, pct, tone } from "@/lib/money"
+import { dayPct as movePct, money, pct, sumTotals, tone } from "@/lib/money"
 import DayChange from "@/components/DayChange"
+import PortfolioTotals from "@/components/PortfolioTotals"
+import { shortDay, staleNav } from "@/lib/format"
 import { usePortfolioUpdates, type HoldingPerformance, type HoldingUpdate, type PortfolioUpdates } from "@/hooks/usePortfolios"
 
 const TONE = { good: "bg-q-risk-low", bad: "bg-q-risk-high", neutral: "bg-muted-foreground" } as const
 
-/** "20 Nov" from "2026-11-20", read as a calendar day (no time-zone shift). */
-const shortDay = (iso: string) => {
-    const [y, m, d] = iso.split("-").map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-}
-
-/** Today's move as a percent of yesterday's value. */
-const dayPct = (h: HoldingPerformance) =>
-    h.day_change !== null && h.market_value !== null && h.market_value - h.day_change > 0
-        ? (h.day_change / (h.market_value - h.day_change)) * 100
-        : null
+const dayPct = (h: HoldingPerformance) => movePct(h.market_value, h.day_change)
 
 function UpdateLine({ u }: { u: HoldingUpdate }) {
     return (
@@ -82,7 +74,10 @@ function PortfolioBlock({ p }: { p: PortfolioUpdates }) {
                         <li key={`${h.kind}-${h.ticker}`} className="px-4 py-2">
                             <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-3">
                                 {h.kind === "fund" ? (
-                                    <span className="text-sm font-medium text-foreground sm:truncate">{h.name}</span>
+                                    <span className="text-sm font-medium text-foreground sm:truncate">
+                                        {h.name}
+                                        {staleNav(h.price_date) && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{staleNav(h.price_date)}</span>}
+                                    </span>
                                 ) : (
                                     <Link to={`/research/${h.ticker}`} className="text-sm font-medium text-foreground hover:text-primary sm:truncate">
                                         {h.ticker} <span className="font-normal text-muted-foreground">{h.name !== h.ticker ? h.name : ""}</span>
@@ -123,7 +118,15 @@ export default function PortfolioUpdatesCard() {
         <Panel id="portfolio-updates" title="Your portfolios" description="Value today, and news on each holding: the last 7 days and what's due in the next 14"
             action={<Link to="/portfolios" className="text-xs font-medium text-primary hover:underline">Manage portfolios</Link>}>
             {isLoading ? <PanelSkeleton /> : isError ? <PanelMessage alert>Couldn't load portfolio updates.</PanelMessage> : (
-                portfolios?.map(p => <PortfolioBlock key={p.portfolio_id} p={p} />)
+                <>
+                    {portfolios && portfolios.length > 1 && (
+                        <section aria-label="All portfolios" className="px-4 py-3 border-b border-border">
+                            <h3 className="mb-2 text-xs font-medium text-muted-foreground">All {portfolios.length} portfolios together</h3>
+                            <PortfolioTotals totals={sumTotals(portfolios.map(p => p.performance.totals))} size="lg" />
+                        </section>
+                    )}
+                    {portfolios?.map(p => <PortfolioBlock key={p.portfolio_id} p={p} />)}
+                </>
             )}
         </Panel>
     )

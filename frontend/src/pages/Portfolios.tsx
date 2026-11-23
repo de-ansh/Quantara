@@ -8,11 +8,15 @@ import { cn, timeAgo } from "@/lib/utils"
 import { getCurrencySymbol } from "@/lib/currency"
 import { apiErrorDetail } from "@/lib/api"
 import { fileAsCsv, parseHoldingsCsv } from "@/lib/holdingsCsv"
+import PortfolioTotals from "@/components/PortfolioTotals"
+import { sumTotals } from "@/lib/money"
 import {
     matchFunds,
     useDeletePortfolio,
     usePortfolios,
+    usePortfolioUpdates,
     useSavePortfolio,
+    type CurrencyTotals,
     type Portfolio,
     type PortfolioFund,
 } from "@/hooks/usePortfolios"
@@ -301,7 +305,7 @@ function PortfolioEditor({ initial, onClose }: { initial: Draft; onClose: () => 
     )
 }
 
-function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: () => void }) {
+function PortfolioCard({ portfolio, totals, onEdit }: { portfolio: Portfolio; totals?: CurrencyTotals[]; onEdit: () => void }) {
     const navigate = useNavigate()
     const remove = useDeletePortfolio()
     const [confirming, setConfirming] = useState(false)
@@ -313,13 +317,21 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
         <Panel id={`portfolio-${portfolio.id}`} title={portfolio.name} className="flex flex-col"
             description={portfolio.description || `Updated ${timeAgo(portfolio.updated_at)}`}>
             <div className="p-4 space-y-3 flex-1 flex flex-col">
-                <div className="flex items-baseline justify-between">
-                    <span className="text-lg font-semibold font-mono tabular-nums text-foreground">
-                        {sym}{portfolio.initial_investment.toLocaleString(sym === "₹" ? "en-IN" : "en-US")}
-                        <span className="ml-1.5 font-sans text-xs font-normal text-muted-foreground">invested</span>
-                    </span>
-                    <span className="text-xs text-muted-foreground">{holdingsCount}</span>
-                </div>
+                {totals && totals.length > 0 ? (
+                    <>
+                        <PortfolioTotals totals={totals} />
+                        <p className="text-xs text-muted-foreground">{holdingsCount}</p>
+                    </>
+                ) : (
+                    // No share counts (weights only): nothing to value, so show what was put in
+                    <div className="flex items-baseline justify-between">
+                        <span className="text-lg font-semibold font-mono tabular-nums text-foreground">
+                            {sym}{portfolio.initial_investment.toLocaleString(sym === "₹" ? "en-IN" : "en-US")}
+                            <span className="ml-1.5 font-sans text-xs font-normal text-muted-foreground">invested</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">{holdingsCount}</span>
+                    </div>
+                )}
 
                 {portfolio.positions.length > 0 && (
                     <>
@@ -373,6 +385,9 @@ function PortfolioCard({ portfolio, onEdit }: { portfolio: Portfolio; onEdit: ()
 
 export default function Portfolios() {
     const { data: portfolios = [], isLoading, isError } = usePortfolios()
+    const { data: values } = usePortfolioUpdates()  // the dashboard's query: value, today and gain or loss per portfolio
+    const totalsOf = (id: number) => values?.find(v => v.portfolio_id === id)?.performance.totals
+    const valued = (values ?? []).filter(v => v.performance.totals.length > 0)
     const [editing, setEditing] = useState<Draft | null>(null)
     const newButton = <Button onClick={() => setEditing(emptyDraft())} className="gap-1.5"><Plus className="size-4" /> New portfolio</Button>
 
@@ -385,6 +400,12 @@ export default function Portfolios() {
             />
 
             {editing && <PortfolioEditor key={editing.id ?? "new"} initial={editing} onClose={() => setEditing(null)} />}
+
+            {valued.length > 1 && (
+                <Panel id="all-portfolios" title={`All ${valued.length} portfolios together`} description="Every holding you've given a share count, at the latest prices">
+                    <div className="p-4"><PortfolioTotals totals={sumTotals(valued.map(v => v.performance.totals))} size="lg" /></div>
+                </Panel>
+            )}
 
             {isLoading ? <Panel id="portfolio-list" title="Portfolios"><PanelSkeleton /></Panel>
                 : isError ? <Panel id="portfolio-list" title="Portfolios"><PanelMessage alert>Couldn't load portfolios.</PanelMessage></Panel>
@@ -399,7 +420,7 @@ export default function Portfolios() {
                     </Panel>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                        {portfolios.map(p => <PortfolioCard key={p.id} portfolio={p} onEdit={() => setEditing(toDraft(p))} />)}
+                        {portfolios.map(p => <PortfolioCard key={p.id} portfolio={p} totals={totalsOf(p.id)} onEdit={() => setEditing(toDraft(p))} />)}
                     </div>
                 )}
         </div>

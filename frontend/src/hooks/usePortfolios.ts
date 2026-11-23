@@ -92,6 +92,7 @@ export interface HoldingPerformance {
     unrealized_pnl_pct: number | null;
     day_change: number | null;
     weight_by_value: number | null;
+    price_date?: string | null; // funds: the day of the NAV used
 }
 
 export interface CurrencyTotals {

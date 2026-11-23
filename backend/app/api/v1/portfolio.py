@@ -10,6 +10,7 @@ from sqlalchemy import desc, select
 from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
+from app.models.listed_security import ListedSecurity
 from app.models.mutual_fund import MutualFund
 from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
 from app.models.stock import Stock
@@ -297,6 +298,7 @@ class HoldingPerformance(BaseModel):
     unrealized_pnl_pct: float | None
     day_change: float | None
     weight_by_value: float | None = Field(None, description="Share of its currency's market value")
+    price_date: date | None = Field(None, description="Funds: the day of the NAV used (AMFI publishes one a day)")
 
 
 class CurrencyTotals(BaseModel):
@@ -570,6 +572,9 @@ async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformanc
         updated = stocks[t].price_updated_at if t in stocks else None
         return updated is None or updated < cutoff
 
+    etfs = set((await db.execute(
+        select(ListedSecurity.ticker).where(ListedSecurity.ticker.in_(tickers), ListedSecurity.is_etf)
+    )).scalars())
     stale = [t for t in tickers if _is_stale(t)]
     if stale:
         await refresh_prices(db, stale)
@@ -586,7 +591,7 @@ async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformanc
             HoldingPerformance(
                 ticker=pos.ticker,
                 name=(stock.name if stock and stock.name else pos.ticker),
-                sector=stock.sector if stock else None,
+                sector=(stock.sector if stock else None) or ("ETF" if pos.ticker in etfs else None),
                 currency="INR" if _is_indian(pos.ticker) else "USD",
                 shares=pos.shares,
                 avg_cost=pos.cost_basis,
@@ -619,6 +624,7 @@ async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformanc
                 unrealized_pnl=fund_pnl,
                 unrealized_pnl_pct=(fund_pnl / fund_cost * 100) if fund_pnl is not None and fund_cost else None,
                 day_change=pf.units * (fund.nav - fund.prev_nav) if fund.prev_nav else None,
+                price_date=fund.nav_date,
             )
         )
 
