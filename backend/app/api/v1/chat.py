@@ -69,7 +69,8 @@ TOOLS: list[ChatCompletionToolParam] = [
     }},
     {"type": "function", "function": {
         "name": "my_holdings",
-        "description": "The user's watchlist and saved portfolios with their positions.",
+        "description": "The user's watchlist and portfolios: every stock and mutual fund held, valued now, with "
+                       "gain or loss so far and today's move (funds move once a day, by NAV).",
         "parameters": {"type": "object", "properties": {}},
     }},
 ]
@@ -181,16 +182,31 @@ async def find_ticker(query: str, user: dict, db: Any) -> dict:
     return {"matches": [{"ticker": s.ticker, "name": s.name, "exchange": s.exchange} for s in hits]}
 
 
+# What the model needs per holding; a fund's ticker is its AMFI scheme code, its price the NAV of price_date
+HOLDING_FIELDS = {"kind", "ticker", "name", "shares", "avg_cost", "price", "market_value", "unrealized_pnl",
+                  "unrealized_pnl_pct", "day_change", "price_date"}
+
+
 async def my_holdings(user: dict, db: Any) -> dict:
-    from app.api.v1.portfolio import list_portfolios
+    from app.api.v1.portfolio import _valuation
     from app.api.v1.watchlist import get_watchlist
+    from app.models.portfolio import Portfolio
 
     watch = await get_watchlist(user, db)
-    portfolios = await list_portfolios(user, db)
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == int(user["id"])))).scalars().all()
+    valued = []
+    for pf in portfolios:  # the same valuation the portfolio pages show: stocks and mutual funds
+        perf = await _valuation(db, pf)
+        valued.append({
+            "name": pf.name,
+            "totals": [t.model_dump(exclude={"sector_allocation"}) for t in perf.totals],
+            "holdings": [h.model_dump(include=HOLDING_FIELDS, mode="json") for h in perf.holdings],
+            "weight_only_tickers": perf.weight_only_tickers,
+        })
     return {
         "risk_profile": {k: user.get(k) for k in ("risk_level", "volatility_tolerance", "investment_horizon")},
         "watchlist": [{"ticker": s.ticker, "name": s.name, "price": s.price} for s in watch.items],
-        "portfolios": [p.model_dump(include={"name", "positions"}, mode="json") for p in portfolios.portfolios],
+        "portfolios": valued,
     }
 
 
