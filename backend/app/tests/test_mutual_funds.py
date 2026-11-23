@@ -136,6 +136,7 @@ async def test_match_and_save_funds_then_value_them(client: AsyncClient, db_sess
     flexi = next(h for h in perf["holdings"] if h["ticker"] == "200001")
     assert flexi["kind"] == "fund" and flexi["currency"] == "INR" and flexi["price"] == 50.5
     assert flexi["market_value"] == 5050.0 and flexi["unrealized_pnl"] == 1050.0
+    assert flexi["price_date"] == "2026-11-19"  # the NAV's own day, so the page can say it isn't today's
     inr = perf["totals"][0]
     assert inr["market_value"] == 5050.0 + 700.0
     assert set(inr["sector_allocation"]) == {"Equity Scheme - Flexi Cap Fund", "Equity Scheme - Mid Cap Fund"}

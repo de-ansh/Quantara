@@ -287,7 +287,10 @@ class LLMOrchestrator:
         info = await asyncio.to_thread(fetch_yf_info)
 
         # Store in raw_data for risk_classification node and Stock DB record
-        state["raw_data"]["sector"] = info.get("sector")
+        from app.services.price_service import YAHOO_SECTORS
+
+        sector = info.get("sector")  # Yahoo's names, mapped to the app's like the price job does
+        state["raw_data"]["sector"] = YAHOO_SECTORS.get(sector, sector) if sector else None
         state["raw_data"]["pe_ratio"] = info.get("trailingPE") or info.get("forwardPE")
         state["raw_data"]["price_to_book"] = info.get("priceToBook")
         state["raw_data"]["price_to_sales"] = info.get("priceToSalesTrailing12Months")
