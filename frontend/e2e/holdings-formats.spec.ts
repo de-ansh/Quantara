@@ -6,6 +6,10 @@ import { parseHoldingsCsv } from '../src/lib/holdingsCsv';
 const BROKERS: [string, string[], { ticker: string; shares: number; cost: number }[]][] = [
   ['Zerodha Kite', ['Instrument,Qty.,Avg. cost,LTP,Cur. val,P&L', 'ITC,10,400,410,4100,100'],
     [{ ticker: 'ITC', shares: 10, cost: 400 }]],
+  // Coin (Zerodha's funds) uses Kite's layout with the bare scheme name: no ticker, so it's matched as a fund by name
+  ['Zerodha Coin', ['"Instrument","Qty.","Avg. cost","LTP","Invested","Cur. val","P&L","Net chg.","Day chg.",""',
+    '"Example Flexi Cap Fund",96.185,114.36,120.5351,10999.52,11593.67,594.14,5.4,0.09,""'],
+    [{ ticker: '', shares: 96.185, cost: 114.36 }]],
   ['Zerodha Console', ['Holdings statement', 'Symbol,ISIN,Sector,Quantity Available,Quantity Discrepant,Quantity Long Term,Quantity Pledged (Margin),Quantity Pledged (Loan),Average Price,Previous Closing Price,Unrealized P&L',
     'ITC,INE154A01025,FMCG,10,0,10,0,0,400,410,100'], [{ ticker: 'ITC', shares: 10, cost: 400 }]],
   ['Groww', ['Stock Name,ISIN,Quantity,Average buy price,Buy value,Closing price,Closing value,Unrealised P&L',

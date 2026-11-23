@@ -126,11 +126,20 @@ _NOT_GROWTH = {"idcw", "dividend", "payout", "reinvestment", "bonus", "income", 
 _NOISE = {"plan", "option", "direct", "regular", "growth", "fund"} | _NOT_GROWTH
 
 
-def fund_key(name: str) -> tuple[str, str, str]:
-    """(scheme words, plan, option), so "X Fund Direct Growth" (Groww) meets "X Fund - Direct Plan - Growth Option" (AMFI)."""
+def fund_key(name: str, unstated: str = "regular") -> tuple[str, str, str]:
+    """(scheme words, plan, option), so "X Fund Direct Growth" (Groww) meets "X Fund - Direct Plan - Growth Option" (AMFI).
+
+    unstated="direct" reads a name that names no plan or option as Direct Growth: Coin, Groww and other app
+    platforms list only the bare scheme name and sell only direct plans, growth being the default option.
+    """
     words = re.findall(r"[a-z0-9]+", name.lower().replace("&", " and "))
-    plan = "direct" if "direct" in words else "regular"
-    option = "growth" if "growth" in words and not _NOT_GROWTH & set(words) else "other"
+    plan = "direct" if "direct" in words else "regular" if "regular" in words else unstated
+    if _NOT_GROWTH & set(words):
+        option = "other"
+    elif "growth" in words:
+        option = "growth"
+    else:
+        option = "growth" if unstated == "direct" else "other"
     return "".join(w for w in words if w not in _NOISE), plan, option
 
 
@@ -154,6 +163,6 @@ async def match_funds(db: AsyncSession, rows: list[tuple[str | None, str | None]
         elif code in by_isin:
             matches.append(by_isin[code])
         else:
-            found = by_key.get(fund_key(name), []) if name else []
+            found = by_key.get(fund_key(name, unstated="direct"), []) if name else []
             matches.append(found[0] if len(found) == 1 else None)  # several: old duplicates, don't guess
     return matches

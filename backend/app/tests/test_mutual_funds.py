@@ -77,6 +77,11 @@ def test_fund_key_lines_up_broker_and_amfi_names():
     assert fund_key("Example Mid Cap Fund Direct Growth") == fund_key("Example Midcap Fund-Direct Plan-Growth Option")
     assert fund_key("Example Fund Direct Growth")[1:] == ("direct", "growth")
     assert fund_key("Example Fund - Regular Plan - IDCW Payout")[1:] == ("regular", "other")
+    # Zerodha Coin writes only the scheme name; read from a broker row, that means Direct Growth
+    assert fund_key("Parag Parikh Flexi Cap Fund", unstated="direct") == fund_key("Parag Parikh Flexi Cap Fund - Direct Plan - Growth")
+    assert fund_key("Example Fund Regular", unstated="direct")[1:] == ("regular", "growth")
+    assert fund_key("Example Fund IDCW", unstated="direct")[1:] == ("direct", "other")
+    assert fund_key("Example Fund")[1:] == ("regular", "other")  # AMFI's own old single-plan names: unchanged
 
 
 @pytest.mark.asyncio
@@ -111,8 +116,9 @@ async def test_match_and_save_funds_then_value_them(client: AsyncClient, db_sess
         {"isin": "INF000X01110", "name": "whatever"},       # Coin: ISIN wins
         {"isin": "INF000X01201"},                           # a listed ETF stays a stock
         {"name": "Nothing Like This Fund Direct Growth"},
+        {"name": "Example Flexi Cap Fund"},                 # Coin: bare name, so the direct growth plan
     ]})).json()["matches"]
-    assert [m and m["scheme_code"] for m in matched] == [200001, 200011, None, None]  # the table loaded on first use
+    assert [m and m["scheme_code"] for m in matched] == [200001, 200011, None, None, 200001]  # the table loaded on first use
 
     created = await client.post("/api/v1/portfolio/", headers=headers, json={
         "name": "Funds", "funds": [
