@@ -13,15 +13,16 @@ const BAR = { equity: "bg-primary", debt: "bg-sky-500", cash: "bg-emerald-500", 
 const WHERE = { equity: "stocks or an equity fund", debt: "a debt fund or bond ETF", cash: "a liquid fund or liquid ETF", gold: "a gold ETF or gold fund" }
 const INPUT = "w-16 bg-background border border-border rounded-sm px-2 py-1 font-mono text-right text-foreground outline-none focus:border-primary"
 
-/** Your mix against your target, what looks lopsided, and what to sell and add to get back on target. */
-export default function BalanceCheck({ id }: { id: number }) {
+/** Your mix against your target, what looks lopsided, and what to sell and add to get back on target.
+ *  `id="all"`: every portfolio as one, a stock held in several counted once. */
+export default function BalanceCheck({ id }: { id: number | "all" }) {
     const [newMoney, setNewMoney] = useState(0)
     const [draft, setDraft] = useState("")
     const [editing, setEditing] = useState(false)
     const { data, isLoading, isError } = usePortfolioBalance(id, newMoney)
     const ok = data?.flags && data.mix && data.target && data.plan
     return (
-        <Panel id="balance" title="Balance check"
+        <Panel id={`balance-${id}`} title={id === "all" ? "Balance across all portfolios" : "Balance check"}
             description="Your mix against your target, single companies and sectors over your limits, Avoid ratings, and stocks you also hold elsewhere."
             action={ok && !editing ? <Button variant="outline" size="sm" className="h-7" onClick={() => setEditing(true)}>Change target</Button> : undefined}>
             {isLoading ? <PanelSkeleton rows={2} />
@@ -35,10 +36,10 @@ export default function BalanceCheck({ id }: { id: number }) {
                                 <h3 className="text-sm font-semibold text-foreground">Rebalancing plan</h3>
                                 <form className="flex items-center gap-2 text-sm text-muted-foreground"
                                     onSubmit={e => { e.preventDefault(); setNewMoney(Math.max(0, Number(draft) || 0)) }}>
-                                    <label htmlFor="new-money">Adding new money?</label>
+                                    <label htmlFor={`new-money-${id}`}>Adding new money?</label>
                                     <span className="relative">
                                         <span className="absolute left-2 top-1/2 -translate-y-1/2" aria-hidden="true">₹</span>
-                                        <input id="new-money" type="number" min={0} step="any" value={draft} placeholder="0"
+                                        <input id={`new-money-${id}`} type="number" min={0} step="any" value={draft} placeholder="0"
                                             onChange={e => setDraft(e.target.value)} className={`${INPUT} w-28 pl-5`} />
                                     </span>
                                     <Button type="submit" size="sm" variant="outline" className="h-7">Update plan</Button>
@@ -89,7 +90,7 @@ function Mix({ data }: { data: PortfolioBalance }) {
 function Flags({ data }: { data: PortfolioBalance }) {
     if (data.flags.length === 0) return (
         <p className="flex items-center gap-2 text-sm text-q-risk-low">
-            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /> Nothing stands out: this portfolio is on target.
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /> Nothing stands out: on target.
         </p>
     )
     return (
@@ -131,7 +132,7 @@ function Plan({ data, newMoney }: { data: PortfolioBalance; newMoney: number }) 
                             <li key={t.ticker} className="flex flex-wrap justify-between gap-x-4 py-1.5">
                                 <span className="min-w-0">
                                     <Link to={`/research/${t.ticker}`} className="font-medium text-foreground hover:underline">{t.name}</Link>
-                                    <span className="text-muted-foreground"> · {t.reason}</span>
+                                    <span className="text-muted-foreground"> · {t.reason}{t.held_in && t.held_in.length > 0 && ` · in ${t.held_in.join(", ")}`}</span>
                                 </span>
                                 <span className="font-mono tabular-nums whitespace-nowrap">
                                     {money(t.amount, t.currency)}

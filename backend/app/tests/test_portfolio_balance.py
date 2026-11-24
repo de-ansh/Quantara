@@ -168,4 +168,12 @@ async def test_balance_endpoint_flags_concentration_and_plans_against_the_target
     assert [(t["action"], t["asset_class"], t["amount"]) for t in funded["plan"]] == [("add", "debt", 1000)]
 
     assert (await client.get(url + "?new_money=-5", headers=headers)).status_code == 422
+
+    # All portfolios as one: AAA counts once at 10 shares (1,000 of 1,200), and the plan says where it's held
+    together = (await client.get("/api/v1/portfolio/balance", headers=headers)).json()
+    assert together["portfolio_id"] is None
+    assert [f["title"] for f in together["flags"] if f["kind"] == "stock"] == ["Example A is 83% of all your portfolios"]
+    assert not [f for f in together["flags"] if f["kind"] == "elsewhere"]
+    [sell] = [t for t in together["plan"] if t["action"] == "sell"]
+    assert (sell["ticker"], sell["amount"], sorted(sell["held_in"])) == ("AAA.NS", 600, ["Main", "Side"])
     assert (await client.get("/api/v1/portfolio/999999/balance", headers=headers)).status_code == 404

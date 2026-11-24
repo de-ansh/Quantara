@@ -9,6 +9,7 @@ import { getCurrencySymbol } from "@/lib/currency"
 import { apiErrorDetail } from "@/lib/api"
 import { fileAsCsv, parseHoldingsCsv } from "@/lib/holdingsCsv"
 import PortfolioTotals from "@/components/PortfolioTotals"
+import BalanceCheck from "@/components/BalanceCheck"
 import { sumTotals } from "@/lib/money"
 import {
     matchFunds,
@@ -423,6 +424,8 @@ export default function Portfolios() {
                         {portfolios.map(p => <PortfolioCard key={p.id} portfolio={p} totals={totalsOf(p.id)} onEdit={() => setEditing(toDraft(p))} />)}
                     </div>
                 )}
+
+            {valued.length > 1 && <BalanceCheck id="all" />}
         </div>
     )
 }
