@@ -26,7 +26,7 @@ export default function StaleDataBanner() {
             <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
             <span>
                 {data.prices_stale && data.prices_updated_at
-                    ? `Prices last updated ${timeAgo(data.prices_updated_at)}: the price job has stopped, so prices, risk and verdicts may be out of date. Restart the backend.`
+                    ? `Prices last updated ${timeAgo(data.prices_updated_at)}, so prices, risk and verdicts may be out of date. If the computer was asleep, they catch up within 15 minutes of waking; if this stays, restart the backend.`
                     : "The stock list hasn't refreshed in over two days; new listings may be missing."}
             </span>
         </div>
