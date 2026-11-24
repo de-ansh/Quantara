@@ -1,7 +1,8 @@
 """The one daily Slack message: market highlights at the close, plus news on watched or held stocks.
 
-Everything else (signals, transcripts, price alerts) shows in the app's bell and lands here once a day,
-instead of as a stream of separate pings.
+Signals and transcripts show in the app's bell and land here once a day, instead of as a stream of separate pings.
+Price alerts are the exception: the user set a level and wants to know when it's crossed, so they are also DMed
+as they fire (price_service).
 """
 
 import asyncio

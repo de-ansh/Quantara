@@ -12,8 +12,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import sleep_wall, utcnow
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.stock import Stock
+from app.services.notify import notify_slack
 
 logger = get_logger(__name__)
 
@@ -60,8 +62,10 @@ def fetch_quotes(tickers: list[str]) -> dict[str, tuple[float, float | None]]:
     return quotes
 
 
-async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now: datetime) -> list[str]:
-    """Mark untriggered alerts whose condition holds at the fresh price (one-shot); returns messages."""
+async def _trigger_price_alerts(
+    db: AsyncSession, prices: dict[str, float], now: datetime
+) -> list[tuple[int, str]]:
+    """Mark untriggered alerts whose condition holds at the fresh price (one-shot); returns (user ID, message)."""
     from app.models.price_alert import PriceAlert
 
     if not prices:
@@ -80,7 +84,10 @@ async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now:
         if crossed:
             alert.triggered_at = now
             alert.triggered_price = price
-            fired.append(f"{alert.ticker} is {alert.direction} {alert.target_price:g} (now {price:g})")
+            fired.append((alert.user_id, (
+                f"Price alert: *{alert.ticker}* is {alert.direction} {alert.target_price:g} (now {price:g}). "
+                f"{settings.frontend_url.rstrip('/')}/research/{alert.ticker}"
+            )))
     return fired
 
 
@@ -110,8 +117,10 @@ async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> 
         if stock.ticker in quotes:
             stock.price, stock.previous_close = quotes[stock.ticker]
             stock.price_updated_at = now
-    await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
+    fired = await _trigger_price_alerts(db, {t: q[0] for t, q in quotes.items()}, now)
     await db.commit()
+    for user_id, text in fired:  # after the commit, so a Slack hiccup can't undo the trigger; the bell has it too
+        await notify_slack(text, user_id)
     logger.info(f"Refreshed prices for {len(quotes)}/{len(stocks)} stocks")
     return len(quotes)
 

@@ -64,6 +64,13 @@ async def test_refresh_triggers_once_and_feeds_the_bell(client: AsyncClient, db_
             json={"ticker": "NVDA", "direction": direction, "target_price": target},
         )
 
+    dms: list[tuple[str, int]] = []
+
+    async def fake_slack(text: str, user_id: int | None = None) -> bool:
+        dms.append((text, user_id))
+        return True
+
+    monkeypatch.setattr(price_service, "notify_slack", fake_slack)
     monkeypatch.setattr(price_service, "fetch_quotes", lambda t: {"NVDA": (175.0, 200.0)})
     await price_service.refresh_prices(db_session)
 
@@ -78,6 +85,9 @@ async def test_refresh_triggers_once_and_feeds_the_bell(client: AsyncClient, db_
     await price_service.refresh_prices(db_session)
     await db_session.refresh(below)
     assert below.triggered_at == first_fire and below.triggered_price == 175.0
+    # One Slack DM, to the alert's owner, when it fired; none on the later refresh
+    assert len(dms) == 1 and dms[0][1] == below.user_id
+    assert "*NVDA* is below 180 (now 175)" in dms[0][0] and "/research/NVDA" in dms[0][0]
 
     feed = (await client.get("/api/v1/watchlist/alerts", headers=headers)).json()
     price_items = [a for a in feed["alerts"] if a["kind"] == "price"]
