@@ -153,7 +153,7 @@ test('a portfolio shows its mix against the target, a rebalancing plan, new mone
   await expect(balance).toContainText('over your company limit');
   await expect(balance).toContainText('(gain ₹40.00)');
   await expect(balance).toContainText('a debt fund or bond ETF');
-  await expect(balance).toContainText('check them before selling');
+  await expect(balance).toContainText('import your tradebook for real figures');
   await expect(balance.getByRole('note')).toContainText('not investment advice');
 
   await balance.getByLabel('Adding new money?').fill('500');
@@ -171,6 +171,50 @@ test('a portfolio shows its mix against the target, a rebalancing plan, new mone
   await form.getByRole('button', { name: 'Save target' }).click();
   await expect.poll(() => saved).toEqual({ equity: 60, debt: 30, cash: 5, gold: 5, max_stock: 20, max_sector: 35 });
   await expect(balance).toContainText('Your saved target');
+});
+
+test('a portfolio imports its tradebook and the plan shows the tax split, the wait hint and the total tax', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [
+    { id: 7, name: 'Core', description: null, initial_investment: 1000, positions: [], funds: [], created_at: now, updated_at: now }], total_count: 1 } }));
+  await page.route('**/api/v1/portfolio/7/performance', route => route.fulfill({ json: { portfolio_id: 7, prices_as_of: now, weight_only_tickers: [],
+    holdings: [{ kind: 'stock', ticker: 'EXAMPLE.NS', name: 'Example Ltd', sector: 'Banks', currency: 'INR', shares: 5, avg_cost: 100, price: 100,
+      market_value: 500, cost_value: 500, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, weight_by_value: 50 }],
+    totals: [{ currency: 'INR', market_value: 1000, cost_value: 1000, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, sector_allocation: {} }] } }));
+  let imported = false;
+  await page.route('**/api/v1/portfolio/7/balance**', route => route.fulfill({ json: { portfolio_id: 7, risk_level: 'Moderate',
+    target: { equity: 70, debt: 20, cash: 5, gold: 5, max_stock: 20, max_sector: 35, is_default: true }, mix: { INR: { equity: 100 } }, flags: [],
+    plan_tax: imported ? 1250 : null, exemption_left: imported ? 100000 : null,
+    plan: [{ action: 'sell', asset_class: 'equity', amount: 300, currency: 'INR', ticker: 'EXAMPLE.NS', name: 'Example Ltd', reason: 'long-term gain, taxed at 12.5%',
+      gain: 60, short_term_gain: imported ? 10 : null, long_term_gain: imported ? 50 : null, wait_until: imported ? '2030-07-01' : null },
+      { action: 'add', asset_class: 'debt', amount: 300, currency: 'INR', ticker: null, name: null, reason: 'below target', gain: null }] } }));
+  let sent: { trades: unknown[] } | null = null;
+  await page.route('**/api/v1/portfolio/7/trades', route => {
+    if (route.request().method() === 'PUT') {
+      sent = route.request().postDataJSON();
+      imported = true;
+      return route.fulfill({ json: { imported_at: now, trades: 2, first_trade: '2028-01-05', excluded: [], warnings: [], xirr: 14.2,
+        gaps: [{ ticker: 'OTHER.NS', portfolio_shares: 10, tradebook_shares: 4 }] } });
+    }
+    return route.fulfill({ json: null });
+  });
+
+  await page.goto('/portfolios/7');
+  const balance = page.getByRole('region', { name: 'Balance check' });
+  await expect(balance).toContainText('import your tradebook for real figures');
+  const tradebook = page.getByRole('region', { name: 'Tradebook' });
+  await expect(tradebook).toContainText('assumes the worst');
+
+  await tradebook.getByLabel('Tradebook files').setInputFiles({ name: 'tradebook.csv', mimeType: 'text/csv', buffer: Buffer.from(
+    'symbol,trade_date,trade_type,quantity,price\nEXAMPLE,2028-01-05,buy,4,80\nEXAMPLE,2029-08-01,buy,1,90\n') });
+  await expect(tradebook).toContainText('+14.20%');
+  await expect(tradebook).toContainText('OTHER.NS: 10 held, 4 in the tradebook');
+  expect(sent!.trades).toHaveLength(2);
+  await expect(balance).toContainText('Short-term +₹10.00 · long-term +₹50.00');
+  await expect(balance).toContainText('part turns long-term on');
+  await expect(balance).toContainText('₹1,250.00');
+  await expect(balance).toContainText(/₹1,?00,000\.00 of long-term gains is still tax-free/);  // grouping follows the browser locale
 });
 
 test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {

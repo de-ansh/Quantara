@@ -5,7 +5,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.large_deal import LargeDeal
 from app.models.listed_security import ListedSecurity
 from app.models.mutual_fund import MutualFund
-from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
+from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition, PortfolioTrade
 from app.models.price_alert import PriceAlert
 from app.models.quarterly_result import QuarterlyResult
 from app.models.recommendation import Recommendation
@@ -30,6 +30,7 @@ __all__ = [
     "AuditLog",
     "Portfolio",
     "PortfolioPosition",
+    "PortfolioTrade",
     "PortfolioFund",
     "MutualFund",
     "DocumentChunk",
