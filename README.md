@@ -254,6 +254,7 @@ With a Slack app connected, Quantara:
 
 - **answers questions in Slack.** DM the bot, or @mention it in a channel, and it replies in a thread using the same assistant as the web chat, as your linked Quantara account (your risk profile, holdings and saved OpenAI key);
 - **sends the daily digest** as a DM after 16:00 IST on weekdays: market close, plus news, signals and alerts on watched or held stocks. If Slack refuses it, the app retries every 10 minutes;
+- **DMs your price alerts as they fire**, within the 15-minute price check, with a link to the stock. Only the alert's owner gets them;
 - **sends password-reset links** and a warning when two-factor login is turned off through a reset.
 
 It uses Socket Mode, so no public URL is needed. Leave the Slack settings unset to turn all of this off.
