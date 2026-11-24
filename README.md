@@ -245,9 +245,56 @@ REDIS_URL=redis://localhost:6379/0
 
 For production, also set `ENVIRONMENT=production` (which marks the session cookie `Secure`, so HTTPS is required) and a stable `CREDENTIAL_ENCRYPTION_KEY`.
 
-To get triggered price alerts and new signals on watchlisted tickers in Slack, create an [incoming webhook](https://api.slack.com/messaging/webhooks) and set `SLACK_WEBHOOK_URL`. Leave it unset to turn notifications off.
 
 To report backend errors to [Sentry](https://sentry.io), set `SENTRY_DSN`. Nothing is sent while it's unset, and requests are reported without personal data.
+
+### Slack (optional)
+
+With a Slack app connected, Quantara:
+
+- **answers questions in Slack.** DM the bot, or @mention it in a channel, and it replies in a thread using the same assistant as the web chat, as your linked Quantara account (your risk profile, holdings and saved OpenAI key);
+- **sends the daily digest** as a DM after 16:00 IST on weekdays: market close, plus news, signals and alerts on watched or held stocks. If Slack refuses it, the app retries every 10 minutes;
+- **sends password-reset links** and a warning when two-factor login is turned off through a reset.
+
+It uses Socket Mode, so no public URL is needed. Leave the Slack settings unset to turn all of this off.
+
+**Set it up**
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From a manifest**, pick your workspace and paste [`backend/slack-app-manifest.yml`](backend/slack-app-manifest.yml).
+2. **Basic Information → App-Level Tokens → Generate**, with the `connections:write` scope. Copy the `xapp-…` token.
+3. **Install App → Install to Workspace**. Copy the **Bot User OAuth Token** (`xoxb-…`).
+4. Find your Slack member ID: click your name in Slack → **Profile** → ⋮ → **Copy member ID** (it looks like `U0123ABCD`). The bot's **Home** tab also shows it.
+5. Find your Quantara user ID:
+   ```bash
+   cd backend && docker compose exec postgres psql -U quantara -d quantara -c "select id, email from users;"
+   ```
+6. Add to `backend/.env`:
+   ```env
+   SLACK_BOT_TOKEN=xoxb-...
+   SLACK_APP_TOKEN=xapp-...
+   SLACK_USERS=U0123ABCD:1          # SlackMemberID:QuantaraUserID, comma-separated for several people
+   ```
+7. Recreate the backend so it reads the new `.env`. `docker compose restart` does **not** reload it:
+   ```bash
+   cd backend && docker compose up -d --force-recreate backend
+   docker compose logs backend | grep -i bolt     # expect "Bolt app is running!"
+   ```
+8. Open the Quantara app in Slack. The Home tab should say *You're linked*. Then send it a DM such as *is TCS a buy?*
+
+Only Slack users listed in `SLACK_USERS` get answers. Anyone else is told their member ID and nothing more. Notifications go as DMs to every listed user, including password-reset links for any account, so list only people you trust with those.
+
+**Webhook instead of the bot.** Without the bot tokens, notifications (but not chat) can go to a channel via an [incoming webhook](https://api.slack.com/messaging/webhooks): set `SLACK_WEBHOOK_URL`. When the bot is set up, it is used instead.
+
+**If something's off**
+
+| Symptom | Fix |
+| --- | --- |
+| Home tab spins forever | The backend isn't connected: check the tokens and the `Bolt app is running!` log line, then recreate the backend. |
+| No **Messages** tab, or "sending messages to this app has been turned off" | **App Home → Show Tabs → Messages Tab** on, and tick *Allow users to send Slash commands and messages from the messages tab*. |
+| DMs get no answer | Your member ID is missing from `SLACK_USERS`, or `message.im` / `im:history` are missing. After changing scopes or events, reinstall the app and copy the new bot token. |
+| Reinstalling fails with a PKCE / redirect URL error | Use the **Reinstall to Workspace** button under **Install App**, not a custom redirect URL. |
+| Webhook posts stop and Slack answers `no_service` | Reinstalling or removing the app revokes its webhooks. Use the bot, or create a new webhook. |
+| `invalid_auth` / `not_authed` in the logs | The token is from a different app, or the app was uninstalled. Copy fresh tokens. Keep **token rotation off**: the bot can't refresh tokens. |
 
 ### Sessions & deployment
 

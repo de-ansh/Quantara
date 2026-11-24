@@ -1,7 +1,8 @@
 # Paste at https://api.slack.com/apps -> Create New App -> From a manifest. Socket Mode: no public URL needed.
 # Then: Basic Information -> App-Level Tokens -> generate one with connections:write (SLACK_APP_TOKEN, xapp-),
 # Install App -> copy the Bot User OAuth Token (SLACK_BOT_TOKEN, xoxb-); Incoming Webhooks -> copy the URL
-# (SLACK_WEBHOOK_URL). Add them and SLACK_USERS to .env. Keep token rotation off: the bot can't refresh tokens.
+# (SLACK_WEBHOOK_URL, optional). Add them and SLACK_USERS to .env. Keep token rotation off: the bot can't refresh tokens.
+# Full steps and troubleshooting: README.md -> Slack.
 display_information:
   name: Quantara
   description: Quantara's research assistant
