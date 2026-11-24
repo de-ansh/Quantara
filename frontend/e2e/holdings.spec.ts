@@ -93,6 +93,26 @@ test('portfolios page totals every portfolio and shows each one\'s value, today 
   await expect(page.getByRole('region', { name: 'Ideas' })).toContainText(/5,000\s*invested/);  // no share counts: what was put in
 });
 
+test('a portfolio shows its asset mix and what is out of balance, with how much to move', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [
+    { id: 7, name: 'Core', description: null, initial_investment: 1000, positions: [], funds: [], created_at: now, updated_at: now }], total_count: 1 } }));
+  await page.route('**/api/v1/portfolio/7/performance', route => route.fulfill({ json: { portfolio_id: 7, prices_as_of: now, weight_only_tickers: [],
+    holdings: [{ kind: 'stock', ticker: 'EXAMPLE.NS', name: 'Example Ltd', sector: 'Banks', currency: 'INR', shares: 5, avg_cost: 100, price: 100,
+      market_value: 500, cost_value: 500, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, weight_by_value: 50 }],
+    totals: [{ currency: 'INR', market_value: 1000, cost_value: 1000, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, sector_allocation: {} }] } }));
+  await page.route('**/api/v1/portfolio/7/balance', route => route.fulfill({ json: { portfolio_id: 7, risk_level: null,
+    mix: { INR: { equity: 75, cash: 25 } },
+    flags: [{ kind: 'stock', title: 'Example Ltd is 50% of this portfolio', detail: 'Selling this much brings it to 20%.', currency: 'INR', ticker: 'EXAMPLE.NS', amount: 375 }] } }));
+
+  await page.goto('/portfolios/7');
+  const balance = page.getByRole('region', { name: 'Balance check' });
+  await expect(balance).toContainText('75% equity · 25% cash');
+  await expect(balance.getByRole('link', { name: 'Example Ltd is 50% of this portfolio' })).toHaveAttribute('href', '/research/EXAMPLE.NS');
+  await expect(balance).toContainText('About ₹375.00');
+  await expect(balance.getByRole('link', { name: 'Account' })).toBeVisible();  // no risk profile yet
+  await expect(balance.getByRole('note')).toContainText('not investment advice');
 test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {
   await signedIn(page);
   const now = new Date().toISOString();
