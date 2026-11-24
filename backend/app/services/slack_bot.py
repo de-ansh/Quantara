@@ -15,22 +15,13 @@ from app.core.database import AsyncSessionLocal
 from app.core.dependencies import user_dict
 from app.core.logging import get_logger
 from app.models.user import User
+from app.services.notify import linked_users
 
 logger = get_logger(__name__)
 
 MAX_HISTORY = 30  # the chat endpoint's own limit
 MENTION = re.compile(r"<@[A-Z0-9]+>\s*")
 THINKING = "Looking that up…"
-
-
-def linked_users(raw: str) -> dict[str, int]:
-    """Parse "U0123ABCD:8,U0456EFGH:9" into {Slack user ID: Quantara user ID}; malformed pairs are skipped."""
-    pairs: dict[str, int] = {}
-    for part in raw.split(","):
-        slack_id, _, user_id = part.strip().partition(":")
-        if slack_id and user_id.strip().isdigit():
-            pairs[slack_id] = int(user_id)
-    return pairs
 
 
 def to_slack(text: str) -> str:

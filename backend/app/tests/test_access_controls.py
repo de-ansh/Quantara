@@ -184,6 +184,7 @@ async def test_password_reset_via_slack(client: AsyncClient, monkeypatch):
 
     monkeypatch.setattr(auth, "notify_slack", fake_slack)
     monkeypatch.setattr(settings, "slack_webhook_url", None)
+    monkeypatch.setattr(settings, "slack_bot_token", None)
     off = await client.post("/api/v1/auth/forgot-password", json={"email": "test@quantara.com"})
     assert off.status_code == 503
 
