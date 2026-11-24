@@ -93,6 +93,30 @@ test('portfolios page totals every portfolio and shows each one\'s value, today 
   await expect(page.getByRole('region', { name: 'Ideas' })).toContainText(/5,000\s*invested/);  // no share counts: what was put in
 });
 
+test('the portfolios page checks the balance of all portfolios together and says where to sell', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  const portfolio = (id: number, name: string) => ({ id, name, description: null, initial_investment: 5000, positions: [], funds: [], created_at: now, updated_at: now });
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [portfolio(1, 'Broker A'), portfolio(2, 'Broker B')], total_count: 2 } }));
+  const totals = [{ currency: 'INR', market_value: 1000, cost_value: 1000, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, sector_allocation: {} }];
+  const perf = (id: number) => ({ portfolio_id: id, prices_as_of: now, weight_only_tickers: [], holdings: [], totals });
+  await page.route('**/api/v1/portfolio/updates', route => route.fulfill({ json: { portfolios: [
+    { portfolio_id: 1, name: 'Broker A', updates: {}, performance: perf(1) },
+    { portfolio_id: 2, name: 'Broker B', updates: {}, performance: perf(2) },
+  ] } }));
+  await page.route('**/api/v1/portfolio/balance**', route => route.fulfill({ json: { portfolio_id: null, risk_level: 'Moderate',
+    target: { equity: 70, debt: 20, cash: 5, gold: 5, max_stock: 20, max_sector: 35, is_default: true }, mix: { INR: { equity: 100 } },
+    flags: [{ kind: 'stock', title: 'Example Ltd is 60% of all your portfolios', detail: 'Selling this much brings it to 20%.', currency: 'INR', ticker: 'EXAMPLE.NS', amount: 1000 }],
+    plan: [{ action: 'sell', asset_class: 'equity', amount: 600, currency: 'INR', ticker: 'EXAMPLE.NS', name: 'Example Ltd', reason: 'over your company limit', gain: 50, held_in: ['Broker A', 'Broker B'] },
+      { action: 'add', asset_class: 'debt', amount: 600, currency: 'INR', ticker: null, name: null, reason: 'below target', gain: null, held_in: [] }] } }));
+
+  await page.goto('/portfolios');
+  const all = page.getByRole('region', { name: 'Balance across all portfolios' });
+  await expect(all).toContainText('Example Ltd is 60% of all your portfolios');
+  await expect(all).toContainText('over your company limit · in Broker A, Broker B');
+  await expect(all).toContainText('a debt fund or bond ETF');
+});
+
 test('a portfolio shows its mix against the target, a rebalancing plan, new money and a saved target', async ({ page }) => {
   await signedIn(page);
   const now = new Date().toISOString();

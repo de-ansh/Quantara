@@ -404,6 +404,115 @@ async def reset_target_mix(current_user: CurrentUser, db: DBSession) -> TargetMi
     return TargetMix(**vars(await _target(db, int(current_user["id"]), current_user.get("risk_level"))))
 
 
+class BalanceFlagOut(BaseModel):
+    kind: str = Field(..., description="stock, sector, mix, verdict or elsewhere")
+    title: str
+    detail: str
+    currency: str
+    ticker: str | None = None
+    amount: float | None = None
+
+
+class TradeOut(BaseModel):
+    action: str = Field(..., description="sell or add")
+    asset_class: str
+    amount: float
+    currency: str
+    ticker: str | None = None
+    name: str | None = None
+    reason: str
+    gain: float | None = Field(None, description="profit (negative: loss) the sale realises, before tax")
+    held_in: list[str] = Field(default_factory=list, description="all-portfolios view: the portfolios holding it")
+
+
+class PortfolioBalance(BaseModel):
+    portfolio_id: int | None = Field(..., description="null: all the user's portfolios together")
+    flags: list[BalanceFlagOut]
+    mix: dict[str, dict[str, float]]  # currency -> asset class (equity, debt, cash, gold) -> % of value
+    target: TargetMix
+    plan: list[TradeOut]  # rupee holdings only
+    risk_level: str | None
+
+
+NewMoney = Query(0, ge=0, le=1e10, description="Rupees about to be added, invested before anything is sold")
+
+
+@router.get("/{portfolio_id}/balance", response_model=PortfolioBalance)
+async def get_portfolio_balance(
+    portfolio_id: int, current_user: CurrentUser, db: DBSession, new_money: float = NewMoney,
+) -> PortfolioBalance:
+    """Flags against the target mix, and the sells and adds that get back to it."""
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == int(current_user["id"])))).scalars().all()
+    portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    perf = await _valuation(db, portfolio)
+    held = {h.ticker for h in perf.holdings if h.kind == "stock"}
+    elsewhere: dict[str, list[str]] = {}
+    for other in portfolios:
+        if other.id != portfolio_id:
+            for pos in other.positions:
+                if pos.shares > 0 and pos.ticker in held:
+                    elsewhere.setdefault(pos.ticker, []).append(other.name)
+    return await _balance(db, current_user, portfolio_id, perf.holdings, elsewhere, {}, new_money)
+
+
+@router.get("/balance", response_model=PortfolioBalance)
+async def get_all_balance(current_user: CurrentUser, db: DBSession, new_money: float = NewMoney) -> PortfolioBalance:
+    """Every portfolio as one: a stock held in several counts once, at its combined size."""
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == int(current_user["id"])))).scalars().all()
+    merged: dict[tuple[str, str], HoldingPerformance] = {}
+    held_in: dict[str, list[str]] = {}
+    for portfolio in portfolios:
+        for h in (await _valuation(db, portfolio)).holdings:
+            held_in.setdefault(h.ticker, []).append(portfolio.name)
+            key = (h.kind, h.ticker)
+            if key not in merged:
+                merged[key] = h.model_copy()
+                continue
+            m = merged[key]
+            m.shares += h.shares
+            m.cost_value += h.cost_value
+            if h.market_value is not None:
+                m.market_value = (m.market_value or 0) + h.market_value
+            if h.unrealized_pnl is not None:
+                m.unrealized_pnl = (m.unrealized_pnl or 0) + h.unrealized_pnl
+    return await _balance(db, current_user, None, list(merged.values()), {}, held_in, new_money)
+
+
+async def _balance(
+    db: DBSession,
+    current_user: dict,
+    portfolio_id: int | None,
+    holdings: list[HoldingPerformance],
+    elsewhere: dict[str, list[str]],
+    held_in: dict[str, list[str]],
+    new_money: float,
+) -> PortfolioBalance:
+    from app.services.verdict_tracking import verdict_for
+
+    risk_level = current_user.get("risk_level")
+    tolerance = current_user.get("volatility_tolerance")
+    verdicts: dict[str, str] = {}
+    if risk_level:
+        held = [h.ticker for h in holdings if h.kind == "stock"]
+        for stock in (await db.execute(select(Stock).where(Stock.ticker.in_(held)))).scalars():
+            v = await verdict_for(db, stock, risk_level, float(tolerance) if tolerance is not None else None)
+            if v:
+                verdicts[stock.ticker] = v.verdict
+    target = await _target(db, int(current_user["id"]), risk_level)
+    flags, mix = balance_flags(holdings, verdicts, elsewhere, target, "this portfolio" if portfolio_id else "all your portfolios")
+    plan = rebalance_plan(holdings, target, verdicts, new_money)
+    return PortfolioBalance(
+        portfolio_id=portfolio_id,
+        flags=[BalanceFlagOut(**vars(f)) for f in flags],
+        mix=mix,
+        target=TargetMix(**vars(target)),
+        plan=[TradeOut(**vars(t), held_in=held_in.get(t.ticker or "", [])) for t in plan],
+        risk_level=risk_level,
+    )
+
+
 @router.get("/updates", response_model=PortfolioUpdatesResponse)
 async def get_portfolio_updates(current_user: CurrentUser, db: DBSession) -> PortfolioUpdatesResponse:
     """Every portfolio valued now, with the last week's news and the next two weeks' events on each stock."""
@@ -603,81 +712,6 @@ async def get_portfolio_performance(
     if not portfolio:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
     return await _valuation(db, portfolio)
-
-
-class BalanceFlagOut(BaseModel):
-    kind: str = Field(..., description="stock, sector, mix, verdict or elsewhere")
-    title: str
-    detail: str
-    currency: str
-    ticker: str | None = None
-    amount: float | None = None
-
-
-class TradeOut(BaseModel):
-    action: str = Field(..., description="sell or add")
-    asset_class: str
-    amount: float
-    currency: str
-    ticker: str | None = None
-    name: str | None = None
-    reason: str
-    gain: float | None = Field(None, description="profit (negative: loss) the sale realises, before tax")
-
-
-class PortfolioBalance(BaseModel):
-    portfolio_id: int
-    flags: list[BalanceFlagOut]
-    mix: dict[str, dict[str, float]]  # currency -> asset class (equity, debt, cash, gold) -> % of value
-    target: TargetMix
-    plan: list[TradeOut]  # rupee holdings only
-    risk_level: str | None
-
-
-@router.get("/{portfolio_id}/balance", response_model=PortfolioBalance)
-async def get_portfolio_balance(
-    portfolio_id: int,
-    current_user: CurrentUser,
-    db: DBSession,
-    new_money: float = Query(0, ge=0, le=1e10, description="Rupees about to be added, invested before anything is sold"),
-) -> PortfolioBalance:
-    """Flags against the target mix, and the sells and adds that get back to it."""
-    from app.services.verdict_tracking import verdict_for
-
-    user_id = int(current_user["id"])
-    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == user_id))).scalars().all()
-    portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
-    if not portfolio:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    perf = await _valuation(db, portfolio)
-
-    risk_level = current_user.get("risk_level")
-    tolerance = current_user.get("volatility_tolerance")
-    held = [h.ticker for h in perf.holdings if h.kind == "stock"]
-    verdicts: dict[str, str] = {}
-    if risk_level:
-        for stock in (await db.execute(select(Stock).where(Stock.ticker.in_(held)))).scalars():
-            v = await verdict_for(db, stock, risk_level, float(tolerance) if tolerance is not None else None)
-            if v:
-                verdicts[stock.ticker] = v.verdict
-    elsewhere: dict[str, list[str]] = {}
-    for other in portfolios:
-        if other.id != portfolio_id:
-            for pos in other.positions:
-                if pos.shares > 0 and pos.ticker in held:
-                    elsewhere.setdefault(pos.ticker, []).append(other.name)
-
-    target = await _target(db, user_id, risk_level)
-    flags, mix = balance_flags(perf.holdings, verdicts, elsewhere, target)
-    plan = rebalance_plan(perf.holdings, target, verdicts, new_money)
-    return PortfolioBalance(
-        portfolio_id=portfolio_id,
-        flags=[BalanceFlagOut(**vars(f)) for f in flags],
-        mix=mix,
-        target=TargetMix(**vars(target)),
-        plan=[TradeOut(**vars(t)) for t in plan],
-        risk_level=risk_level,
-    )
 
 
 async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformance:

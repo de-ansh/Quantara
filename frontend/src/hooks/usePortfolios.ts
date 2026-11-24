@@ -173,10 +173,11 @@ export interface Trade {
     name: string | null;
     reason: string;
     gain: number | null; // profit (negative: loss) the sale realises, before tax
+    held_in?: string[]; // all-portfolios view: the portfolios holding it
 }
 
 export interface PortfolioBalance {
-    portfolio_id: number;
+    portfolio_id: number | null; // null: all portfolios together
     flags: BalanceFlag[];
     mix: Record<string, Record<string, number>>; // currency -> equity / debt / cash / gold -> %
     target: TargetMix;
@@ -185,10 +186,11 @@ export interface PortfolioBalance {
 }
 
 /** Flags against the target mix, and the sells and adds that get back to it; `newMoney` is invested first. */
-export const usePortfolioBalance = (id: number, newMoney = 0) => {
+export const usePortfolioBalance = (id: number | 'all', newMoney = 0) => {
     return useQuery({
         queryKey: ['portfolioBalance', id, newMoney],
-        queryFn: async () => (await apiClient.get<PortfolioBalance>(`/portfolio/${id}/balance`, { params: newMoney ? { new_money: newMoney } : {} })).data,
+        queryFn: async () => (await apiClient.get<PortfolioBalance>(id === 'all' ? '/portfolio/balance' : `/portfolio/${id}/balance`,
+            { params: newMoney ? { new_money: newMoney } : {} })).data,
         placeholderData: prev => prev, // keep the plan on screen while a new amount loads
     });
 };

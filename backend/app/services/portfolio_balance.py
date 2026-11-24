@@ -106,6 +106,7 @@ def balance_flags(
     verdicts: dict[str, str],
     elsewhere: dict[str, list[str]],
     target: Target,
+    scope: str = "this portfolio",
 ) -> tuple[list[BalanceFlag], dict[str, dict[str, float]]]:
     """Flags, most pressing first, and the asset mix (whole % by class) for each currency."""
     flags: list[BalanceFlag] = []
@@ -125,7 +126,7 @@ def balance_flags(
             pct = (h.market_value or 0) / total * 100
             if pct > target.max_stock:
                 flags.append(BalanceFlag(
-                    "stock", f"{h.name} is {pct:.0f}% of this portfolio",
+                    "stock", f"{h.name} is {pct:.0f}% of {scope}",
                     f"One company above {target.max_stock:.0f}% means a single bad result moves the whole portfolio. "
                     f"Selling this much brings it to {target.max_stock:.0f}%, or add new money elsewhere instead.",
                     currency, h.ticker, round(trim_to(h.market_value or 0, total, target.max_stock), 2)))
@@ -138,7 +139,7 @@ def balance_flags(
             pct = value / total * 100
             if pct > target.max_sector:
                 flags.append(BalanceFlag(
-                    "sector", f"{sector} is {pct:.0f}% of this portfolio",
+                    "sector", f"{sector} is {pct:.0f}% of {scope}",
                     f"Stocks in one sector tend to fall together. Above {target.max_sector:.0f}%, new money is better "
                     "spent elsewhere, or trim this much from the sector.",
                     currency, None, round(trim_to(value, total, target.max_sector), 2)))
