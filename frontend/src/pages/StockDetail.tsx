@@ -14,6 +14,7 @@ import ShareholdingCard from "@/components/ShareholdingCard"
 import FilingCard from "@/components/FilingCard"
 import Panel from "@/components/Panel"
 import KeyNumbers from "@/components/stock/KeyNumbers"
+import YourPosition from "@/components/stock/YourPosition"
 import ResearchReport from "@/components/stock/ResearchReport"
 import { useResearch } from "@/hooks/useResearch"
 
@@ -79,6 +80,7 @@ export default function StockDetail() {
                     <PriceChart ticker={ticker} />
                 </div>
                 <div className="space-y-6">
+                    <YourPosition ticker={ticker} />
                     <KeyNumbers ticker={ticker} stock={stock} riskScore={riskScore} />
                     <Panel id="price-alert" title="Price alert" description="Get notified in the bell when the price crosses a level">
                         <div className="p-4"><PriceAlertForm ticker={ticker} /></div>
