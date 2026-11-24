@@ -113,6 +113,8 @@ test('a portfolio shows its asset mix and what is out of balance, with how much 
   await expect(balance).toContainText('About ₹375.00');
   await expect(balance.getByRole('link', { name: 'Account' })).toBeVisible();  // no risk profile yet
   await expect(balance.getByRole('note')).toContainText('not investment advice');
+});
+
 test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {
   await signedIn(page);
   const now = new Date().toISOString();
