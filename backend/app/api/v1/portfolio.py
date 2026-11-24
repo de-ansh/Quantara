@@ -554,6 +554,60 @@ async def get_portfolio_performance(
     return await _valuation(db, portfolio)
 
 
+class BalanceFlagOut(BaseModel):
+    kind: str = Field(..., description="stock, sector, mix, verdict or elsewhere")
+    title: str
+    detail: str
+    currency: str
+    ticker: str | None = None
+    amount: float | None = None
+
+
+class PortfolioBalance(BaseModel):
+    portfolio_id: int
+    flags: list[BalanceFlagOut]
+    mix: dict[str, dict[str, float]]  # currency -> asset class (equity, debt, cash, gold) -> % of value
+    risk_level: str | None
+
+
+@router.get("/{portfolio_id}/balance", response_model=PortfolioBalance)
+async def get_portfolio_balance(portfolio_id: int, current_user: CurrentUser, db: DBSession) -> PortfolioBalance:
+    """Concentration, sector tilt, asset mix against the risk profile, Avoid-rated and doubly held stocks."""
+    from app.services.portfolio_balance import balance_flags
+    from app.services.verdict_tracking import verdict_for
+
+    user_id = int(current_user["id"])
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == user_id))).scalars().all()
+    portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    perf = await _valuation(db, portfolio)
+
+    risk_level = current_user.get("risk_level")
+    tolerance = current_user.get("volatility_tolerance")
+    held = [h.ticker for h in perf.holdings if h.kind == "stock"]
+    verdicts: dict[str, str] = {}
+    if risk_level:
+        for stock in (await db.execute(select(Stock).where(Stock.ticker.in_(held)))).scalars():
+            v = await verdict_for(db, stock, risk_level, float(tolerance) if tolerance is not None else None)
+            if v:
+                verdicts[stock.ticker] = v.verdict
+    elsewhere: dict[str, list[str]] = {}
+    for other in portfolios:
+        if other.id != portfolio_id:
+            for pos in other.positions:
+                if pos.shares > 0 and pos.ticker in held:
+                    elsewhere.setdefault(pos.ticker, []).append(other.name)
+
+    flags, mix = balance_flags(perf.holdings, verdicts, elsewhere, risk_level)
+    return PortfolioBalance(
+        portfolio_id=portfolio_id,
+        flags=[BalanceFlagOut(**vars(f)) for f in flags],
+        mix=mix,
+        risk_level=risk_level,
+    )
+
+
 async def _valuation(db: DBSession, portfolio: Portfolio) -> PortfolioPerformance:
     """Holdings at the latest price (stocks, refreshing quotes older than 15 minutes) or NAV (funds)."""
     from app.services.price_service import refresh_prices

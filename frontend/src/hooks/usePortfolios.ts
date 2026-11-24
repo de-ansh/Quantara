@@ -144,3 +144,27 @@ export const usePortfolioUpdates = () => {
         refetchInterval: 5 * 60 * 1000,
     });
 };
+
+export interface BalanceFlag {
+    kind: 'stock' | 'sector' | 'mix' | 'verdict' | 'elsewhere';
+    title: string;
+    detail: string;
+    currency: 'USD' | 'INR';
+    ticker: string | null;
+    amount: number | null; // how much to sell to get back under the limit
+}
+
+export interface PortfolioBalance {
+    portfolio_id: number;
+    flags: BalanceFlag[];
+    mix: Record<string, Record<string, number>>; // currency -> equity / debt / cash / gold -> %
+    risk_level: string | null;
+}
+
+/** Concentration, sector tilt, asset mix against the risk profile, Avoid-rated and doubly held stocks. */
+export const usePortfolioBalance = (id: number) => {
+    return useQuery({
+        queryKey: ['portfolioBalance', id],
+        queryFn: async () => (await apiClient.get<PortfolioBalance>(`/portfolio/${id}/balance`)).data,
+    });
+};
