@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 import pandas as pd
 import sentry_sdk
 import yfinance as yf
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import sleep_wall, utcnow
@@ -28,6 +28,16 @@ RISK_SCORES_PER_PASS = 50
 # A Yahoo call that never returned once held the refresh lock for 20 hours; give up and move on instead.
 YAHOO_CALL_TIMEOUT_SECONDS = 120
 PASS_TIMEOUT_SECONDS = 45 * 60  # a normal pass takes ~6 minutes, a slow one ~30
+# No price for this long: delisted, renamed or merged. Asked about only on Sundays, in case it comes back.
+DEAD_AFTER = timedelta(days=7)
+
+
+def _alive(now: datetime) -> ColumnElement[bool]:
+    """Stocks priced within DEAD_AFTER, or added since; every stock on Sundays."""
+    if now.weekday() == 6:
+        return true()
+    cutoff = now - DEAD_AFTER
+    return or_(Stock.price_updated_at >= cutoff, Stock.created_at >= cutoff)
 
 
 _T = TypeVar("_T")
@@ -87,8 +97,10 @@ async def _trigger_price_alerts(db: AsyncSession, prices: dict[str, float], now:
 async def refresh_prices(db: AsyncSession, tickers: list[str] | None = None) -> int:
     """Update price/previous_close for the given (default: all) stocks; returns how many changed."""
     stmt = select(Stock)
-    if tickers is not None:
+    if tickers is not None:  # asked for by name (a portfolio, a stock page): always tried
         stmt = stmt.where(Stock.ticker.in_([t.upper() for t in tickers]))
+    else:
+        stmt = stmt.where(_alive(utcnow()))
     stocks = (await db.execute(stmt)).scalars().all()
     if not stocks:
         return 0
@@ -175,6 +187,7 @@ async def refresh_fundamentals(
         await db.execute(
             select(Stock)
             .where(or_(Stock.fundamentals_updated_at.is_(None), Stock.fundamentals_updated_at < cutoff))
+            .where(_alive(utcnow()))
             .order_by(Stock.fundamentals_updated_at.asc().nulls_first())
             .limit(limit)
         )

@@ -177,3 +177,27 @@ async def test_a_hung_yahoo_call_is_abandoned_and_the_pass_carries_on(db_session
         assert await price_service.refresh_prices(db_session) == 2  # the second batch still lands
     finally:
         release.set()
+
+
+@pytest.mark.asyncio
+async def test_a_stock_without_a_price_for_a_week_is_only_asked_about_on_sundays(db_session, monkeypatch):
+    from datetime import datetime, timedelta
+
+    wednesday, sunday = datetime(2030, 1, 9, 10), datetime(2030, 1, 13, 10)
+    month_ago = wednesday - timedelta(days=30)
+    db_session.add_all([
+        Stock(ticker="LIVE", name="Live", price=10.0, price_updated_at=wednesday - timedelta(hours=1), created_at=month_ago),
+        Stock(ticker="DEAD", name="Delisted", price=5.0, price_updated_at=wednesday - timedelta(days=10), created_at=month_ago),
+        Stock(ticker="NEVER", name="Never priced", created_at=month_ago),
+        Stock(ticker="NEW", name="Just added", created_at=wednesday - timedelta(hours=2)),
+    ])
+    await db_session.commit()
+    asked: list[list[str]] = []
+    monkeypatch.setattr(price_service, "fetch_quotes", lambda tickers: asked.append(sorted(tickers)) or {})
+
+    monkeypatch.setattr(price_service, "utcnow", lambda: wednesday)
+    await price_service.refresh_prices(db_session)
+    await price_service.refresh_prices(db_session, ["DEAD"])  # named (a portfolio holds it): always tried
+    monkeypatch.setattr(price_service, "utcnow", lambda: sunday)
+    await price_service.refresh_prices(db_session)
+    assert asked == [["LIVE", "NEW"], ["DEAD"], ["DEAD", "LIVE", "NEVER", "NEW"]]
