@@ -18,20 +18,25 @@ def linked_users(raw: str) -> dict[str, int]:
     return pairs
 
 
-def _bot_recipients() -> list[str]:
-    return list(linked_users(settings.slack_users)) if settings.slack_bot_token else []
+def _bot_recipients(user_id: int | None = None) -> list[str]:
+    if not settings.slack_bot_token:
+        return []
+    return [s for s, u in linked_users(settings.slack_users).items() if user_id is None or u == user_id]
 
 
 def slack_configured() -> bool:
     return bool(_bot_recipients() or settings.slack_webhook_url)
 
 
-async def notify_slack(text: str) -> bool:
+async def notify_slack(text: str, user_id: int | None = None) -> bool:
     """Send `text` to Slack; returns whether it got there. Failures are logged, never raised.
 
-    The bot is preferred: a webhook dies silently when the Slack app is reinstalled.
+    The bot is preferred: a webhook dies silently when the Slack app is reinstalled. With `user_id`, only that
+    Quantara user's linked Slack accounts get it, and never the shared webhook channel.
     """
-    recipients = _bot_recipients()
+    recipients = _bot_recipients(user_id)
+    if user_id is not None and not recipients:
+        return False
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             if recipients:

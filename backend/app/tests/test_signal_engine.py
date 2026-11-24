@@ -361,6 +361,29 @@ async def test_notify_slack_prefers_bot_dms_to_linked_users(monkeypatch):
     ]
 
 
+@pytest.mark.asyncio
+async def test_notify_slack_to_one_user_dms_only_them_and_never_the_webhook(monkeypatch):
+    import httpx
+
+    from app.services import notify
+
+    channels = []
+
+    def slack(request: httpx.Request) -> httpx.Response:
+        channels.append(json.loads(request.content).get("channel", str(request.url)))
+        return httpx.Response(200, json={"ok": True})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(notify.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(slack), **kw))
+    monkeypatch.setattr(notify.settings, "slack_webhook_url", "https://hooks.slack.test/x")
+    monkeypatch.setattr(notify.settings, "slack_bot_token", "xoxb-test")
+    monkeypatch.setattr(notify.settings, "slack_users", "U1:8,U2:9,U3:8")
+    assert await notify.notify_slack("hi", user_id=8) is True
+    assert channels == ["U1", "U3"]
+    assert await notify.notify_slack("hi", user_id=5) is False  # not linked: no webhook fallback
+    assert channels == ["U1", "U3"]
+
+
 def test_signal_score_uses_direction_not_just_strength():
     from app.services.recommendation_engine import signal_score
 
