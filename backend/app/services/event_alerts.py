@@ -21,7 +21,7 @@ from app.models.price_alert import PriceAlert
 from app.models.signal import Signal
 from app.models.stock import Stock
 from app.models.watchlist import WatchlistItem
-from app.services.notify import notify_slack, slack_configured
+from app.services.notify import linked_users, notify_slack, slack_configured
 from app.services.nse_market import event_feeds
 
 logger = get_logger(__name__)
@@ -122,9 +122,68 @@ async def _market_indices() -> dict[str, tuple[float, float]]:
     }
 
 
-async def send_daily_digest_if_due(now: datetime | None = None) -> bool:
-    """Send today's digest once, on a weekday after DIGEST_HOUR_IST; returns whether it was sent.
+async def portfolio_section(db: AsyncSession, user_id: int, today: date) -> str | None:
+    """One user's part of the digest: their mix against target, holdings rated Avoid, and verdicts that changed."""
+    from app.api.v1.portfolio import get_all_balance
+    from app.core.dependencies import user_dict
+    from app.models.portfolio import Portfolio
+    from app.models.user import User
+    from app.models.verdict_snapshot import VerdictSnapshot
+    from app.services.portfolio_balance import CLASSES
 
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        return None
+    lines: list[str] = []
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == user_id))).scalars().all()
+    if portfolios:
+        balance = await get_all_balance(user_dict(user), db, 0)
+        mix, t = balance.mix.get("INR"), balance.target
+        if mix:
+            shares = " · ".join(f"{round(mix[c])}% {c}" for c in CLASSES if mix.get(c))
+            off = any(f.kind == "mix" for f in balance.flags)
+            lines.append(f"Mix: {shares} (target {t.equity:g}/{t.debt:g}/{t.cash:g}/{t.gold:g} equity/debt/cash/gold)"
+                         + (": off target, the rebalancing plan says what to move" if off else ": on target"))
+        avoid = [f.ticker for f in balance.flags if f.kind == "verdict" and f.ticker]
+        if avoid:
+            lines.append(f"Rated Avoid for you ({len(avoid)}): " + ", ".join(await _names(db, avoid)))
+
+    if user.risk_level:
+        held = {p.ticker for pf in portfolios for p in pf.positions if p.shares > 0}
+        held |= set((await db.execute(select(WatchlistItem.ticker).where(WatchlistItem.user_id == user_id))).scalars())
+        days = (await db.execute(
+            select(VerdictSnapshot.day).where(VerdictSnapshot.day <= today).distinct()
+            .order_by(VerdictSnapshot.day.desc()).limit(2)
+        )).scalars().all()
+        if held and len(days) == 2:
+            rows = (await db.execute(select(VerdictSnapshot.day, VerdictSnapshot.ticker, VerdictSnapshot.verdict).where(
+                VerdictSnapshot.day.in_(days), VerdictSnapshot.ticker.in_(held), VerdictSnapshot.risk_level == user.risk_level,
+            ))).all()
+            by_day: dict[date, dict[str, str]] = {d: {} for d in days}
+            for day, ticker, verdict in rows:
+                by_day[day][ticker] = verdict
+            now, before = by_day[days[0]], by_day[days[1]]
+            changed = sorted(t for t in now if t in before and now[t] != before[t])
+            if changed:
+                names = dict(zip(changed, await _names(db, changed), strict=True))
+                lines.append(f"Verdicts changed since {days[1]:%a %d %b}: "
+                             + "; ".join(f"{names[t]} {before[t]} → {now[t]}" for t in changed))
+    if not lines:
+        return None
+    url = f"{settings.frontend_url.rstrip('/')}/portfolios"
+    return f"*<{url}|Your portfolios>*\n" + "\n".join(f"• {line}" for line in lines)
+
+
+async def _names(db: AsyncSession, tickers: list[str]) -> list[str]:
+    found = dict((await db.execute(select(Stock.ticker, Stock.name).where(Stock.ticker.in_(tickers)))).tuples().all())
+    return [found.get(t) or t for t in tickers]
+
+
+async def send_daily_digest_if_due(now: datetime | None = None) -> bool:
+    """Send today's digest once per recipient, on a weekday after DIGEST_HOUR_IST; returns whether any was sent.
+
+    With the bot, each linked user gets a DM with their own portfolio section; with only a webhook, the shared
+    part goes to its channel. A recipient whose send fails is tried again at the next check.
     shortcut: NSE holidays still get a digest (of the last session); check the holiday list if that annoys.
     """
     from app.core.database import AsyncSessionLocal
@@ -133,32 +192,33 @@ async def send_daily_digest_if_due(now: datetime | None = None) -> bool:
     if now.weekday() >= 5 or now.hour < DIGEST_HOUR_IST or not slack_configured():
         return False
     today = now.date()
-    key = f"digest:sent:{today.isoformat()}"
+    users = sorted(set(linked_users(settings.slack_users).values())) if settings.slack_bot_token else []
+    recipients: list[int | None] = list(users) or [None]
+    keys = {uid: f"digest:sent:{today.isoformat()}" + (f":{uid}" if uid is not None else "") for uid in recipients}
+    sent = 0
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
-        if await redis.exists(key):
+        due = [uid for uid in recipients if not await redis.exists(keys[uid])]
+        if not due:
             return False
         indices, events = await asyncio.gather(_market_indices(), event_feeds(today))
         async with AsyncSessionLocal() as db:
-            text = await build_daily_digest(db, indices, events, today)
-        # Claimed only once built, so a failed build retries next check; NX keeps it to one send across workers
-        if not await redis.set(key, "1", nx=True, ex=3 * 86400):
-            return False
+            shared = await build_daily_digest(db, indices, events, today)
+            for uid in due:
+                mine = await portfolio_section(db, uid, today) if uid is not None else None
+                text = f"{shared}\n\n{mine}" if mine else shared
+                # Claimed only once built, so a failed build retries next check; NX keeps it to one send across workers
+                if not await redis.set(keys[uid], "1", nx=True, ex=3 * 86400):
+                    continue
+                if await (notify_slack(text, uid) if uid is not None else notify_slack(text)):
+                    sent += 1
+                else:
+                    await redis.delete(keys[uid])  # so the next check tries again
     finally:
         await redis.aclose()
-    if not await notify_slack(text):
-        await _release(key)  # so the next check tries again
-        return False
-    logger.info("Daily Slack digest sent")
-    return True
-
-
-async def _release(key: str) -> None:
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    try:
-        await redis.delete(key)
-    finally:
-        await redis.aclose()
+    if sent:
+        logger.info(f"Daily Slack digest sent to {sent} recipient(s)")
+    return sent > 0
 
 
 async def run_periodic_daily_digest(interval_seconds: int = DIGEST_CHECK_SECONDS) -> None:
