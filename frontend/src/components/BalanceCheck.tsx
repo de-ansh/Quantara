@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { usePortfolioBalance, useSaveTargetMix, type PortfolioBalance, type TargetMix } from "@/hooks/usePortfolios"
 import { apiErrorDetail } from "@/lib/api"
 import { money } from "@/lib/money"
+import { shortDay } from "@/lib/format"
 
 const CLASSES = ["equity", "debt", "cash", "gold"] as const
 const BAR = { equity: "bg-primary", debt: "bg-sky-500", cash: "bg-emerald-500", gold: "bg-amber-500" }
@@ -138,6 +139,12 @@ function Plan({ data, newMoney }: { data: PortfolioBalance; newMoney: number }) 
                                     {money(t.amount, t.currency)}
                                     {t.gain !== null && <span className="text-xs text-muted-foreground"> ({t.gain < 0 ? "loss" : "gain"} {money(Math.abs(t.gain), t.currency)})</span>}
                                 </span>
+                                {(t.short_term_gain != null || t.wait_until) && (
+                                    <span className="basis-full text-xs text-muted-foreground">
+                                        {t.short_term_gain != null && `Short-term ${money(t.short_term_gain, t.currency, true)} · long-term ${money(t.long_term_gain ?? 0, t.currency, true)}`}
+                                        {t.wait_until && <span className="text-amber-600 dark:text-amber-400"> · part turns long-term on {shortDay(t.wait_until)}: waiting cuts its tax from 20% to 12.5%</span>}
+                                    </span>
+                                )}
                             </li>
                         ))}
                     </ul>
@@ -157,12 +164,21 @@ function Plan({ data, newMoney }: { data: PortfolioBalance; newMoney: number }) 
                     ))}
                 </ul>
             </div>
-            {sells.length > 0 && (
+            {sells.length > 0 && (data.plan_tax != null ? (
+                <p className="text-xs text-muted-foreground">
+                    From your tradebook: selling all of this realises about {money(Math.abs(gain), "INR")} of {gain < 0 ? "losses" : "gains"} and adds
+                    about <span className="font-mono text-foreground">{money(data.plan_tax, "INR")}</span> to this year's tax
+                    {data.exemption_left != null && <> ({money(data.exemption_left, "INR")} of long-term gains is still tax-free this year)</>}. Includes 4% cess; surcharge isn't.
+                </p>
+            ) : (
                 <p className="text-xs text-muted-foreground">
                     Selling realises about {money(Math.abs(gain), "INR")} of {gain < 0 ? "losses" : "gains"} before tax. Short-term gains (held under a year)
-                    are taxed at 20%; long-term gains above ₹1.25 lakh a year at 12.5%. The app doesn't know your buy dates, so check them before selling.
+                    are taxed at 20%; long-term gains above ₹1.25 lakh a year at 12.5%.{" "}
+                    {sells.some(t => t.short_term_gain == null)
+                        ? "Without buy dates for every sale the app assumes they're short-term: import your tradebook for real figures."
+                        : ""}
                 </p>
-            )}
+            ))}
         </div>
     )
 }

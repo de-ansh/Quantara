@@ -8,7 +8,10 @@ of thumb, not advice.
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal, Protocol
+
+from app.services.tax_harvest import LTCG_RATE, STCG_RATE, Lot, Sale, sale_from
 
 CLASSES = ("equity", "debt", "cash", "gold")
 DRIFT_PCT = 5.0  # points off target before selling is worth the tax and trouble
@@ -77,6 +80,10 @@ class Trade:
     name: str | None = None
     reason: str = ""
     gain: float | None = None  # profit (or loss, negative) the sale realises, before tax
+    # From the imported tradebook's buy dates, first in first out; None without one
+    short_term_gain: float | None = None
+    long_term_gain: float | None = None
+    wait_until: date | None = None  # part of it turns long-term by then: waiting cuts the tax
 
 
 def asset_class(h: Holding) -> AssetClass:
@@ -167,19 +174,32 @@ def balance_flags(
     return flags, mixes
 
 
+def _sale(h: Holding, lots: dict[str, list[Lot]], amount: float, today: date) -> Sale | None:
+    """What selling `amount` of `h` realises, from its tradebook lots; None when they don't cover the holding."""
+    mine, price = lots.get(h.ticker), getattr(h, "price", None)
+    shares = getattr(h, "shares", 0.0)
+    if not mine or not price or sum(lot.quantity for lot in mine) < shares * 0.99:
+        return None
+    return sale_from(mine, amount / price, price, today)
+
+
 def rebalance_plan(
     holdings: Sequence[Holding],
     target: Target,
     verdicts: dict[str, str],
     new_money: float = 0.0,
     currency: str = "INR",
+    lots: dict[str, list[Lot]] | None = None,
+    today: date | None = None,
 ) -> list[Trade]:
     """Sells and adds that bring one currency's holdings to the target mix, new money going in first.
 
     Small drifts (under DRIFT_PCT) aren't sold, only topped up with new money. Within a class that is over target,
-    sells go Avoid-rated first, then over the company limit, then losses (no tax, and they offset gains), then the
-    smallest gains.
+    sells go Avoid-rated first, then over the company limit, then by tax per rupee sold: losses (no tax, and they
+    offset gains), then long-term gains (12.5%), then short-term ones (20%). With tradebook `lots` the tax comes
+    from real buy dates; without, every gain is assumed short-term.
     """
+    lots, today = lots or {}, today or date.today()
     group = [h for h in holdings if h.currency == currency and h.market_value]
     held = sum(h.market_value or 0.0 for h in group)
     total = held + new_money
@@ -190,26 +210,39 @@ def rebalance_plan(
     over = {c: current[c] - desired[c] for c in CLASSES
             if current[c] - desired[c] > 0 and (current[c] - desired[c]) / total * 100 > DRIFT_PCT}
     under = {c: desired[c] - current[c] for c in CLASSES if desired[c] > current[c]}
+    companies = _companies(group)
+
+    def too_big(h: Holding) -> bool:
+        return h in companies and (h.market_value or 0) / held * 100 > target.max_stock
+
+    def tax_per_rupee(h: Holding) -> float:
+        whole = _sale(h, lots, h.market_value or 0, today)
+        tax = (whole.short_term * STCG_RATE + whole.long_term * LTCG_RATE if whole
+               else (h.unrealized_pnl or 0) * STCG_RATE)
+        return tax / (h.market_value or 1)
 
     trades: list[Trade] = []
     for c, excess in over.items():
-        def priority(h: Holding) -> tuple:
-            pnl_pct = (h.unrealized_pnl or 0) / (h.market_value or 1)
-            too_big = h in _companies(group) and (h.market_value or 0) / held * 100 > target.max_stock
-            return (verdicts.get(h.ticker) != "Avoid", not too_big, pnl_pct)
-
-        for h in sorted((h for h in group if asset_class(h) == c), key=priority):
+        ranked = sorted((h for h in group if asset_class(h) == c),
+                        key=lambda h: (verdicts.get(h.ticker) != "Avoid", not too_big(h), tax_per_rupee(h)))
+        for h in ranked:
             if excess < 1:
                 break
             amount = min(excess, h.market_value or 0)
             excess -= amount
-            gain = (h.unrealized_pnl or 0) * amount / (h.market_value or 1) if h.unrealized_pnl is not None else None
+            sale = _sale(h, lots, amount, today)
+            gain = (sale.short_term + sale.long_term if sale
+                    else (h.unrealized_pnl or 0) * amount / (h.market_value or 1) if h.unrealized_pnl is not None else None)
             reason = ("rated Avoid" if verdicts.get(h.ticker) == "Avoid"
-                      else "over your company limit" if priority(h)[1] is False
+                      else "over your company limit" if too_big(h)
                       else "at a loss, so no tax and it offsets gains" if (gain or 0) < 0
+                      else "long-term gain, taxed at 12.5%" if sale and sale.short_term <= 0
+                      else "short-term gain" if sale
                       else "smallest gain in this class")
-            trades.append(Trade("sell", c, round(amount), currency, h.ticker, h.name, reason,
-                                round(gain) if gain is not None else None))
+            trades.append(Trade(
+                "sell", c, round(amount), currency, h.ticker, h.name, reason, round(gain) if gain is not None else None,
+                round(sale.short_term) if sale else None, round(sale.long_term) if sale else None,
+                sale.wait_until if sale else None))
 
     available = new_money + sum(t.amount for t in trades)
     need = sum(under.values())

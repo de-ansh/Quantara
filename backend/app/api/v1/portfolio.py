@@ -5,20 +5,23 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 
+from app.api.v1.tax import TradeIn
 from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
 from app.models.listed_security import ListedSecurity
 from app.models.mutual_fund import MutualFund
-from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
+from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition, PortfolioTrade
 from app.models.stock import Stock
 from app.models.user import User
 from app.services.mutual_funds import match_funds
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
 from app.services.portfolio_balance import Target, balance_flags, rebalance_plan
 from app.services.stock_lookup import get_or_track_stock
+from app.services.tax_harvest import LTCG_EXEMPTION, Book, Lot, build_book, tax_on, xirr
+from app.services.tax_harvest import Trade as TaxTrade
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -422,6 +425,9 @@ class TradeOut(BaseModel):
     name: str | None = None
     reason: str
     gain: float | None = Field(None, description="profit (negative: loss) the sale realises, before tax")
+    short_term_gain: float | None = Field(None, description="from tradebook buy dates; null without one")
+    long_term_gain: float | None = None
+    wait_until: date | None = Field(None, description="part of it turns long-term by then: waiting cuts the tax")
     held_in: list[str] = Field(default_factory=list, description="all-portfolios view: the portfolios holding it")
 
 
@@ -431,6 +437,9 @@ class PortfolioBalance(BaseModel):
     mix: dict[str, dict[str, float]]  # currency -> asset class (equity, debt, cash, gold) -> % of value
     target: TargetMix
     plan: list[TradeOut]  # rupee holdings only
+    plan_tax: float | None = Field(None, description="extra tax this financial year if every sale is made; "
+                                   "null unless the tradebook covers every holding sold")
+    exemption_left: float | None = Field(None, description="long-term gains still tax-free this financial year")
     risk_level: str | None
 
 
@@ -454,7 +463,8 @@ async def get_portfolio_balance(
             for pos in other.positions:
                 if pos.shares > 0 and pos.ticker in held:
                     elsewhere.setdefault(pos.ticker, []).append(other.name)
-    return await _balance(db, current_user, portfolio_id, perf.holdings, elsewhere, {}, new_money)
+    return await _balance(db, current_user, portfolio_id, perf.holdings, elsewhere, {}, new_money,
+                          [b] if (b := await _book(db, portfolio)) else [])
 
 
 @router.get("/balance", response_model=PortfolioBalance)
@@ -463,6 +473,7 @@ async def get_all_balance(current_user: CurrentUser, db: DBSession, new_money: f
     portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == int(current_user["id"])))).scalars().all()
     merged: dict[tuple[str, str], HoldingPerformance] = {}
     held_in: dict[str, list[str]] = {}
+    books = [b for p in portfolios if (b := await _book(db, p))]
     for portfolio in portfolios:
         for h in (await _valuation(db, portfolio)).holdings:
             held_in.setdefault(h.ticker, []).append(portfolio.name)
@@ -477,7 +488,7 @@ async def get_all_balance(current_user: CurrentUser, db: DBSession, new_money: f
                 m.market_value = (m.market_value or 0) + h.market_value
             if h.unrealized_pnl is not None:
                 m.unrealized_pnl = (m.unrealized_pnl or 0) + h.unrealized_pnl
-    return await _balance(db, current_user, None, list(merged.values()), {}, held_in, new_money)
+    return await _balance(db, current_user, None, list(merged.values()), {}, held_in, new_money, books)
 
 
 async def _balance(
@@ -488,6 +499,7 @@ async def _balance(
     elsewhere: dict[str, list[str]],
     held_in: dict[str, list[str]],
     new_money: float,
+    books: list[Book],
 ) -> PortfolioBalance:
     from app.services.verdict_tracking import verdict_for
 
@@ -502,15 +514,160 @@ async def _balance(
                 verdicts[stock.ticker] = v.verdict
     target = await _target(db, int(current_user["id"]), risk_level)
     flags, mix = balance_flags(holdings, verdicts, elsewhere, target, "this portfolio" if portfolio_id else "all your portfolios")
-    plan = rebalance_plan(holdings, target, verdicts, new_money)
+    lots: dict[str, list[Lot]] = {}
+    for book in books:  # several portfolios: FIFO per demat account, approximated here as one queue per stock
+        for lot in book.lots:
+            lots.setdefault(lot.symbol, []).append(lot)
+    plan = rebalance_plan(holdings, target, verdicts, new_money, lots=lots)
+    sells = [t for t in plan if t.action == "sell"]
+    plan_tax = exemption_left = None
+    if books:
+        st = sum(b.realized.short_term for b in books)
+        lt = sum(b.realized.long_term for b in books)
+        exemption_left = round(max(0.0, LTCG_EXEMPTION - max(0.0, lt + min(0.0, st))), 2)
+        if sells and all(t.short_term_gain is not None for t in sells):
+            st_plan = sum(t.short_term_gain or 0 for t in sells)
+            lt_plan = sum(t.long_term_gain or 0 for t in sells)
+            plan_tax = round(tax_on(st + st_plan, lt + lt_plan) - tax_on(st, lt), 2)
     return PortfolioBalance(
         portfolio_id=portfolio_id,
         flags=[BalanceFlagOut(**vars(f)) for f in flags],
         mix=mix,
         target=TargetMix(**vars(target)),
         plan=[TradeOut(**vars(t), held_in=held_in.get(t.ticker or "", [])) for t in plan],
+        plan_tax=plan_tax,
+        exemption_left=exemption_left,
         risk_level=risk_level,
     )
+
+
+# --- Tradebook: the buy dates behind a portfolio's holdings -------------------------------------------------------
+
+
+class TradebookImport(BaseModel):
+    trades: list[TradeIn] = Field(..., min_length=1, max_length=50_000)
+
+
+class TradebookGap(BaseModel):
+    ticker: str
+    portfolio_shares: float
+    tradebook_shares: float
+
+
+class TradebookSummary(BaseModel):
+    imported_at: datetime
+    trades: int
+    first_trade: date | None
+    excluded: list[str] = Field(..., description="symbols left out: a split or bonus the tradebook can't show")
+    warnings: list[str]
+    gaps: list[TradebookGap] = Field(..., description="holdings whose share count the tradebook doesn't explain")
+    xirr: float | None = Field(None, description="annual return (%) on the tradebook's stocks, valued at today's prices")
+
+
+async def _trades(db: DBSession, portfolio_id: int) -> list[TaxTrade]:
+    rows = (await db.execute(
+        select(PortfolioTrade).where(PortfolioTrade.portfolio_id == portfolio_id).order_by(PortfolioTrade.day)
+    )).scalars().all()
+    return [TaxTrade(r.symbol, r.day, r.side, r.quantity, r.price) for r in rows]
+
+
+async def _book(db: DBSession, portfolio: Portfolio) -> Book | None:
+    """Open lots and this year's realised gains from the stored tradebook; None when there isn't one."""
+    if not portfolio.tradebook:
+        return None
+    excluded = set(portfolio.tradebook.get("excluded", []))
+    trades = [t for t in await _trades(db, portfolio.id) if t.symbol not in excluded]
+    return build_book(trades, date.today()) if trades else None
+
+
+async def _summary(db: DBSession, portfolio: Portfolio) -> TradebookSummary | None:
+    meta = portfolio.tradebook
+    if not meta:
+        return None
+    excluded = set(meta.get("excluded", []))
+    trades = [t for t in await _trades(db, portfolio.id) if t.symbol not in excluded]
+    book = build_book(trades, date.today())
+    open_shares: dict[str, float] = {}
+    for lot in book.lots:
+        open_shares[lot.symbol] = open_shares.get(lot.symbol, 0.0) + lot.quantity
+    gaps = [
+        TradebookGap(ticker=p.ticker, portfolio_shares=p.shares, tradebook_shares=round(open_shares.get(p.ticker, 0.0), 4))
+        for p in portfolio.positions
+        if p.shares > 0 and p.ticker not in excluded and abs(open_shares.get(p.ticker, 0.0) - p.shares) > max(0.01, p.shares * 0.01)
+    ]
+    # XIRR: money in on each buy, out on each sell, and what's still held, at today's price
+    rows = (await db.execute(
+        select(Stock.ticker, Stock.price).where(Stock.ticker.in_(list(open_shares)))
+    )).all() if open_shares else []
+    prices: dict[str, float] = {t: float(p) for t, p in rows if p}
+    rate = None
+    if all(prices.get(t) for t in open_shares):
+        flows = [(t.day, (-1 if t.side == "buy" else 1) * t.quantity * t.price) for t in trades]
+        flows.append((date.today(), sum(q * prices[t] for t, q in open_shares.items())))
+        rate = xirr(flows)
+    return TradebookSummary(
+        imported_at=datetime.fromisoformat(meta["imported_at"]),
+        trades=len(trades),
+        first_trade=min((t.day for t in trades), default=None),
+        excluded=sorted(excluded),
+        warnings=meta.get("warnings", []),
+        gaps=gaps,
+        xirr=rate,
+    )
+
+
+async def _own(db: DBSession, current_user: dict, portfolio_id: int) -> Portfolio:
+    portfolio = (await db.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == int(current_user["id"]))
+    )).scalar_one_or_none()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return portfolio
+
+
+@router.put("/{portfolio_id}/trades", response_model=TradebookSummary)
+async def import_tradebook(
+    portfolio_id: int, body: TradebookImport, current_user: CurrentUser, db: DBSession
+) -> TradebookSummary:
+    """Replace the portfolio's tradebook. Splits and bonuses are checked once, here, since the lookup is slow."""
+    from app.api.v1.tax import _all_split_dates
+    from app.services.stock_lookup import resolve_ticker
+
+    portfolio = await _own(db, current_user, portfolio_id)
+    symbols = {t.symbol.upper() for t in body.trades}
+    resolved = {s: await resolve_ticker(db, s) or s for s in symbols}
+    trades = [TaxTrade(resolved[t.symbol.upper()], t.date, t.side, t.quantity, t.price) for t in body.trades]
+    splits = await _all_split_dates({t.symbol for t in trades})
+    book = build_book(trades, date.today(), {s: d for s, d in splits.items() if d})
+    excluded = book.excluded
+    unchecked = sorted(s for s, d in splits.items() if d is None)
+    warnings = book.warnings + (
+        [f"Couldn't check for bonuses or splits on {', '.join(unchecked)}; verify those with your broker"] if unchecked else []
+    )
+
+    await db.execute(delete(PortfolioTrade).where(PortfolioTrade.portfolio_id == portfolio_id))
+    db.add_all(PortfolioTrade(portfolio_id=portfolio_id, symbol=t.symbol, day=t.day, side=t.side,
+                              quantity=t.quantity, price=t.price) for t in trades)
+    portfolio.tradebook = {"imported_at": utcnow().isoformat(), "excluded": excluded, "warnings": warnings}
+    await db.commit()
+    await db.refresh(portfolio)
+    summary = await _summary(db, portfolio)
+    assert summary is not None
+    return summary
+
+
+@router.get("/{portfolio_id}/trades", response_model=TradebookSummary | None)
+async def get_tradebook(portfolio_id: int, current_user: CurrentUser, db: DBSession) -> TradebookSummary | None:
+    """What the imported tradebook covers, its gaps and XIRR; null before one is imported."""
+    return await _summary(db, await _own(db, current_user, portfolio_id))
+
+
+@router.delete("/{portfolio_id}/trades", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tradebook(portfolio_id: int, current_user: CurrentUser, db: DBSession) -> None:
+    portfolio = await _own(db, current_user, portfolio_id)
+    await db.execute(delete(PortfolioTrade).where(PortfolioTrade.portfolio_id == portfolio_id))
+    portfolio.tradebook = None
+    await db.commit()
 
 
 @router.get("/updates", response_model=PortfolioUpdatesResponse)

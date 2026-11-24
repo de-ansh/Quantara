@@ -174,6 +174,9 @@ export interface Trade {
     reason: string;
     gain: number | null; // profit (negative: loss) the sale realises, before tax
     held_in?: string[]; // all-portfolios view: the portfolios holding it
+    short_term_gain?: number | null; // from tradebook buy dates; null without one
+    long_term_gain?: number | null;
+    wait_until?: string | null; // part of it turns long-term by then: waiting cuts the tax
 }
 
 export interface PortfolioBalance {
@@ -182,6 +185,8 @@ export interface PortfolioBalance {
     mix: Record<string, Record<string, number>>; // currency -> equity / debt / cash / gold -> %
     target: TargetMix;
     plan: Trade[]; // rupee holdings only
+    plan_tax?: number | null; // extra tax this year if every sale is made; null unless the tradebook covers them
+    exemption_left?: number | null; // long-term gains still tax-free this financial year
     risk_level: string | null;
 }
 
@@ -202,5 +207,39 @@ export const useSaveTargetMix = () => {
         mutationFn: async (target: TargetMix | null) =>
             (target ? await apiClient.put<TargetMix>('/portfolio/target-mix', target) : await apiClient.delete<TargetMix>('/portfolio/target-mix')).data,
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolioBalance'] }),
+    });
+};
+
+export interface TradebookSummary {
+    imported_at: string;
+    trades: number;
+    first_trade: string | null;
+    excluded: string[]; // left out: a split or bonus the tradebook can't show
+    warnings: string[];
+    gaps: { ticker: string; portfolio_shares: number; tradebook_shares: number }[];
+    xirr: number | null; // annual return, %
+}
+
+/** The portfolio's imported tradebook (buy dates behind its holdings); null before one is imported. */
+export const useTradebook = (id: number) => {
+    return useQuery({
+        queryKey: ['tradebook', id],
+        queryFn: async () => (await apiClient.get<TradebookSummary | null>(`/portfolio/${id}/trades`)).data,
+    });
+};
+
+/** Replace (trades) or remove (null) the portfolio's tradebook; the balance check's tax figures follow it. */
+export const useSaveTradebook = (id: number) => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (trades: { symbol: string; date: string; side: 'buy' | 'sell'; quantity: number; price: number }[] | null) => {
+            if (trades) return (await apiClient.put<TradebookSummary>(`/portfolio/${id}/trades`, { trades })).data;
+            await apiClient.delete(`/portfolio/${id}/trades`);
+            return null;
+        },
+        onSuccess: data => {
+            queryClient.setQueryData(['tradebook', id], data);
+            queryClient.invalidateQueries({ queryKey: ['portfolioBalance'] });
+        },
     });
 };

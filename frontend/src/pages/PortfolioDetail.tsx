@@ -7,6 +7,7 @@ import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { cn, timeAgo } from "@/lib/utils"
 import PortfolioTotals from "@/components/PortfolioTotals"
 import BalanceCheck from "@/components/BalanceCheck"
+import TradebookPanel from "@/components/TradebookPanel"
 import { staleNav } from "@/lib/format"
 import { usePortfolioPerformance, usePortfolios, type CurrencyTotals, type HoldingPerformance } from "@/hooks/usePortfolios"
 import { dayPct, money, pct, tone } from "@/lib/money"
@@ -91,6 +92,7 @@ export default function PortfolioDetail() {
                             </div>
                         )}
                         {perf.totals.length > 0 && <BalanceCheck id={id} />}
+                        <TradebookPanel id={id} />
                         <Panel id="holdings" title={`${perf.holdings.length} holding${perf.holdings.length === 1 ? "" : "s"}`}
                             description={perf.weight_only_tickers.length > 0 ? `Not valued (weight only, no share count): ${perf.weight_only_tickers.join(", ")}` : undefined}>
                             <div className="overflow-x-auto">

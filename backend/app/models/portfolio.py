@@ -1,8 +1,8 @@
 """Portfolio and Position models for user portfolio management."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.clock import utcnow
@@ -22,6 +22,8 @@ class Portfolio(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     initial_investment: Mapped[float] = mapped_column(Float, default=100000.0, nullable=False)
+    # Last tradebook import: {"imported_at", "trades", "excluded": [symbols left out], "warnings": [...]}
+    tradebook: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     positions: Mapped[list["PortfolioPosition"]] = relationship(
@@ -85,3 +87,19 @@ class PortfolioFund(Base):
     cost_basis: Mapped[float] = mapped_column(Float, default=0.0, nullable=False, comment="Average cost per unit")
 
     fund: Mapped["MutualFund"] = relationship("MutualFund", lazy="selectin")
+
+
+class PortfolioTrade(Base):
+    """One executed buy or sell from an imported broker tradebook: the buy dates behind a portfolio's holdings."""
+
+    __tablename__ = "portfolio_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, comment="Tracked ticker when known, else as given")
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)  # buy | sell
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)

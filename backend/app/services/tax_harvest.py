@@ -51,6 +51,7 @@ class Book:
     lots: list[Lot]
     realized: Realized
     warnings: list[str] = field(default_factory=list)
+    excluded: list[str] = field(default_factory=list)  # symbols left out: a split/bonus, or more sold than bought
 
 
 def long_term_from(bought: date) -> date:
@@ -137,7 +138,7 @@ def build_book(trades: list[Trade], today: date, splits: dict[str, list[date]] |
                 "or trades before the earliest file), so it's left out"
             )
     remaining = [lot for symbol, q in open_lots.items() if symbol not in broken for lot in q]
-    return Book(remaining, realized, warnings)
+    return Book(remaining, realized, warnings, sorted(broken))
 
 
 def tax_on(short_term: float, long_term: float) -> float:
@@ -222,3 +223,56 @@ def harvest_plan(book: Book, prices: dict[str, float], today: date) -> dict:
         "lots": [v.__dict__ for v in views],
         "warnings": book.warnings,
     }
+
+
+@dataclass
+class Sale:
+    short_term: float  # gain (negative: loss) on lots held 12 months or less
+    long_term: float
+    wait_until: date | None = None  # a short-term gain in it turns long-term by then (within SOON_DAYS)
+
+
+def sale_from(lots: list[Lot], quantity: float, price: float, today: date) -> Sale:
+    """Gains from selling `quantity` shares now, first in, first out across `lots` (oldest first)."""
+    sale = Sale(0.0, 0.0)
+    left = quantity
+    for lot in sorted(lots, key=lambda lot: lot.bought):
+        if left <= 1e-9:
+            break
+        take = min(left, lot.quantity)
+        left -= take
+        gain = take * (price - lot.cost)
+        turns = long_term_from(lot.bought)
+        if today >= turns:
+            sale.long_term += gain
+        else:
+            sale.short_term += gain
+            if gain > 0 and turns <= today + timedelta(days=SOON_DAYS):
+                sale.wait_until = max(sale.wait_until or turns, turns)
+    return sale
+
+
+def xirr(flows: list[tuple[date, float]]) -> float | None:
+    """Annual return (% a year) that makes the dated cash flows' present value zero; money in is negative.
+
+    None when there's no answer: all flows one sign, or less than a month of history (too noisy to annualise).
+    """
+    if not flows or min(a for _, a in flows) >= 0 or max(a for _, a in flows) <= 0:
+        return None
+    start = min(d for d, _ in flows)
+    if (max(d for d, _ in flows) - start).days < 30:
+        return None
+
+    def npv(rate: float) -> float:
+        return float(sum(a / (1 + rate) ** ((d - start).days / 365) for d, a in flows))
+
+    low, high = -0.99, 10.0  # bisection: npv falls as the rate rises when money goes in first
+    if npv(low) * npv(high) > 0:
+        return None
+    for _ in range(200):
+        mid = (low + high) / 2
+        if npv(low) * npv(mid) <= 0:
+            high = mid
+        else:
+            low = mid
+    return round((low + high) / 2 * 100, 2)
