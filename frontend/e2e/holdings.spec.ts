@@ -93,6 +93,31 @@ test('portfolios page totals every portfolio and shows each one\'s value, today 
   await expect(page.getByRole('region', { name: 'Ideas' })).toContainText(/5,000\s*invested/);  // no share counts: what was put in
 });
 
+test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  const holding = (shares: number, cost: number, mv: number, day: number) => ({ kind: 'stock', ticker: 'EXAMPLE.NS', name: 'Example Ltd',
+    sector: null, currency: 'INR', shares, avg_cost: cost / shares, price: mv / shares, market_value: mv, cost_value: cost,
+    unrealized_pnl: mv - cost, unrealized_pnl_pct: ((mv - cost) / cost) * 100, day_change: day, weight_by_value: null });
+  const perf = (id: number, holdings: object[]) => ({ portfolio_id: id, prices_as_of: now, weight_only_tickers: [], holdings, totals: [] });
+  await page.route('**/api/v1/portfolio/updates', route => route.fulfill({ json: { portfolios: [
+    { portfolio_id: 1, name: 'Long term', updates: {}, performance: perf(1, [holding(10, 1000, 1200, 20)]) },
+    { portfolio_id: 2, name: 'Trading', updates: {}, performance: perf(2, [holding(30, 3000, 2800, -10)]) },
+  ] } }));
+
+  await page.goto('/research/EXAMPLE.NS');
+  const mine = page.getByRole('region', { name: 'Your position' });
+  await expect(mine).toContainText('40 shares at ₹100.00 average cost');
+  await expect(mine).toContainText('₹4,000.00');   // 1,200 + 2,800
+  await expect(mine).toContainText('+₹10.00');     // 20 - 10 today
+  await expect(mine).toContainText('₹0.00');       // +200 - 200: even overall
+  await expect(mine.getByRole('link', { name: 'Trading' })).toHaveAttribute('href', '/portfolios/2');
+
+  await page.goto('/research/OTHER.NS');
+  await expect(page.getByRole('heading', { name: 'Key numbers' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your position' })).toHaveCount(0);
+});
+
 test('stock detail shows a price chart with range switching', async ({ page }) => {
   await signedIn(page);
   const ranges: string[] = [];
