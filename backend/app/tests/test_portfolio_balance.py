@@ -15,6 +15,15 @@ def h(ticker, value, sector="Example sector", kind="stock", name=None, currency=
     return SimpleNamespace(kind=kind, ticker=ticker, name=name or ticker, sector=sector, currency=currency, market_value=value)
 
 
+def test_asset_class_matches_whole_words_only():
+    from app.services.portfolio_balance import asset_class
+
+    assert asset_class(h("X.NS", 1, name="Bondway Engineering Ltd")) == "equity"
+    assert asset_class(h("1", 1, kind="fund", sector="Debt Scheme - Corporate Bond Fund")) == "debt"
+    assert asset_class(h("2", 1, kind="fund", sector="Debt Scheme - Liquid Fund")) == "cash"
+    assert asset_class(h("G.NS", 1, sector="ETF", name="Example Gold ETF")) == "gold"
+
+
 def test_trim_brings_the_holding_to_the_cap_of_what_remains():
     sold = trim_to(500, 1000, 20)  # 50% of 1000
     assert round((500 - sold) / (1000 - sold), 6) == 0.2
@@ -39,7 +48,7 @@ def test_equity_above_the_profile_ceiling_and_cash_like_holdings_count_apart():
         h("CASH.NS", 150, sector="ETF", name="Example Liquid ETF"), h("9", 100, kind="fund", sector="Debt Scheme - Gilt Fund"),
     ]
     flags, mix = balance_flags(holdings, {}, {}, "Conservative")
-    assert mix["INR"] == {"equity": 75.0, "cash": 15.0, "debt": 10.0}
+    assert mix["INR"] == {"equity": 75, "cash": 15, "debt": 10}
     [flag] = [f for f in flags if f.kind == "mix"]
     assert flag.title == "Equity is 75% of this portfolio" and flag.amount == 150.0  # 750 -> 600 of 1000
     assert not [f for f in balance_flags(holdings, {}, {}, "Aggressive")[0] if f.kind == "mix"]

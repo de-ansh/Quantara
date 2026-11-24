@@ -11,9 +11,9 @@ MAX_SECTOR_PCT = 35.0  # one sector, counting directly held stocks only
 # Usual ceiling on equity for each risk profile; beyond it the portfolio swings more than the profile signed up for
 MAX_EQUITY_PCT = {"Conservative": 60.0, "Moderate": 80.0}
 
-_CASH = re.compile(r"liquid|overnight|money market|1d rate", re.I)
+_CASH = re.compile(r"\b(liquid|overnight|money market|1d rate)\b", re.I)
 _GOLD = re.compile(r"\bgold\b|\bsilver\b", re.I)
-_DEBT = re.compile(r"debt|gilt|bond|treasury|bharat bond|g-sec|sdl", re.I)
+_DEBT = re.compile(r"\b(debt|gilt|bonds?|treasury|g-sec|sdl)\b", re.I)
 
 AssetClass = Literal["equity", "debt", "cash", "gold"]
 
@@ -72,7 +72,7 @@ def balance_flags(
         for h in group:
             cls = asset_class(h)
             mix[cls] = mix.get(cls, 0.0) + (h.market_value or 0.0) / total * 100
-        mixes[currency] = {k: round(v, 1) for k, v in mix.items()}
+        mixes[currency] = {k: round(v) for k, v in mix.items()}  # whole %, as the flags quote it
 
         # Single companies; funds and ETFs are already spread across many
         companies = [h for h in group if h.kind == "stock" and h.sector != "ETF" and asset_class(h) == "equity"]
@@ -99,11 +99,11 @@ def balance_flags(
                     currency, None, round(trim_to(value, total, MAX_SECTOR_PCT), 2)))
 
         cap = MAX_EQUITY_PCT.get(risk_level or "")
-        equity = mix.get("equity", 0.0)
+        equity = mixes[currency].get("equity", 0)
         if cap is not None and equity > cap:
-            equity_value = equity / 100 * total
+            equity_value = mix["equity"] / 100 * total
             flags.append(BalanceFlag(
-                "mix", f"Equity is {equity:.0f}% of this portfolio",
+                "mix", f"Equity is {equity}% of this portfolio",
                 f"{risk_level} investors usually keep equity under {cap:.0f}%, with the rest in debt, cash or gold. "
                 "Moving this much out of equity gets there.",
                 currency, None, round(equity_value - cap / 100 * total, 2)))
