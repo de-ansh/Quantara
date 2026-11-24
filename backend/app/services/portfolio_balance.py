@@ -1,15 +1,23 @@
-"""Balance check for one portfolio: concentration, sector tilt, the asset mix against the risk profile, holdings the
-app rates Avoid, and stocks also held in another portfolio. Rules of thumb with fixed thresholds, not advice."""
+"""Balance check and rebalancing plan for one portfolio, against the user's target mix.
+
+Flags: one company or sector over its limit, an asset mix drifted from target, holdings the app rates Avoid, and
+stocks also held in another portfolio. The plan says what to sell and where to add to get back on target. Rules
+of thumb, not advice.
+"""
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-MAX_STOCK_PCT = 20.0  # one company
-MAX_SECTOR_PCT = 35.0  # one sector, counting directly held stocks only
-# Usual ceiling on equity for each risk profile; beyond it the portfolio swings more than the profile signed up for
-MAX_EQUITY_PCT = {"Conservative": 60.0, "Moderate": 80.0}
+CLASSES = ("equity", "debt", "cash", "gold")
+DRIFT_PCT = 5.0  # points off target before selling is worth the tax and trouble
+# Starting points per risk profile until the user sets their own; equity stays under the profile's usual ceiling
+DEFAULT_MIX = {
+    "Conservative": {"equity": 50.0, "debt": 35.0, "cash": 10.0, "gold": 5.0},
+    "Moderate": {"equity": 70.0, "debt": 20.0, "cash": 5.0, "gold": 5.0},
+    "Aggressive": {"equity": 85.0, "debt": 5.0, "cash": 5.0, "gold": 5.0},
+}
 
 _CASH = re.compile(r"\b(liquid|overnight|money market|1d rate)\b", re.I)
 _GOLD = re.compile(r"\bgold\b|\bsilver\b", re.I)
@@ -25,6 +33,28 @@ class Holding(Protocol):
     sector: str | None
     currency: str
     market_value: float | None
+    unrealized_pnl: float | None
+
+
+@dataclass
+class Target:
+    equity: float
+    debt: float
+    cash: float
+    gold: float
+    max_stock: float = 20.0  # one company, % of the portfolio
+    max_sector: float = 35.0  # one sector, counting directly held stocks only
+    is_default: bool = True
+
+    @classmethod
+    def load(cls, saved: dict | None, risk_level: str | None) -> "Target":
+        if saved:
+            return cls(**{k: float(saved[k]) for k in (*CLASSES, "max_stock", "max_sector")}, is_default=False)
+        mix = DEFAULT_MIX.get(risk_level or "", DEFAULT_MIX["Moderate"])
+        return cls(mix["equity"], mix["debt"], mix["cash"], mix["gold"])
+
+    def share(self, cls_: str) -> float:
+        return float(getattr(self, cls_))
 
 
 @dataclass
@@ -35,6 +65,18 @@ class BalanceFlag:
     currency: str
     ticker: str | None = None
     amount: float | None = None  # how much to sell to get back under the limit
+
+
+@dataclass
+class Trade:
+    action: Literal["sell", "add"]
+    asset_class: str
+    amount: float
+    currency: str
+    ticker: str | None = None
+    name: str | None = None
+    reason: str = ""
+    gain: float | None = None  # profit (or loss, negative) the sale realises, before tax
 
 
 def asset_class(h: Holding) -> AssetClass:
@@ -51,16 +93,21 @@ def asset_class(h: Holding) -> AssetClass:
 def trim_to(value: float, total: float, cap_pct: float) -> float:
     """Amount to sell so `value` is `cap_pct` of what remains (the proceeds leave the portfolio)."""
     cap = cap_pct / 100
-    return max(0.0, (value - cap * total) / (1 - cap))
+    return max(0.0, (value - cap * total) / (1 - cap)) if cap < 1 else 0.0
+
+
+def _companies(group: Sequence[Holding]) -> list[Holding]:
+    """Single companies; funds and ETFs are already spread across many."""
+    return [h for h in group if h.kind == "stock" and h.sector != "ETF" and asset_class(h) == "equity"]
 
 
 def balance_flags(
     holdings: Sequence[Holding],
     verdicts: dict[str, str],
     elsewhere: dict[str, list[str]],
-    risk_level: str | None,
+    target: Target,
 ) -> tuple[list[BalanceFlag], dict[str, dict[str, float]]]:
-    """Flags, most pressing first, and the asset mix (% by class) for each currency."""
+    """Flags, most pressing first, and the asset mix (whole % by class) for each currency."""
     flags: list[BalanceFlag] = []
     mixes: dict[str, dict[str, float]] = {}
     for currency in sorted({h.currency for h in holdings}):
@@ -70,20 +117,18 @@ def balance_flags(
             continue
         mix: dict[str, float] = {}
         for h in group:
-            cls = asset_class(h)
-            mix[cls] = mix.get(cls, 0.0) + (h.market_value or 0.0) / total * 100
+            mix[asset_class(h)] = mix.get(asset_class(h), 0.0) + (h.market_value or 0.0) / total * 100
         mixes[currency] = {k: round(v) for k, v in mix.items()}  # whole %, as the flags quote it
 
-        # Single companies; funds and ETFs are already spread across many
-        companies = [h for h in group if h.kind == "stock" and h.sector != "ETF" and asset_class(h) == "equity"]
+        companies = _companies(group)
         for h in sorted(companies, key=lambda h: -(h.market_value or 0)):
             pct = (h.market_value or 0) / total * 100
-            if pct > MAX_STOCK_PCT:
+            if pct > target.max_stock:
                 flags.append(BalanceFlag(
                     "stock", f"{h.name} is {pct:.0f}% of this portfolio",
-                    f"One company above {MAX_STOCK_PCT:.0f}% means a single bad result moves the whole portfolio. "
-                    f"Selling this much brings it to {MAX_STOCK_PCT:.0f}%, or add new money elsewhere instead.",
-                    currency, h.ticker, round(trim_to(h.market_value or 0, total, MAX_STOCK_PCT), 2)))
+                    f"One company above {target.max_stock:.0f}% means a single bad result moves the whole portfolio. "
+                    f"Selling this much brings it to {target.max_stock:.0f}%, or add new money elsewhere instead.",
+                    currency, h.ticker, round(trim_to(h.market_value or 0, total, target.max_stock), 2)))
 
         sectors: dict[str, float] = {}
         for h in companies:
@@ -91,22 +136,21 @@ def balance_flags(
                 sectors[h.sector] = sectors.get(h.sector, 0.0) + (h.market_value or 0)
         for sector, value in sorted(sectors.items(), key=lambda kv: -kv[1]):
             pct = value / total * 100
-            if pct > MAX_SECTOR_PCT:
+            if pct > target.max_sector:
                 flags.append(BalanceFlag(
                     "sector", f"{sector} is {pct:.0f}% of this portfolio",
-                    f"Stocks in one sector tend to fall together. Above {MAX_SECTOR_PCT:.0f}%, new money is better "
+                    f"Stocks in one sector tend to fall together. Above {target.max_sector:.0f}%, new money is better "
                     "spent elsewhere, or trim this much from the sector.",
-                    currency, None, round(trim_to(value, total, MAX_SECTOR_PCT), 2)))
+                    currency, None, round(trim_to(value, total, target.max_sector), 2)))
 
-        cap = MAX_EQUITY_PCT.get(risk_level or "")
-        equity = mixes[currency].get("equity", 0)
-        if cap is not None and equity > cap:
-            equity_value = mix["equity"] / 100 * total
+        off = [c for c in CLASSES if abs(mixes[currency].get(c, 0) - target.share(c)) > DRIFT_PCT]
+        if off:
+            worst = max(off, key=lambda c: abs(mixes[currency].get(c, 0) - target.share(c)))
             flags.append(BalanceFlag(
-                "mix", f"Equity is {equity}% of this portfolio",
-                f"{risk_level} investors usually keep equity under {cap:.0f}%, with the rest in debt, cash or gold. "
-                "Moving this much out of equity gets there.",
-                currency, None, round(equity_value - cap / 100 * total, 2)))
+                "mix", f"{worst.capitalize()} is {mixes[currency].get(worst, 0):.0f}%; your target is {target.share(worst):.0f}%",
+                "Off target: " + ", ".join(f"{c} {mixes[currency].get(c, 0):.0f}% vs {target.share(c):.0f}%" for c in off)
+                + ". The rebalancing plan below says what to move.",
+                currency))
 
         for h in group:
             if verdicts.get(h.ticker) == "Avoid":
@@ -120,3 +164,61 @@ def balance_flags(
                     "Counted together, your exposure to it is larger than this portfolio alone shows.",
                     currency, h.ticker))
     return flags, mixes
+
+
+def rebalance_plan(
+    holdings: Sequence[Holding],
+    target: Target,
+    verdicts: dict[str, str],
+    new_money: float = 0.0,
+    currency: str = "INR",
+) -> list[Trade]:
+    """Sells and adds that bring one currency's holdings to the target mix, new money going in first.
+
+    Small drifts (under DRIFT_PCT) aren't sold, only topped up with new money. Within a class that is over target,
+    sells go Avoid-rated first, then over the company limit, then losses (no tax, and they offset gains), then the
+    smallest gains.
+    """
+    group = [h for h in holdings if h.currency == currency and h.market_value]
+    held = sum(h.market_value or 0.0 for h in group)
+    total = held + new_money
+    if not total:
+        return []
+    current = {c: sum(h.market_value or 0.0 for h in group if asset_class(h) == c) for c in CLASSES}
+    desired = {c: target.share(c) / 100 * total for c in CLASSES}
+    over = {c: current[c] - desired[c] for c in CLASSES
+            if current[c] - desired[c] > 0 and (current[c] - desired[c]) / total * 100 > DRIFT_PCT}
+    under = {c: desired[c] - current[c] for c in CLASSES if desired[c] > current[c]}
+
+    trades: list[Trade] = []
+    for c, excess in over.items():
+        def priority(h: Holding) -> tuple:
+            pnl_pct = (h.unrealized_pnl or 0) / (h.market_value or 1)
+            too_big = h in _companies(group) and (h.market_value or 0) / held * 100 > target.max_stock
+            return (verdicts.get(h.ticker) != "Avoid", not too_big, pnl_pct)
+
+        for h in sorted((h for h in group if asset_class(h) == c), key=priority):
+            if excess < 1:
+                break
+            amount = min(excess, h.market_value or 0)
+            excess -= amount
+            gain = (h.unrealized_pnl or 0) * amount / (h.market_value or 1) if h.unrealized_pnl is not None else None
+            reason = ("rated Avoid" if verdicts.get(h.ticker) == "Avoid"
+                      else "over your company limit" if priority(h)[1] is False
+                      else "at a loss, so no tax and it offsets gains" if (gain or 0) < 0
+                      else "smallest gain in this class")
+            trades.append(Trade("sell", c, round(amount), currency, h.ticker, h.name, reason,
+                                round(gain) if gain is not None else None))
+
+    available = new_money + sum(t.amount for t in trades)
+    need = sum(under.values())
+    for c in CLASSES:
+        if c in under and need:
+            amount = under[c] * min(1.0, available / need)
+            # New money beyond what the gaps need goes in at the target weights
+            amount += max(0.0, available - need) * target.share(c) / 100
+        else:
+            amount = max(0.0, available - need) * target.share(c) / 100
+        if amount >= 1:
+            trades.append(Trade("add", c, round(amount), currency, reason="below target" if c in under else "new money"))
+    return trades

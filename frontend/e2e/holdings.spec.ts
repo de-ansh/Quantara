@@ -93,7 +93,7 @@ test('portfolios page totals every portfolio and shows each one\'s value, today 
   await expect(page.getByRole('region', { name: 'Ideas' })).toContainText(/5,000\s*invested/);  // no share counts: what was put in
 });
 
-test('a portfolio shows its asset mix and what is out of balance, with how much to move', async ({ page }) => {
+test('a portfolio shows its mix against the target, a rebalancing plan, new money and a saved target', async ({ page }) => {
   await signedIn(page);
   const now = new Date().toISOString();
   await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [
@@ -102,17 +102,51 @@ test('a portfolio shows its asset mix and what is out of balance, with how much 
     holdings: [{ kind: 'stock', ticker: 'EXAMPLE.NS', name: 'Example Ltd', sector: 'Banks', currency: 'INR', shares: 5, avg_cost: 100, price: 100,
       market_value: 500, cost_value: 500, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, weight_by_value: 50 }],
     totals: [{ currency: 'INR', market_value: 1000, cost_value: 1000, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, sector_allocation: {} }] } }));
-  await page.route('**/api/v1/portfolio/7/balance', route => route.fulfill({ json: { portfolio_id: 7, risk_level: null,
-    mix: { INR: { equity: 75, cash: 25 } },
-    flags: [{ kind: 'stock', title: 'Example Ltd is 50% of this portfolio', detail: 'Selling this much brings it to 20%.', currency: 'INR', ticker: 'EXAMPLE.NS', amount: 375 }] } }));
+  let target = { equity: 70, debt: 20, cash: 5, gold: 5, max_stock: 20, max_sector: 35, is_default: true };
+  const requested: string[] = [];
+  await page.route('**/api/v1/portfolio/7/balance**', route => {
+    const money = new URL(route.request().url()).searchParams.get('new_money');
+    requested.push(money ?? '');
+    return route.fulfill({ json: { portfolio_id: 7, risk_level: 'Moderate', target, mix: { INR: { equity: 90, cash: 10 } },
+      flags: [{ kind: 'stock', title: 'Example Ltd is 50% of this portfolio', detail: 'Selling this much brings it to 20%.', currency: 'INR', ticker: 'EXAMPLE.NS', amount: 375 }],
+      plan: money ? [{ action: 'add', asset_class: 'debt', amount: 500, currency: 'INR', ticker: null, name: null, reason: 'below target', gain: null }]
+        : [{ action: 'sell', asset_class: 'equity', amount: 200, currency: 'INR', ticker: 'EXAMPLE.NS', name: 'Example Ltd', reason: 'over your company limit', gain: 40 },
+           { action: 'add', asset_class: 'debt', amount: 200, currency: 'INR', ticker: null, name: null, reason: 'below target', gain: null }] } });
+  });
+  let saved: unknown = null;
+  await page.route('**/api/v1/portfolio/target-mix', route => {
+    saved = route.request().postDataJSON();
+    target = { ...(saved as typeof target), is_default: false };
+    return route.fulfill({ json: target });
+  });
 
   await page.goto('/portfolios/7');
   const balance = page.getByRole('region', { name: 'Balance check' });
-  await expect(balance).toContainText('75% equity · 25% cash');
+  await expect(balance).toContainText('90% target 70%');
+  await expect(balance).toContainText('starting point for a Moderate investor');
   await expect(balance.getByRole('link', { name: 'Example Ltd is 50% of this portfolio' })).toHaveAttribute('href', '/research/EXAMPLE.NS');
   await expect(balance).toContainText('About ₹375.00');
-  await expect(balance.getByRole('link', { name: 'Account' })).toBeVisible();  // no risk profile yet
+  await expect(balance).toContainText('over your company limit');
+  await expect(balance).toContainText('(gain ₹40.00)');
+  await expect(balance).toContainText('a debt fund or bond ETF');
+  await expect(balance).toContainText('check them before selling');
   await expect(balance.getByRole('note')).toContainText('not investment advice');
+
+  await balance.getByLabel('Adding new money?').fill('500');
+  await balance.getByRole('button', { name: 'Update plan' }).click();
+  await expect(balance).toContainText('your ₹500.00');
+  await expect(balance).not.toContainText('over your company limit');
+  expect(requested).toContain('500');
+
+  await balance.getByRole('button', { name: 'Change target' }).click();
+  const form = balance.getByRole('form', { name: 'Target mix' });
+  await form.getByLabel('equity').fill('60');
+  await expect(form).toContainText('Total 90%');
+  await expect(form.getByRole('button', { name: 'Save target' })).toBeDisabled();
+  await form.getByLabel('debt').fill('30');
+  await form.getByRole('button', { name: 'Save target' }).click();
+  await expect.poll(() => saved).toEqual({ equity: 60, debt: 30, cash: 5, gold: 5, max_stock: 20, max_sector: 35 });
+  await expect(balance).toContainText('Your saved target');
 });
 
 test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {
