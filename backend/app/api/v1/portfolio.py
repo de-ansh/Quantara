@@ -3,8 +3,8 @@
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import desc, select
 
 from app.core.clock import utcnow
@@ -14,8 +14,10 @@ from app.models.listed_security import ListedSecurity
 from app.models.mutual_fund import MutualFund
 from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition
 from app.models.stock import Stock
+from app.models.user import User
 from app.services.mutual_funds import match_funds
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
+from app.services.portfolio_balance import Target, balance_flags, rebalance_plan
 from app.services.stock_lookup import get_or_track_stock
 
 router = APIRouter()
@@ -353,6 +355,55 @@ class PortfolioUpdatesResponse(BaseModel):
     portfolios: list[PortfolioUpdates]
 
 
+class TargetMix(BaseModel):
+    """Asset mix to rebalance towards (% of value, summing to 100) and the concentration limits."""
+
+    equity: float = Field(..., ge=0, le=100)
+    debt: float = Field(..., ge=0, le=100)
+    cash: float = Field(..., ge=0, le=100)
+    gold: float = Field(..., ge=0, le=100)
+    max_stock: float = Field(20, ge=5, le=100, description="one company, % of the portfolio")
+    max_sector: float = Field(35, ge=10, le=100, description="one sector, % of the portfolio")
+    is_default: bool = Field(False, description="true: not saved yet, the risk profile's starting point")
+
+    @model_validator(mode="after")
+    def _sums_to_100(self) -> "TargetMix":
+        if abs(self.equity + self.debt + self.cash + self.gold - 100) > 0.01:
+            raise ValueError("Equity, debt, cash and gold must add up to 100%")
+        return self
+
+
+async def _target(db: DBSession, user_id: int, risk_level: str | None) -> Target:
+    user = await db.get(User, user_id)
+    return Target.load(user.target_mix if user else None, risk_level)
+
+
+@router.get("/target-mix", response_model=TargetMix)
+async def get_target_mix(current_user: CurrentUser, db: DBSession) -> TargetMix:
+    """The user's target mix, or their risk profile's starting point until they save one."""
+    return TargetMix(**vars(await _target(db, int(current_user["id"]), current_user.get("risk_level"))))
+
+
+@router.put("/target-mix", response_model=TargetMix)
+async def save_target_mix(body: TargetMix, current_user: CurrentUser, db: DBSession) -> TargetMix:
+    user = await db.get(User, int(current_user["id"]))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.target_mix = body.model_dump(exclude={"is_default"})
+    await db.commit()
+    return body.model_copy(update={"is_default": False})
+
+
+@router.delete("/target-mix", response_model=TargetMix)
+async def reset_target_mix(current_user: CurrentUser, db: DBSession) -> TargetMix:
+    """Back to the risk profile's starting point."""
+    user = await db.get(User, int(current_user["id"]))
+    if user is not None:
+        user.target_mix = None
+        await db.commit()
+    return TargetMix(**vars(await _target(db, int(current_user["id"]), current_user.get("risk_level"))))
+
+
 @router.get("/updates", response_model=PortfolioUpdatesResponse)
 async def get_portfolio_updates(current_user: CurrentUser, db: DBSession) -> PortfolioUpdatesResponse:
     """Every portfolio valued now, with the last week's news and the next two weeks' events on each stock."""
@@ -563,17 +614,34 @@ class BalanceFlagOut(BaseModel):
     amount: float | None = None
 
 
+class TradeOut(BaseModel):
+    action: str = Field(..., description="sell or add")
+    asset_class: str
+    amount: float
+    currency: str
+    ticker: str | None = None
+    name: str | None = None
+    reason: str
+    gain: float | None = Field(None, description="profit (negative: loss) the sale realises, before tax")
+
+
 class PortfolioBalance(BaseModel):
     portfolio_id: int
     flags: list[BalanceFlagOut]
     mix: dict[str, dict[str, float]]  # currency -> asset class (equity, debt, cash, gold) -> % of value
+    target: TargetMix
+    plan: list[TradeOut]  # rupee holdings only
     risk_level: str | None
 
 
 @router.get("/{portfolio_id}/balance", response_model=PortfolioBalance)
-async def get_portfolio_balance(portfolio_id: int, current_user: CurrentUser, db: DBSession) -> PortfolioBalance:
-    """Concentration, sector tilt, asset mix against the risk profile, Avoid-rated and doubly held stocks."""
-    from app.services.portfolio_balance import balance_flags
+async def get_portfolio_balance(
+    portfolio_id: int,
+    current_user: CurrentUser,
+    db: DBSession,
+    new_money: float = Query(0, ge=0, le=1e10, description="Rupees about to be added, invested before anything is sold"),
+) -> PortfolioBalance:
+    """Flags against the target mix, and the sells and adds that get back to it."""
     from app.services.verdict_tracking import verdict_for
 
     user_id = int(current_user["id"])
@@ -599,11 +667,15 @@ async def get_portfolio_balance(portfolio_id: int, current_user: CurrentUser, db
                 if pos.shares > 0 and pos.ticker in held:
                     elsewhere.setdefault(pos.ticker, []).append(other.name)
 
-    flags, mix = balance_flags(perf.holdings, verdicts, elsewhere, risk_level)
+    target = await _target(db, user_id, risk_level)
+    flags, mix = balance_flags(perf.holdings, verdicts, elsewhere, target)
+    plan = rebalance_plan(perf.holdings, target, verdicts, new_money)
     return PortfolioBalance(
         portfolio_id=portfolio_id,
         flags=[BalanceFlagOut(**vars(f)) for f in flags],
         mix=mix,
+        target=TargetMix(**vars(target)),
+        plan=[TradeOut(**vars(t)) for t in plan],
         risk_level=risk_level,
     )
 

@@ -31,6 +31,8 @@ class User(Base):
     sector_preferences: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, comment="Preferred sectors and weights"
     )
+    # Asset mix to rebalance towards: equity/debt/cash/gold % plus max_stock/max_sector limits; None: risk profile default
+    target_mix: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # External Credentials & Overrides
     openai_api_key: Mapped[str | None] = mapped_column(

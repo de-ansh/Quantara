@@ -154,17 +154,51 @@ export interface BalanceFlag {
     amount: number | null; // how much to sell to get back under the limit
 }
 
+export interface TargetMix {
+    equity: number;
+    debt: number;
+    cash: number;
+    gold: number;
+    max_stock: number; // one company, % of the portfolio
+    max_sector: number;
+    is_default?: boolean; // not saved yet: the risk profile's starting point
+}
+
+export interface Trade {
+    action: 'sell' | 'add';
+    asset_class: string;
+    amount: number;
+    currency: 'USD' | 'INR';
+    ticker: string | null;
+    name: string | null;
+    reason: string;
+    gain: number | null; // profit (negative: loss) the sale realises, before tax
+}
+
 export interface PortfolioBalance {
     portfolio_id: number;
     flags: BalanceFlag[];
     mix: Record<string, Record<string, number>>; // currency -> equity / debt / cash / gold -> %
+    target: TargetMix;
+    plan: Trade[]; // rupee holdings only
     risk_level: string | null;
 }
 
-/** Concentration, sector tilt, asset mix against the risk profile, Avoid-rated and doubly held stocks. */
-export const usePortfolioBalance = (id: number) => {
+/** Flags against the target mix, and the sells and adds that get back to it; `newMoney` is invested first. */
+export const usePortfolioBalance = (id: number, newMoney = 0) => {
     return useQuery({
-        queryKey: ['portfolioBalance', id],
-        queryFn: async () => (await apiClient.get<PortfolioBalance>(`/portfolio/${id}/balance`)).data,
+        queryKey: ['portfolioBalance', id, newMoney],
+        queryFn: async () => (await apiClient.get<PortfolioBalance>(`/portfolio/${id}/balance`, { params: newMoney ? { new_money: newMoney } : {} })).data,
+        placeholderData: prev => prev, // keep the plan on screen while a new amount loads
+    });
+};
+
+/** Save the target mix (null: back to the risk profile's starting point); every portfolio's check uses it. */
+export const useSaveTargetMix = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (target: TargetMix | null) =>
+            (target ? await apiClient.put<TargetMix>('/portfolio/target-mix', target) : await apiClient.delete<TargetMix>('/portfolio/target-mix')).data,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolioBalance'] }),
     });
 };
