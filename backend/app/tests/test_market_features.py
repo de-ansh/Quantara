@@ -274,6 +274,7 @@ async def test_daily_digest_goes_out_once_on_weekdays_after_the_close(monkeypatc
         return f"digest {today}"
 
     monkeypatch.setattr(settings, "slack_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(settings, "slack_bot_token", None)  # webhook only: one shared digest
     monkeypatch.setattr(event_alerts, "notify_slack", fake_slack)
     monkeypatch.setattr(event_alerts, "_market_indices", no_indices)
     monkeypatch.setattr(event_alerts, "event_feeds", no_events)
@@ -292,3 +293,89 @@ async def test_daily_digest_goes_out_once_on_weekdays_after_the_close(monkeypatc
     finally:
         await redis.delete("digest:sent:2030-01-07")
         await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_with_the_bot_each_linked_user_gets_their_own_digest_and_only_failures_retry(monkeypatch):
+    from datetime import datetime
+
+    from redis.asyncio import Redis
+
+    from app.core.config import settings
+    from app.services import event_alerts
+
+    sent: list[tuple[int, str]] = []
+    down = {9}
+
+    async def fake_slack(text: str, user_id: int | None = None) -> bool:
+        sent.append((user_id, text))
+        return user_id not in down
+
+    async def nothing(*a) -> dict:
+        return {}
+
+    async def built(db, indices, events, today) -> str:
+        return "market"
+
+    async def section(db, user_id, today) -> str | None:
+        return f"portfolio of {user_id}" if user_id == 8 else None
+
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-test")
+    monkeypatch.setattr(settings, "slack_users", "UA:8,UB:9,UC:8")
+    monkeypatch.setattr(event_alerts, "notify_slack", fake_slack)
+    monkeypatch.setattr(event_alerts, "_market_indices", nothing)
+    monkeypatch.setattr(event_alerts, "event_feeds", nothing)
+    monkeypatch.setattr(event_alerts, "build_daily_digest", built)
+    monkeypatch.setattr(event_alerts, "portfolio_section", section)
+    keys = ["digest:sent:2030-01-08:8", "digest:sent:2030-01-08:9"]
+    redis = Redis.from_url(settings.redis_url)
+    await redis.delete(*keys)
+    at = datetime(2030, 1, 8, 16, 5, tzinfo=event_alerts.IST)
+    try:
+        assert await event_alerts.send_daily_digest_if_due(at)
+        assert sent == [(8, "market\n\nportfolio of 8"), (9, "market")]
+        down.clear()
+        assert await event_alerts.send_daily_digest_if_due(at)  # only 9, whose send failed, again
+        assert sent[2:] == [(9, "market")]
+        assert not await event_alerts.send_daily_digest_if_due(at)
+    finally:
+        await redis.delete(*keys)
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_portfolio_section_shows_the_mix_and_verdicts_that_changed(db_session, monkeypatch):
+    from sqlalchemy import select
+
+    from app.models.portfolio import Portfolio, PortfolioPosition
+    from app.models.user import User
+    from app.models.verdict_snapshot import VerdictSnapshot
+    from app.services import price_service
+    from app.services.event_alerts import portfolio_section
+
+    monkeypatch.setattr(price_service, "fetch_quotes", lambda tickers: {})
+    user = (await db_session.execute(select(User))).scalars().first()
+    user.risk_level = "Moderate"
+    db_session.add_all([
+        Stock(ticker="AAA.NS", name="Example A", sector="Banks", price=100.0, price_updated_at=utcnow()),
+        Stock(ticker="BBB.NS", name="Example B", sector="Energy", price=100.0, price_updated_at=utcnow()),
+    ])
+    await db_session.flush()
+    pf = Portfolio(user_id=user.id, name="Main")
+    pf.positions = [PortfolioPosition(ticker="AAA.NS", shares=10, cost_basis=90, weight=0.5),
+                    PortfolioPosition(ticker="BBB.NS", shares=10, cost_basis=90, weight=0.5)]
+    db_session.add(pf)
+    day1, day2 = date(2030, 1, 7), date(2030, 1, 8)
+    for day, a, b in ((day1, "Hold", "Buy"), (day2, "Avoid", "Buy")):
+        db_session.add_all([
+            VerdictSnapshot(day=day, ticker="AAA.NS", risk_level="Moderate", verdict=a, final_score=50, price=100),
+            VerdictSnapshot(day=day, ticker="BBB.NS", risk_level="Moderate", verdict=b, final_score=50, price=100),
+            VerdictSnapshot(day=day, ticker="AAA.NS", risk_level="Aggressive", verdict="Buy", final_score=50, price=100),
+        ])
+    await db_session.commit()
+
+    text = await portfolio_section(db_session, user.id, day2)
+    assert "Mix: 100% equity (target 70/20/5/5 equity/debt/cash/gold): off target" in text
+    assert "Verdicts changed since Mon 07 Jan: Example A Hold → Avoid" in text
+    assert "Example B" not in text.split("Verdicts changed")[1]  # Buy both days
+    assert await portfolio_section(db_session, 999999, day2) is None
