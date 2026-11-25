@@ -187,6 +187,10 @@ export interface PortfolioBalance {
     plan: Trade[]; // rupee holdings only
     plan_tax?: number | null; // extra tax this year if every sale is made; null unless the tradebook covers them
     exemption_left?: number | null; // long-term gains still tax-free this financial year
+    exposures?: { name: string; ticker: string | null; direct: number; via_funds: number; funds: string[]; pct: number }[];
+    funds_looked_through?: string[]; // funds whose holdings are counted
+    funds_not_looked_through?: string[]; // held funds with no holdings yet
+    holdings_as_of?: string | null; // oldest fund portfolio date among those counted
     risk_level: string | null;
 }
 

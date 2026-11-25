@@ -32,6 +32,7 @@ export default function BalanceCheck({ id }: { id: number | "all" }) {
                     <div className="p-4 space-y-5">
                         {editing ? <TargetForm target={data.target} onDone={() => setEditing(false)} /> : <Mix data={data} />}
                         <Flags data={data} />
+                        <Exposures data={data} />
                         <div className="space-y-3 pt-4 border-t border-border">
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                                 <h3 className="text-sm font-semibold text-foreground">Rebalancing plan</h3>
@@ -83,6 +84,48 @@ function Mix({ data }: { data: PortfolioBalance }) {
                     : "Your saved target, used for every portfolio. "}
                 Limits: one company {t.max_stock}%, one sector {t.max_sector}%.
                 {!data.risk_level && <> Set your risk profile on the <Link to="/account" className="underline">Account</Link> page to also check Avoid ratings.</>}
+            </p>
+        </div>
+    )
+}
+
+function Exposures({ data }: { data: PortfolioBalance }) {
+    const rows = data.exposures ?? []
+    const counted = data.funds_looked_through ?? [], missing = data.funds_not_looked_through ?? []
+    if (!rows.length || (!counted.length && !missing.length)) return null  // no funds: the holdings table already says it
+    return (
+        <div className="space-y-2 pt-4 border-t border-border">
+            <h3 className="text-sm font-semibold text-foreground">Biggest exposures, counting what your funds own</h3>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="text-xs text-muted-foreground">
+                            <th scope="col" className="py-1 pr-4 text-left font-medium">Company</th>
+                            <th scope="col" className="py-1 pr-4 text-right font-medium">Direct</th>
+                            <th scope="col" className="py-1 pr-4 text-right font-medium">Through funds</th>
+                            <th scope="col" className="py-1 text-right font-medium">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                        {rows.map(e => (
+                            <tr key={e.ticker ?? e.name}>
+                                <td className="py-1.5 pr-4">
+                                    {e.ticker ? <Link to={`/research/${e.ticker}`} className="hover:underline">{e.name}</Link> : e.name}
+                                    {e.funds.length > 0 && <span className="block text-xs text-muted-foreground">via {e.funds.join(", ")}</span>}
+                                </td>
+                                <td className="py-1.5 pr-4 text-right font-mono tabular-nums whitespace-nowrap">{e.direct ? money(e.direct, "INR") : "—"}</td>
+                                <td className="py-1.5 pr-4 text-right font-mono tabular-nums whitespace-nowrap">{e.via_funds ? money(e.via_funds, "INR") : "—"}</td>
+                                <td className="py-1.5 text-right font-mono tabular-nums">{e.pct.toFixed(1)}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="text-xs text-muted-foreground">
+                {counted.length > 0 && <>Counts what {counted.length} fund{counted.length === 1 ? "" : "s"} own{counted.length === 1 ? "s" : ""}
+                    {data.holdings_as_of && <>, from portfolios published for {shortDay(data.holdings_as_of)} {data.holdings_as_of.slice(0, 4)}</>}, via Groww. Funds also
+                    split the mix: a hybrid fund's bonds count as debt. </>}
+                {missing.length > 0 && <>Not yet looked through: {missing.join(", ")}. Holdings are fetched in the background within about 15 minutes.</>}
             </p>
         </div>
     )

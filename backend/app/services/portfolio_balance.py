@@ -108,14 +108,88 @@ def _companies(group: Sequence[Holding]) -> list[Holding]:
     return [h for h in group if h.kind == "stock" and h.sector != "ETF" and asset_class(h) == "equity"]
 
 
+@dataclass
+class FundLine:
+    """One line of a fund's monthly portfolio."""
+
+    name: str
+    ticker: str | None  # listed Indian stock, when matched
+    kind: str  # equity | debt | cash | gold | other
+    weight: float  # % of the fund
+
+
+Look = dict[str, list[FundLine]]  # a fund holding's ticker (its scheme code) -> what the fund owns
+
+
+def split(h: Holding, look: Look) -> dict[str, float]:
+    """`h`'s value by asset class: a fund by what it owns when known (REITs and the like count as equity),
+    anything else by its name."""
+    lines = look.get(h.ticker) if h.kind == "fund" else None
+    weights = sum(line.weight for line in lines or [])
+    if not lines or weights <= 0:
+        return {asset_class(h): h.market_value or 0.0}
+    out: dict[str, float] = {}
+    for line in lines:
+        c = line.kind if line.kind in CLASSES else "equity"
+        out[c] = out.get(c, 0.0) + (h.market_value or 0.0) * line.weight / weights
+    return out
+
+
+def primary_class(h: Holding, look: Look) -> str:
+    parts = split(h, look)
+    return max(parts, key=lambda c: parts[c])
+
+
+@dataclass
+class Exposure:
+    """A company you own directly, through funds, or both."""
+
+    name: str
+    ticker: str | None
+    direct: float
+    via_funds: float
+    funds: list[str]  # names of the funds holding it
+
+    @property
+    def total(self) -> float:
+        return self.direct + self.via_funds
+
+
+def exposures(group: Sequence[Holding], look: Look) -> list[Exposure]:
+    """Every company held, directly or inside a fund, biggest first. A fund's stake counts at its share of the fund."""
+    from app.services.fund_holdings import norm_company
+
+    by: dict[str, Exposure] = {}
+    for h in _companies(group):
+        by[h.ticker] = Exposure(h.name, h.ticker, h.market_value or 0.0, 0.0, [])
+    for h in group:
+        lines = look.get(h.ticker) if h.kind == "fund" else None
+        weights = sum(line.weight for line in lines or [])
+        for line in lines or []:
+            if line.kind != "equity" or weights <= 0:
+                continue
+            key = line.ticker or f"name:{norm_company(line.name)}"
+            e = by.setdefault(key, Exposure(line.name, line.ticker, 0.0, 0.0, []))
+            e.via_funds += (h.market_value or 0.0) * line.weight / weights
+            if h.name not in e.funds:
+                e.funds.append(h.name)
+    return sorted(by.values(), key=lambda e: -e.total)
+
+
+def _money(value: float, currency: str) -> str:
+    return f"{'₹' if currency == 'INR' else '$'}{value:,.0f}"
+
+
 def balance_flags(
     holdings: Sequence[Holding],
     verdicts: dict[str, str],
     elsewhere: dict[str, list[str]],
     target: Target,
     scope: str = "this portfolio",
+    look: Look | None = None,
 ) -> tuple[list[BalanceFlag], dict[str, dict[str, float]]]:
     """Flags, most pressing first, and the asset mix (whole % by class) for each currency."""
+    look = look or {}
     flags: list[BalanceFlag] = []
     mixes: dict[str, dict[str, float]] = {}
     for currency in sorted({h.currency for h in holdings}):
@@ -125,18 +199,32 @@ def balance_flags(
             continue
         mix: dict[str, float] = {}
         for h in group:
-            mix[asset_class(h)] = mix.get(asset_class(h), 0.0) + (h.market_value or 0.0) / total * 100
+            for c, value in split(h, look).items():
+                mix[c] = mix.get(c, 0.0) + value / total * 100
         mixes[currency] = {k: round(v) for k, v in mix.items()}  # whole %, as the flags quote it
 
         companies = _companies(group)
-        for h in sorted(companies, key=lambda h: -(h.market_value or 0)):
-            pct = (h.market_value or 0) / total * 100
-            if pct > target.max_stock:
+        for e in exposures(group, look):
+            pct = e.total / total * 100
+            if pct <= target.max_stock:
+                continue
+            why = f"One company above {target.max_stock:.0f}% means a single bad result moves the whole portfolio."
+            if not e.via_funds:
                 flags.append(BalanceFlag(
-                    "stock", f"{h.name} is {pct:.0f}% of {scope}",
-                    f"One company above {target.max_stock:.0f}% means a single bad result moves the whole portfolio. "
-                    f"Selling this much brings it to {target.max_stock:.0f}%, or add new money elsewhere instead.",
-                    currency, h.ticker, round(trim_to(h.market_value or 0, total, target.max_stock), 2)))
+                    "stock", f"{e.name} is {pct:.0f}% of {scope}",
+                    f"{why} Selling this much brings it to {target.max_stock:.0f}%, or add new money elsewhere instead.",
+                    currency, e.ticker, round(trim_to(e.direct, total, target.max_stock), 2)))
+                continue
+            via = (f"{_money(e.direct, currency)} directly and {_money(e.via_funds, currency)} through "
+                   if e.direct else f"{_money(e.via_funds, currency)}, all through ")
+            via += f"{len(e.funds)} fund{'s' if len(e.funds) > 1 else ''} ({', '.join(e.funds)})."
+            flags.append(BalanceFlag(
+                "stock", f"{e.name} is {pct:.0f}% of {scope}, counting your funds",
+                f"{why} That's {via} "
+                + (f"Selling this much of your direct shares brings it to {target.max_stock:.0f}%."
+                   if e.direct else "Adding more to these funds adds to it."),
+                currency, e.ticker,
+                round(min(e.direct, trim_to(e.total, total, target.max_stock)), 2) if e.direct else None))
 
         sectors: dict[str, float] = {}
         for h in companies:
@@ -191,6 +279,7 @@ def rebalance_plan(
     currency: str = "INR",
     lots: dict[str, list[Lot]] | None = None,
     today: date | None = None,
+    look: Look | None = None,
 ) -> list[Trade]:
     """Sells and adds that bring one currency's holdings to the target mix, new money going in first.
 
@@ -199,13 +288,14 @@ def rebalance_plan(
     offset gains), then long-term gains (12.5%), then short-term ones (20%). With tradebook `lots` the tax comes
     from real buy dates; without, every gain is assumed short-term.
     """
-    lots, today = lots or {}, today or date.today()
+    lots, today, look = lots or {}, today or date.today(), look or {}
     group = [h for h in holdings if h.currency == currency and h.market_value]
     held = sum(h.market_value or 0.0 for h in group)
     total = held + new_money
     if not total:
         return []
-    current = {c: sum(h.market_value or 0.0 for h in group if asset_class(h) == c) for c in CLASSES}
+    # A fund's value counts by what it owns; selling it comes out of its main class
+    current = {c: sum(split(h, look).get(c, 0.0) for h in group) for c in CLASSES}
     desired = {c: target.share(c) / 100 * total for c in CLASSES}
     over = {c: current[c] - desired[c] for c in CLASSES
             if current[c] - desired[c] > 0 and (current[c] - desired[c]) / total * 100 > DRIFT_PCT}
@@ -223,7 +313,7 @@ def rebalance_plan(
 
     trades: list[Trade] = []
     for c, excess in over.items():
-        ranked = sorted((h for h in group if asset_class(h) == c),
+        ranked = sorted((h for h in group if primary_class(h, look) == c),
                         key=lambda h: (verdicts.get(h.ticker) != "Avoid", not too_big(h), tax_per_rupee(h)))
         for h in ranked:
             if excess < 1:
