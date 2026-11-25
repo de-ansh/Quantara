@@ -1,12 +1,19 @@
-name: CI
+name: Backend CI
 
+# Runs only on pull requests that change backend/ code: Markdown and other docs never trigger it, and the other half
+# of the app has its own workflow. No run on push to main: the PR already tested the same code (Run workflow re-runs by hand).
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - "!**/*.md"
+      - "!backend/.env.example"
+      - "!backend/slack-app-manifest.yml"
+  workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
+concurrency:  # a new push to the PR cancels the run still going for the previous one
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,28 +60,3 @@ jobs:
           uv run alembic check
       - run: createdb -h localhost -U quantara quantara_test
       - run: uv run pytest -q
-
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Type check
-        run: pnpm exec tsc -b
-      - run: pnpm lint
-      - run: pnpm build
-      - name: E2E (API is mocked in the specs)
-        run: |
-          pnpm exec playwright install --with-deps chromium
-          pnpm test:e2e

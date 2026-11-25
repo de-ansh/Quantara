@@ -1,0 +1,41 @@
+name: Frontend CI
+
+# Runs only on pull requests that change frontend/ code: Markdown and other docs never trigger it, and the other half
+# of the app has its own workflow. No run on push to main: the PR already tested the same code (Run workflow re-runs by hand).
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+      - "!**/*.md"
+  workflow_dispatch:
+
+concurrency:  # a new push to the PR cancels the run still going for the previous one
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm exec tsc -b
+      - run: pnpm lint
+      - run: pnpm build
+      - name: E2E (API is mocked in the specs)
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:e2e
