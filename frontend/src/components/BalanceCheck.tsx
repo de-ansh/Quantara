@@ -89,6 +89,9 @@ function Mix({ data }: { data: PortfolioBalance }) {
     )
 }
 
+/** "Example Fund - Direct Plan - Growth" -> "Example Fund": the plan and option don't help here. */
+const fundName = (name: string) => name.replace(/\s+-\s+(direct|regular)\b.*$/i, "")
+
 function Exposures({ data }: { data: PortfolioBalance }) {
     const rows = data.exposures ?? []
     const counted = data.funds_looked_through ?? [], missing = data.funds_not_looked_through ?? []
@@ -111,7 +114,7 @@ function Exposures({ data }: { data: PortfolioBalance }) {
                             <tr key={e.ticker ?? e.name}>
                                 <td className="py-1.5 pr-4">
                                     {e.ticker ? <Link to={`/research/${e.ticker}`} className="hover:underline">{e.name}</Link> : e.name}
-                                    {e.funds.length > 0 && <span className="block text-xs text-muted-foreground">via {e.funds.join(", ")}</span>}
+                                    {e.funds.length > 0 && <span className="block text-xs text-muted-foreground">via {e.funds.map(fundName).join(", ")}</span>}
                                 </td>
                                 <td className="py-1.5 pr-4 text-right font-mono tabular-nums whitespace-nowrap">{e.direct ? money(e.direct, "INR") : "—"}</td>
                                 <td className="py-1.5 pr-4 text-right font-mono tabular-nums whitespace-nowrap">{e.via_funds ? money(e.via_funds, "INR") : "—"}</td>
@@ -125,7 +128,7 @@ function Exposures({ data }: { data: PortfolioBalance }) {
                 {counted.length > 0 && <>Counts what {counted.length} fund{counted.length === 1 ? "" : "s"} own{counted.length === 1 ? "s" : ""}
                     {data.holdings_as_of && <>, from portfolios published for {shortDay(data.holdings_as_of)} {data.holdings_as_of.slice(0, 4)}</>}, via Groww. Funds also
                     split the mix: a hybrid fund's bonds count as debt. </>}
-                {missing.length > 0 && <>Not yet looked through: {missing.join(", ")}. Holdings are fetched in the background within about 15 minutes.</>}
+                {missing.length > 0 && <>Not yet looked through: {missing.map(fundName).join(", ")}. Holdings are fetched in the background within about 15 minutes.</>}
             </p>
         </div>
     )
