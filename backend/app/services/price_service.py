@@ -313,6 +313,9 @@ async def run_periodic_price_refresh(interval_seconds: int = PRICE_REFRESH_INTER
             from app.services.mutual_funds import refresh_funds
 
             await refresh_funds(db)  # AMFI NAVs; no-op unless 6 hours have passed
+            from app.services.fund_holdings import refresh_fund_holdings
+
+            await refresh_fund_holdings(db)  # what held funds own; no-op unless a fund wasn't checked this week
             await refresh_fundamentals(db)  # no-op unless a stock is >24h stale
             await refresh_technicals(db)  # no-op until a day has passed
             await score_unrated_stocks(db)

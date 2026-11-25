@@ -12,13 +12,20 @@ from app.core.clock import utcnow
 from app.core.dependencies import CurrentUser, DBSession
 from app.core.logging import get_logger
 from app.models.listed_security import ListedSecurity
-from app.models.mutual_fund import MutualFund
+from app.models.mutual_fund import FundHolding, MutualFund
 from app.models.portfolio import Portfolio, PortfolioFund, PortfolioPosition, PortfolioTrade
 from app.models.stock import Stock
 from app.models.user import User
 from app.services.mutual_funds import match_funds
 from app.services.portfolio_analytics import PortfolioAnalyticsEngine
-from app.services.portfolio_balance import Target, balance_flags, rebalance_plan
+from app.services.portfolio_balance import (
+    FundLine,
+    Look,
+    Target,
+    balance_flags,
+    exposures,
+    rebalance_plan,
+)
 from app.services.stock_lookup import get_or_track_stock
 from app.services.tax_harvest import LTCG_EXEMPTION, Book, Lot, build_book, tax_on, xirr
 from app.services.tax_harvest import Trade as TaxTrade
@@ -431,6 +438,15 @@ class TradeOut(BaseModel):
     held_in: list[str] = Field(default_factory=list, description="all-portfolios view: the portfolios holding it")
 
 
+class ExposureOut(BaseModel):
+    name: str
+    ticker: str | None
+    direct: float
+    via_funds: float
+    funds: list[str]
+    pct: float = Field(..., description="% of the rupee holdings")
+
+
 class PortfolioBalance(BaseModel):
     portfolio_id: int | None = Field(..., description="null: all the user's portfolios together")
     flags: list[BalanceFlagOut]
@@ -440,9 +456,14 @@ class PortfolioBalance(BaseModel):
     plan_tax: float | None = Field(None, description="extra tax this financial year if every sale is made; "
                                    "null unless the tradebook covers every holding sold")
     exemption_left: float | None = Field(None, description="long-term gains still tax-free this financial year")
+    exposures: list[ExposureOut] = Field(default_factory=list, description="biggest companies, direct plus through funds (rupees)")
+    funds_looked_through: list[str] = Field(default_factory=list, description="funds whose holdings are counted")
+    funds_not_looked_through: list[str] = Field(default_factory=list, description="held funds with no holdings yet")
+    holdings_as_of: date | None = Field(None, description="oldest fund portfolio date among those counted")
     risk_level: str | None
 
 
+TOP_EXPOSURES = 10
 NewMoney = Query(0, ge=0, le=1e10, description="Rupees about to be added, invested before anything is sold")
 
 
@@ -513,12 +534,30 @@ async def _balance(
             if v:
                 verdicts[stock.ticker] = v.verdict
     target = await _target(db, int(current_user["id"]), risk_level)
-    flags, mix = balance_flags(holdings, verdicts, elsewhere, target, "this portfolio" if portfolio_id else "all your portfolios")
+    # Look through funds: what each held fund owns, from its latest monthly portfolio
+    fund_codes = [int(h.ticker) for h in holdings if h.kind == "fund"]
+    look: Look = {}
+    as_of: list[date] = []
+    if fund_codes:
+        for row in (await db.execute(select(FundHolding).where(FundHolding.scheme_code.in_(fund_codes)))).scalars():
+            look.setdefault(str(row.scheme_code), []).append(FundLine(row.name, row.ticker, row.kind, row.weight))
+        as_of = [d for d in (await db.execute(select(MutualFund.holdings_as_of).where(
+            MutualFund.scheme_code.in_(fund_codes)))).scalars() if d]
+    funds = [h for h in holdings if h.kind == "fund"]
+    flags, mix = balance_flags(holdings, verdicts, elsewhere, target,
+                               "this portfolio" if portfolio_id else "all your portfolios", look)
+    rupees = [h for h in holdings if h.currency == "INR" and h.market_value]
+    rupee_total = sum(h.market_value or 0.0 for h in rupees)
+    top = [
+        ExposureOut(name=e.name, ticker=e.ticker, direct=round(e.direct, 2), via_funds=round(e.via_funds, 2),
+                    funds=e.funds, pct=round(e.total / rupee_total * 100, 2))
+        for e in exposures(rupees, look)[:TOP_EXPOSURES]
+    ] if rupee_total else []
     lots: dict[str, list[Lot]] = {}
     for book in books:  # several portfolios: FIFO per demat account, approximated here as one queue per stock
         for lot in book.lots:
             lots.setdefault(lot.symbol, []).append(lot)
-    plan = rebalance_plan(holdings, target, verdicts, new_money, lots=lots)
+    plan = rebalance_plan(holdings, target, verdicts, new_money, lots=lots, look=look)
     sells = [t for t in plan if t.action == "sell"]
     plan_tax = exemption_left = None
     if books:
@@ -537,6 +576,10 @@ async def _balance(
         plan=[TradeOut(**vars(t), held_in=held_in.get(t.ticker or "", [])) for t in plan],
         plan_tax=plan_tax,
         exemption_left=exemption_left,
+        exposures=top,
+        funds_looked_through=[h.name for h in funds if h.ticker in look],
+        funds_not_looked_through=[h.name for h in funds if h.ticker not in look],
+        holdings_as_of=min(as_of) if as_of else None,
         risk_level=risk_level,
     )
 

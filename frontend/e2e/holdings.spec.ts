@@ -217,6 +217,35 @@ test('a portfolio imports its tradebook and the plan shows the tax split, the wa
   await expect(balance).toContainText(/₹1,?00,000\.00 of long-term gains is still tax-free/);  // grouping follows the browser locale
 });
 
+test('the balance check shows the biggest exposures counting what funds own', async ({ page }) => {
+  await signedIn(page);
+  const now = new Date().toISOString();
+  await page.route('**/api/v1/portfolio/', route => route.fulfill({ json: { portfolios: [
+    { id: 7, name: 'Core', description: null, initial_investment: 1000, positions: [], funds: [], created_at: now, updated_at: now }], total_count: 1 } }));
+  await page.route('**/api/v1/portfolio/7/performance', route => route.fulfill({ json: { portfolio_id: 7, prices_as_of: now, weight_only_tickers: [],
+    holdings: [{ kind: 'stock', ticker: 'EXAMPLE.NS', name: 'Example Ltd', sector: 'Banks', currency: 'INR', shares: 5, avg_cost: 100, price: 100,
+      market_value: 500, cost_value: 500, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, weight_by_value: 50 }],
+    totals: [{ currency: 'INR', market_value: 1000, cost_value: 1000, unrealized_pnl: 0, unrealized_pnl_pct: 0, day_change: 0, sector_allocation: {} }] } }));
+  await page.route('**/api/v1/portfolio/7/balance**', route => route.fulfill({ json: { portfolio_id: 7, risk_level: 'Moderate',
+    target: { equity: 70, debt: 20, cash: 5, gold: 5, max_stock: 20, max_sector: 35, is_default: true }, mix: { INR: { equity: 80, debt: 20 } },
+    flags: [{ kind: 'stock', title: 'Example Ltd is 30% of this portfolio, counting your funds', detail: "That's ₹500 directly and ₹100 through 1 fund (Example Fund).", currency: 'INR', ticker: 'EXAMPLE.NS', amount: 100 }],
+    plan: [], exposures: [
+      { name: 'Example Ltd', ticker: 'EXAMPLE.NS', direct: 500, via_funds: 100, funds: ['Example Fund'], pct: 30 },
+      { name: 'Unlisted Co', ticker: null, direct: 0, via_funds: 50, funds: ['Example Fund'], pct: 2.5 }],
+    funds_looked_through: ['Example Fund'], funds_not_looked_through: ['Newer Fund'], holdings_as_of: '2030-01-31' } }));
+
+  await page.goto('/portfolios/7');
+  const balance = page.getByRole('region', { name: 'Balance check' });
+  await expect(balance).toContainText('Example Ltd is 30% of this portfolio, counting your funds');
+  const row = balance.getByRole('row', { name: /Example Ltd/ });
+  await expect(row).toContainText('₹500.00');
+  await expect(row).toContainText('₹100.00');
+  await expect(row).toContainText('via Example Fund');
+  await expect(balance.getByRole('row', { name: /Unlisted Co/ })).toContainText('2.5%');
+  await expect(balance).toContainText('from portfolios published for');
+  await expect(balance).toContainText('Not yet looked through: Newer Fund');
+});
+
 test('a stock page shows your position across portfolios, and nothing when you hold none', async ({ page }) => {
   await signedIn(page);
   const now = new Date().toISOString();
