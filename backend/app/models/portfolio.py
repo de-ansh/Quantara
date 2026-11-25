@@ -98,7 +98,7 @@ class PortfolioTrade(Base):
     portfolio_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False, comment="Tracked ticker when known, else as given")
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)  # tracked ticker when known, else as given
     day: Mapped[date] = mapped_column(Date, nullable=False)
     side: Mapped[str] = mapped_column(String(4), nullable=False)  # buy | sell
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
