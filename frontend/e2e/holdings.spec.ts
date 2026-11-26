@@ -271,6 +271,21 @@ test('a stock page shows your position across portfolios, and nothing when you h
   await expect(page.getByRole('region', { name: 'Your position' })).toHaveCount(0);
 });
 
+test('a stock page shows what you own of it through your funds, even with no shares held directly', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/portfolio/updates', route => route.fulfill({ json: { portfolios: [] } }));
+  await page.route('**/api/v1/portfolio/exposure/FUNDED.NS', route => route.fulfill({ json: { ticker: 'FUNDED.NS', via_funds: 1500,
+    funds: [{ name: 'Example Fund - Direct Plan - Growth', amount: 1000, weight: 4.5 }, { name: 'Other Fund', amount: 500, weight: 2 }],
+    holdings_as_of: '2030-01-31' } }));
+
+  await page.goto('/research/FUNDED.NS');
+  const mine = page.getByRole('region', { name: 'Your position' });
+  await expect(mine).toContainText("You don't hold it directly, only through your funds");
+  await expect(mine).toContainText('Through your funds: ₹1,500.00');
+  await expect(mine).toContainText('Example Fund: ₹1,000.00 (4.5% of the fund)');
+  await expect(mine).toContainText('From fund portfolios published for');
+});
+
 test('stock detail shows a price chart with range switching', async ({ page }) => {
   await signedIn(page);
   const ranges: string[] = [];

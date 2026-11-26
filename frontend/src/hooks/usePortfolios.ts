@@ -247,3 +247,18 @@ export const useSaveTradebook = (id: number) => {
         },
     });
 };
+
+export interface StockExposure {
+    ticker: string;
+    via_funds: number;
+    funds: { name: string; amount: number; weight: number }[];
+    holdings_as_of: string | null;
+}
+
+/** How much of one company you own through your mutual funds, across every portfolio. */
+export const useStockExposure = (ticker: string) => {
+    return useQuery({
+        queryKey: ['stockExposure', ticker],
+        queryFn: async () => (await apiClient.get<StockExposure>(`/portfolio/exposure/${encodeURIComponent(ticker)}`)).data,
+    });
+};

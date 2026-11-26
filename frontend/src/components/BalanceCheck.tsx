@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { usePortfolioBalance, useSaveTargetMix, type PortfolioBalance, type TargetMix } from "@/hooks/usePortfolios"
 import { apiErrorDetail } from "@/lib/api"
 import { money } from "@/lib/money"
-import { shortDay } from "@/lib/format"
+import { fundName, shortDay } from "@/lib/format"
 
 const CLASSES = ["equity", "debt", "cash", "gold"] as const
 const BAR = { equity: "bg-primary", debt: "bg-sky-500", cash: "bg-emerald-500", gold: "bg-amber-500" }
@@ -90,7 +90,6 @@ function Mix({ data }: { data: PortfolioBalance }) {
 }
 
 /** "Example Fund - Direct Plan - Growth" -> "Example Fund": the plan and option don't help here. */
-const fundName = (name: string) => name.replace(/\s+-\s+(direct|regular)\b.*$/i, "")
 
 function Exposures({ data }: { data: PortfolioBalance }) {
     const rows = data.exposures ?? []
