@@ -83,6 +83,19 @@ async def test_compute_metrics_node(
     assert res_state["computed_metrics"]["roe"] == pytest.approx(0.2)
     assert res_state["computed_metrics"]["historical_volatility"] == 0.2
     assert res_state["computed_metrics"]["beta"] == 1.1
+    assert mock_get_historical_data.call_args_list[1].args[0] == "^GSPC"
+
+
+@pytest.mark.asyncio
+@patch("app.providers.yahoo.YahooFinanceProvider.get_historical_data")
+@patch("app.providers.yahoo.YahooFinanceProvider.compute_metrics", return_value={})
+@patch("yfinance.Ticker")
+async def test_an_indian_stocks_beta_is_against_the_nifty(mock_ticker, _metrics, mock_get_historical_data, orchestrator, sample_state):
+    # IST and New York timestamps never align, so against the S&P 500 an Indian stock got no beta at all
+    mock_get_historical_data.return_value = pd.DataFrame({"Close": [100.0, 102.0]})
+    mock_ticker.return_value = MagicMock(info={})
+    await orchestrator._compute_metrics({**sample_state, "ticker": "EXAMPLE.NS"})
+    assert mock_get_historical_data.call_args_list[1].args[0] == "^NSEI"
 
 
 @pytest.mark.asyncio

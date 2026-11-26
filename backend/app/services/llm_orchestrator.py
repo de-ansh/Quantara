@@ -247,7 +247,8 @@ class LLMOrchestrator:
         ticker = state["ticker"]
         logger.info(f"Computing metrics for {ticker}")
 
-        # 1. Fetch 1 year of daily historical data for the ticker and benchmark (^GSPC) from Yahoo Finance
+        # 1. Fetch 1 year of daily historical data for the ticker and its home market's index from Yahoo Finance.
+        # Indian prices are stamped in IST and the S&P 500's in New York time, so they never align: beta needs ^NSEI.
         from app.providers.yahoo import YahooFinanceProvider
 
         yahoo = YahooFinanceProvider()
@@ -263,8 +264,9 @@ class LLMOrchestrator:
             df = await yahoo.get_historical_data(
                 ticker, start_date=start_date_str, end_date=end_date_str
             )
+            benchmark = "^NSEI" if ticker.upper().endswith((".NS", ".BO")) else "^GSPC"
             benchmark_df = await yahoo.get_historical_data(
-                "^GSPC", start_date=start_date_str, end_date=end_date_str
+                benchmark, start_date=start_date_str, end_date=end_date_str
             )
             yahoo_metrics = yahoo.compute_metrics(df, benchmark_df)
             state["raw_data"]["price_df"] = df
