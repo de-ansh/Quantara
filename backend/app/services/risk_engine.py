@@ -601,7 +601,7 @@ class RiskEngine:
         Calculate quantitative macro factor sensitivities (betas) for an asset.
 
         Factors:
-        - market_beta: Sensitivity to broad equity market (S&P 500)
+        - market_beta: Sensitivity to the home equity market (Nifty 50 or S&P 500)
         - interest_rate_beta: Sensitivity to interest rate moves (duration / multiple compression)
         - oil_beta: Sensitivity to energy/commodity input costs
         - tech_momentum_beta: Sensitivity to technology and AI innovation cycle
