@@ -46,8 +46,8 @@ jobs:
       OPENAI_API_KEY: sk-fake-ci  # keeps embeddings local and LLM calls offline
       PGPASSWORD: quantara
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
