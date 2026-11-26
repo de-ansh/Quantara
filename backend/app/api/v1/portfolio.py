@@ -512,6 +512,56 @@ async def get_all_balance(current_user: CurrentUser, db: DBSession, new_money: f
     return await _balance(db, current_user, None, list(merged.values()), {}, held_in, new_money, books)
 
 
+class FundStake(BaseModel):
+    name: str
+    amount: float = Field(..., description="rupees of the company held through this fund")
+    weight: float = Field(..., description="% of the fund in the company")
+
+
+class StockExposure(BaseModel):
+    ticker: str
+    via_funds: float
+    funds: list[FundStake]
+    holdings_as_of: date | None = Field(None, description="oldest fund portfolio date among those counted")
+
+
+@router.get("/exposure/{ticker}", response_model=StockExposure)
+async def get_stock_exposure(ticker: str, current_user: CurrentUser, db: DBSession) -> StockExposure:
+    """How much of one company you own through your funds, across all portfolios."""
+    symbol = ticker.upper().split(".")[0]  # funds list the NSE ticker; the page may show the BSE one
+    value: dict[str, float] = {}
+    names: dict[str, str] = {}
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.user_id == int(current_user["id"])))).scalars().all()
+    for portfolio in portfolios:
+        for h in (await _valuation(db, portfolio)).holdings:
+            if h.kind == "fund" and h.market_value:
+                value[h.ticker] = value.get(h.ticker, 0.0) + h.market_value
+                names[h.ticker] = h.name
+    look, as_of = await _look(db, [int(code) for code in value])
+    stakes = []
+    for code, lines in look.items():
+        weights = sum(line.weight for line in lines)  # as exposures(): a fund's lines scaled to 100%
+        weight = sum(line.weight for line in lines
+                     if line.kind == "equity" and line.ticker and line.ticker.split(".")[0] == symbol)
+        if weight and weights > 0:
+            stakes.append(FundStake(name=names[code], amount=round(value[code] * weight / weights, 2), weight=round(weight, 2)))
+    stakes.sort(key=lambda s: -s.amount)
+    return StockExposure(ticker=ticker.upper(), via_funds=round(sum(s.amount for s in stakes), 2), funds=stakes,
+                         holdings_as_of=min(as_of) if stakes and as_of else None)
+
+
+async def _look(db: DBSession, fund_codes: list[int]) -> tuple[Look, list[date]]:
+    """What each fund owns, from its latest monthly portfolio, and those portfolios' dates."""
+    look: Look = {}
+    if not fund_codes:
+        return look, []
+    for row in (await db.execute(select(FundHolding).where(FundHolding.scheme_code.in_(fund_codes)))).scalars():
+        look.setdefault(str(row.scheme_code), []).append(FundLine(row.name, row.ticker, row.kind, row.weight))
+    as_of = [d for d in (await db.execute(select(MutualFund.holdings_as_of).where(
+        MutualFund.scheme_code.in_(fund_codes)))).scalars() if d]
+    return look, as_of
+
+
 async def _balance(
     db: DBSession,
     current_user: dict,
@@ -535,14 +585,7 @@ async def _balance(
                 verdicts[stock.ticker] = v.verdict
     target = await _target(db, int(current_user["id"]), risk_level)
     # Look through funds: what each held fund owns, from its latest monthly portfolio
-    fund_codes = [int(h.ticker) for h in holdings if h.kind == "fund"]
-    look: Look = {}
-    as_of: list[date] = []
-    if fund_codes:
-        for row in (await db.execute(select(FundHolding).where(FundHolding.scheme_code.in_(fund_codes)))).scalars():
-            look.setdefault(str(row.scheme_code), []).append(FundLine(row.name, row.ticker, row.kind, row.weight))
-        as_of = [d for d in (await db.execute(select(MutualFund.holdings_as_of).where(
-            MutualFund.scheme_code.in_(fund_codes)))).scalars() if d]
+    look, as_of = await _look(db, [int(h.ticker) for h in holdings if h.kind == "fund"])
     funds = [h for h in holdings if h.kind == "fund"]
     flags, mix = balance_flags(holdings, verdicts, elsewhere, target,
                                "this portfolio" if portfolio_id else "all your portfolios", look)

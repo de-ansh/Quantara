@@ -176,3 +176,11 @@ async def test_balance_endpoint_returns_exposures_and_which_funds_are_counted(cl
     assert body["holdings_as_of"] == "2030-01-31"
     assert body["mix"]["INR"]["debt"] == 19  # 400 of the fund's 1,000 is bonds, of 2,100 in all
     json.dumps(body)
+
+    # The stock page: the same company through funds, matched on the symbol whichever exchange the page shows
+    mine = (await client.get("/api/v1/portfolio/exposure/exbank.bo", headers=headers)).json()
+    assert (mine["via_funds"], mine["holdings_as_of"]) == (600.0, "2030-01-31")
+    assert mine["funds"] == [{"name": "Example Hybrid Fund - Direct Plan - Growth", "amount": 600.0, "weight": 60.0}]
+    none = (await client.get("/api/v1/portfolio/exposure/OTHER.NS", headers=headers)).json()
+    assert (none["via_funds"], none["funds"], none["holdings_as_of"]) == (0, [], None)
+    assert (await client.get("/api/v1/portfolio/exposure/EXBANK.NS")).status_code in (401, 403)

@@ -23,3 +23,6 @@ export const todayInIndia = () => new Date().toLocaleDateString("en-CA", { timeZ
 /** "NAV of 20 Nov" when a fund's price isn't today's (AMFI publishes once a day, after close); else null. */
 export const staleNav = (priceDate: string | null | undefined) =>
     priceDate && priceDate !== todayInIndia() ? `NAV of ${shortDay(priceDate)}` : null
+
+/** A fund's name without its plan and option: "X Fund - Direct Plan - Growth" → "X Fund". */
+export const fundName = (name: string) => name.replace(/\s+-\s+(direct|regular)\b.*$/i, "")
