@@ -63,3 +63,15 @@ test('Explorer selection opens Simulation with those tickers', async ({ page }) 
   await expect(sidebar.getByText('TCS.NS', { exact: true })).toBeVisible();
   await expect(sidebar.getByText('NVDA', { exact: true })).toHaveCount(0); // default preset not used
 });
+
+test('Simulation states the risk-free rate and premium it used', async ({ page }) => {
+  await signedIn(page);
+  await page.route('**/api/v1/portfolio/simulate', route => route.fulfill({ json: {
+    expected_return: 14.2, expected_volatility: 18, sharpe_ratio: 0.39, max_drawdown: -20, risk_adjusted_return: 5, portfolio_beta: 1,
+    trajectory: [{ month: 0, median: 1000, upper_95: 1000, lower_5: 1000 }], diversification_benefit_pct: 0,
+    asset_volatilities: {}, correlation_matrix: {}, covariance_matrix: [], estimated_tickers: [], risk_free_pct: 7.2, equity_premium_pct: 7,
+  } }));
+  await page.goto('/simulation?tickers=TCS.NS');
+  await expect(page.getByText("From each holding's beta: 7.2% plus beta × 7%")).toBeVisible();
+  await expect(page.getByText('Sharpe ratio, above a 7.2% risk-free rate')).toBeVisible();
+});

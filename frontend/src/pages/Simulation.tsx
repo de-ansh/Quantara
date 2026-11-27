@@ -59,6 +59,8 @@ interface SimulationResult {
     diversification_benefit_pct: number
     correlation_matrix: Record<string, Record<string, number>>
     estimated_tickers: string[]
+    risk_free_pct?: number // weighted by holding: India's rates for Indian stocks, US ones for US stocks
+    equity_premium_pct?: number
 }
 
 const toPayloadStocks = (holdings: Holding[]) => {
@@ -191,9 +193,9 @@ export default function Simulation() {
     })))
 
     const metrics = result ? [
-        { label: "Estimated yearly return", value: `${result.expected_return.toFixed(1)}%`, note: "From each holding's beta: 2.5% plus beta × 5.5%" },
+        { label: "Estimated yearly return", value: `${result.expected_return.toFixed(1)}%`, note: `From each holding's beta: ${result.risk_free_pct ?? 2.5}% plus beta × ${result.equity_premium_pct ?? 5.5}%` },
         { label: "Volatility", value: `${result.expected_volatility.toFixed(1)}%`, note: "Typical yearly swing (one standard deviation)" },
-        { label: "Return per unit of risk", value: result.sharpe_ratio.toFixed(2), note: "Sharpe ratio, above a 2.5% risk-free rate" },
+        { label: "Return per unit of risk", value: result.sharpe_ratio.toFixed(2), note: `Sharpe ratio, above a ${result.risk_free_pct ?? 2.5}% risk-free rate` },
         { label: `Beta vs ${isIndian ? "Nifty 50" : "S&P 500"}`, value: result.portfolio_beta.toFixed(2), note: "1.00 moves with the market" },
         { label: "Worst fall in the past year", value: `${result.max_drawdown.toFixed(1)}%`, note: "Peak to trough, at these weights" },
         { label: "Risk cut by diversifying", value: `${(result.diversification_benefit_pct || 0).toFixed(1)}%`, note: "Lower volatility than the holdings' own swings averaged, because they don't all move together" },

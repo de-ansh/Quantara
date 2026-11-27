@@ -1149,6 +1149,13 @@ class SimulationResult(BaseModel):
         default_factory=list,
         description="Tickers lacking price history, simulated with default asset-class estimates",
     )
+    risk_free_pct: float = Field(0.0, description="risk-free rate used, weighted by holding (%)")
+    equity_premium_pct: float = Field(0.0, description="equity premium used, weighted by holding (%)")
+
+
+# CAPM inputs per market: (risk-free rate, equity risk premium). India: about the 10-year G-sec yield
+# (7.1-7.3% in Nov 2026) and a 7% premium (estimates for 2026 run about 6.9-9%). Review yearly.
+CAPM = {"IN": (0.072, 0.070), "US": (0.025, 0.055)}
 
 
 @router.post("/simulate", response_model=SimulationResult)
@@ -1183,9 +1190,6 @@ async def simulate_portfolio(
             detail=f"Portfolio weights must sum to 1.0 (got {total_weight:.3f})",
         )
 
-    rf = 0.025  # Risk-free rate
-    equity_premium = 0.055  # Long-run equity risk premium for CAPM
-
     # Fallbacks for tickers without price history
     DEFAULT_METRICS = {
         "TLT": {"volatility": 0.08, "beta": 0.15, "max_dd": -0.12},
@@ -1196,7 +1200,10 @@ async def simulate_portfolio(
 
     tickers = [item.ticker.upper() for item in request.stocks]
     weights = [item.weight for item in request.stocks]
-    benchmarks = {t: "^NSEI" if t.endswith((".NS", ".BO")) else "^GSPC" for t in tickers}
+    markets = {t: "IN" if t.endswith((".NS", ".BO")) else "US" for t in tickers}
+    benchmarks = {t: "^NSEI" if markets[t] == "IN" else "^GSPC" for t in tickers}
+    rf = sum(w * CAPM[markets[t]][0] for t, w in zip(tickers, weights, strict=True))
+    equity_premium = sum(w * CAPM[markets[t]][1] for t, w in zip(tickers, weights, strict=True))
     daily = await _get_daily_returns(tuple(dict.fromkeys(tickers + list(benchmarks.values()))))
 
     def _history(t: str) -> "pd.Series | None":
@@ -1236,7 +1243,8 @@ async def simulate_portfolio(
             beta = db_stock.beta if db_stock and db_stock.beta is not None else m["beta"]
 
         vols.append(vol)
-        returns.append(rf + beta * equity_premium)
+        market_rf, market_premium = CAPM[markets[t]]
+        returns.append(market_rf + beta * market_premium)
         portfolio_beta += w * beta
         asset_max_dd = min(asset_max_dd, max_dd)
 
@@ -1323,4 +1331,6 @@ async def simulate_portfolio(
         correlation_matrix=analytics.correlation_matrix,
         covariance_matrix=analytics.covariance_matrix,
         estimated_tickers=estimated,
+        risk_free_pct=round(rf * 100, 2),
+        equity_premium_pct=round(equity_premium * 100, 2),
     )
