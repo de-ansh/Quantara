@@ -139,6 +139,23 @@ def test_exposure_adds_direct_and_fund_stakes_and_flags_the_total():
                 if f.ticker == "EXBANK.NS"]
 
 
+def test_a_sector_counts_the_stocks_inside_funds():
+    look = {"9002": [FundLine("Example Bank Ltd", "EXBANK.NS", "equity", 60, "Banks"),
+                     FundLine("Other Co Ltd", None, "equity", 40, None)]}  # unknown sector: left out
+    holdings = [h("B1.NS", 300, sector="Banks"), h("C.NS", 300, sector="Energy"), h("D.NS", 300, sector="Metals"),
+                h("9002", 1000, kind="fund", name="Example Fund")]
+    target = Target(100, 0, 0, 0, max_stock=100, max_sector=35)
+    [flag] = [f for f in balance_flags(holdings, {}, {}, target, look=look)[0] if f.kind == "sector"]
+    assert flag.title == "Banks is 47% of this portfolio, counting your funds"  # (300 + 600) of 1,900
+    assert "₹300 in stocks you hold and ₹600 through your funds" in flag.detail
+    assert flag.amount == 300  # all of the direct banks, and the funds still keep it over
+    assert not [f for f in balance_flags(holdings, {}, {}, target)[0] if f.kind == "sector"]  # 16% directly
+
+    only_funds = [h("C.NS", 300, sector="Energy"), h("9002", 1000, kind="fund", name="Example Fund")]
+    [flag] = [f for f in balance_flags(only_funds, {}, {}, target, look=look)[0] if f.kind == "sector"]
+    assert (flag.title, flag.amount) == ("Banks is 46% of this portfolio, counting your funds", None)
+
+
 def test_the_plan_sees_a_funds_debt_and_sells_from_main_classes():
     holdings = [h("A.NS", 500, pnl=50), h("9001", 500, kind="fund", name="Example Hybrid Fund", pnl=200)]
     # 500 + 350 equity, 150 debt: against 70/30 equity is 85% (15 over), so 150 of equity goes to debt
@@ -175,6 +192,8 @@ async def test_balance_endpoint_returns_exposures_and_which_funds_are_counted(cl
     assert body["funds_not_looked_through"] == ["Example New Fund - Direct Plan - Growth"]
     assert body["holdings_as_of"] == "2030-01-31"
     assert body["mix"]["INR"]["debt"] == 19  # 400 of the fund's 1,000 is bonds, of 2,100 in all
+    # The fund's bank line takes the stock's own sector: 1,000 direct + 600 through the fund, of 2,100
+    assert "Banks is 76% of this portfolio, counting your funds" in [f["title"] for f in body["flags"]]
     json.dumps(body)
 
     # The stock page: the same company through funds, matched on the symbol whichever exchange the page shows

@@ -551,13 +551,22 @@ async def get_stock_exposure(ticker: str, current_user: CurrentUser, db: DBSessi
                          holdings_as_of=min(as_of) if stakes and as_of else None)
 
 
+# Groww's sector names that match one of the app's; "Energy & Utilities" and "Diversified" span several
+GROWW_SECTORS = {name: name for name in ("Consumer Discretionary", "Consumer Staples", "Healthcare", "Industrials",
+                                          "Materials", "Real Estate", "Technology")} | {"Financial": "Financials"}
+
+
 async def _look(db: DBSession, fund_codes: list[int]) -> tuple[Look, list[date]]:
     """What each fund owns, from its latest monthly portfolio, and those portfolios' dates."""
     look: Look = {}
     if not fund_codes:
         return look, []
-    for row in (await db.execute(select(FundHolding).where(FundHolding.scheme_code.in_(fund_codes)))).scalars():
-        look.setdefault(str(row.scheme_code), []).append(FundLine(row.name, row.ticker, row.kind, row.weight))
+    rows = (await db.execute(select(FundHolding).where(FundHolding.scheme_code.in_(fund_codes)))).scalars().all()
+    tickers = {row.ticker for row in rows if row.ticker}
+    sectors = dict((await db.execute(select(Stock.ticker, Stock.sector).where(Stock.ticker.in_(tickers)))).tuples().all())
+    for row in rows:  # a matched stock takes the app's sector; otherwise Groww's name where it means the same
+        sector = sectors.get(row.ticker) if row.ticker else GROWW_SECTORS.get(row.sector or "")
+        look.setdefault(str(row.scheme_code), []).append(FundLine(row.name, row.ticker, row.kind, row.weight, sector))
     as_of = [d for d in (await db.execute(select(MutualFund.holdings_as_of).where(
         MutualFund.scheme_code.in_(fund_codes)))).scalars() if d]
     return look, as_of
