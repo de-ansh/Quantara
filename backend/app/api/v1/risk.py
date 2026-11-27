@@ -412,5 +412,7 @@ async def _get_daily_returns(tickers: tuple[str, ...]) -> pd.DataFrame | None:
     except Exception as e:
         logger.warning(f"Price history download failed for correlations: {e}")
         return None  # don't cache failures, retry next request
-    _returns_cache[tickers] = (time.monotonic(), returns)
+    # A partial download (Yahoo throttling, or another yfinance call at the same time) is used but not kept
+    if returns is not None and all(t in returns and returns[t].notna().any() for t in tickers):
+        _returns_cache[tickers] = (time.monotonic(), returns)
     return returns

@@ -199,6 +199,23 @@ async def test_simulate_portfolio_with_db_stocks(mock_current_user, no_price_his
 
 
 @pytest.mark.asyncio
+async def test_an_indian_holding_uses_indian_rates(mock_current_user, no_price_history):
+    """India's risk-free rate and premium for .NS/.BO, the US ones otherwise; the page is told which were used."""
+    mock_db = _db_returning(
+        Stock(ticker="EXAMPLE.NS", name="Example Ltd", sector="Industrials", beta=0.05),  # Yahoo's, vs the S&P: ignored
+        Stock(ticker="AAPL", name="Apple Inc.", sector="Technology", beta=1.0),
+    )
+    payload = SimulationRequest(
+        stocks=[PortfolioStock(ticker="EXAMPLE.NS", weight=0.5), PortfolioStock(ticker="AAPL", weight=0.5)],
+        initial_investment=1000.0,
+        time_horizon_months=12,
+    )
+    res = await simulate_portfolio(request=payload, current_user=mock_current_user, db=mock_db)
+    assert res.expected_return == pytest.approx((0.5 * (0.072 + 0.070) + 0.5 * (0.025 + 0.055)) * 100, abs=0.01)
+    assert (res.risk_free_pct, res.equity_premium_pct) == (4.85, 6.25)
+
+
+@pytest.mark.asyncio
 async def test_simulate_portfolio_uses_real_price_history(mock_current_user, monkeypatch):
     """Volatility, beta, correlation and drawdown are computed from daily returns."""
     rng = np.random.default_rng(7)
