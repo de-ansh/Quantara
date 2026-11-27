@@ -48,7 +48,7 @@ class Target:
     cash: float
     gold: float
     max_stock: float = 20.0  # one company, % of the portfolio
-    max_sector: float = 35.0  # one sector, counting directly held stocks only
+    max_sector: float = 35.0  # one sector, counting stocks inside funds
     is_default: bool = True
     basis: str | None = None  # for a default: whose starting point it is
 
@@ -126,6 +126,7 @@ class FundLine:
     ticker: str | None  # listed Indian stock, when matched
     kind: str  # equity | debt | cash | gold | other
     weight: float  # % of the fund
+    sector: str | None = None  # the app's sector name, as for directly held stocks
 
 
 Look = dict[str, list[FundLine]]  # a fund holding's ticker (its scheme code) -> what the fund owns
@@ -236,18 +237,34 @@ def balance_flags(
                 currency, e.ticker,
                 round(min(e.direct, trim_to(e.total, total, target.max_stock)), 2) if e.direct else None))
 
-        sectors: dict[str, float] = {}
+        direct: dict[str, float] = {}
+        in_funds: dict[str, float] = {}
         for h in companies:
             if h.sector:
-                sectors[h.sector] = sectors.get(h.sector, 0.0) + (h.market_value or 0)
-        for sector, value in sorted(sectors.items(), key=lambda kv: -kv[1]):
-            pct = value / total * 100
-            if pct > target.max_sector:
+                direct[h.sector] = direct.get(h.sector, 0.0) + (h.market_value or 0)
+        for h in group:  # each fund's equity lines, at its share of the fund
+            lines = look.get(h.ticker) if h.kind == "fund" else None
+            weights = sum(line.weight for line in lines or [])
+            for line in lines or []:
+                if line.kind == "equity" and line.sector and weights > 0:
+                    in_funds[line.sector] = in_funds.get(line.sector, 0.0) + (h.market_value or 0.0) * line.weight / weights
+        for sector in sorted(direct.keys() | in_funds.keys(), key=lambda k: -(direct.get(k, 0) + in_funds.get(k, 0))):
+            mine, funds = direct.get(sector, 0.0), in_funds.get(sector, 0.0)
+            pct = (mine + funds) / total * 100
+            if pct <= target.max_sector:
+                continue
+            why = f"Stocks in one sector tend to fall together. Above {target.max_sector:.0f}%, new money is better spent elsewhere"
+            if not funds:
                 flags.append(BalanceFlag(
-                    "sector", f"{sector} is {pct:.0f}% of {scope}",
-                    f"Stocks in one sector tend to fall together. Above {target.max_sector:.0f}%, new money is better "
-                    "spent elsewhere, or trim this much from the sector.",
-                    currency, None, round(trim_to(value, total, target.max_sector), 2)))
+                    "sector", f"{sector} is {pct:.0f}% of {scope}", f"{why}, or trim this much from the sector.",
+                    currency, None, round(trim_to(mine, total, target.max_sector), 2)))
+                continue
+            flags.append(BalanceFlag(
+                "sector", f"{sector} is {pct:.0f}% of {scope}, counting your funds",
+                f"{why}. That's {_money(mine, currency)} in stocks you hold and {_money(funds, currency)} through your funds"
+                + (", so trimming this much of your own stocks brings it to the limit." if mine else "."),
+                currency, None,
+                round(min(mine, trim_to(mine + funds, total, target.max_sector)), 2) if mine else None))
 
         off = [c for c in CLASSES if abs(mixes[currency].get(c, 0) - target.share(c)) > DRIFT_PCT]
         if off:
