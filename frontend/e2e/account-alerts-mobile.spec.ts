@@ -55,6 +55,36 @@ test('a numbers-only Avoid shows as Weak numbers; the AI verdict keeps Avoid', a
   await expect(card.getByText(/not a call to sell/)).toHaveCount(0);
 });
 
+test('account saves your horizon and preferred sectors, and ideas mark those sectors', async ({ page }) => {
+  await signedIn(page);
+  let profile = { id: 1, email: 'analyst@quantara.com', risk_level: 'Moderate', volatility_tolerance: 50, investment_horizon: 60, sector_preferences: {} };
+  let saved: Record<string, unknown> | null = null;
+  await page.route('**/api/v1/users/me', route => route.fulfill({ json: profile }));
+  await page.route('**/api/v1/users/risk-profile', route => {
+    saved = route.request().postDataJSON();
+    profile = { ...profile, ...saved };
+    return route.fulfill({ json: profile });
+  });
+  const idea = (ticker: string, sector: string) => ({ ticker, rank: 1, explanation: '', reasoning_metadata: { risk_score: 30, stock_sector: sector },
+    scores: { research_score: 80, signal_score: 50, risk_alignment_score: 80, macro_fit_score: 50, final_score: 75 } });
+  await page.route('**/api/v1/recommendations', route => route.fulfill({ json: {
+    recommendations: [idea('ENERGY1.NS', 'Energy'), idea('BANK1.NS', 'Financials')], total_count: 2, user_risk_level: 'Moderate' } }));
+
+  await page.goto('/account');
+  await expect(page.getByLabel("When you'll need the money")).toHaveValue('60');
+  await page.getByLabel("When you'll need the money").fill('18');
+  await page.getByRole('button', { name: 'Energy' }).click();
+  await expect(page.getByRole('button', { name: 'Energy' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Save risk profile' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+  expect(saved).toMatchObject({ investment_horizon: 18, sector_preferences: { Energy: 1 } });
+
+  await page.goto('/');
+  const ideas = page.getByRole('region', { name: /Ideas for/ });
+  await expect(ideas.getByRole('row', { name: /ENERGY1/ })).toContainText('your sector');
+  await expect(ideas.getByRole('row', { name: /BANK1/ })).not.toContainText('your sector');
+});
+
 test('account deletion needs password and confirmation, then signs out', async ({ page }) => {
   await signedIn(page);
   let deleteBody: unknown = null;

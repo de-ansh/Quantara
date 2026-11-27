@@ -130,6 +130,8 @@ async def refresh_shareholding(db: AsyncSession) -> int:
 # The institutional split, from each filing's XBRL. Filings from 2022 on name contexts "X_ContextI" and
 # give fractions; older ones "XI" and percents, so each value is scaled by the filing's own 100% total.
 BREAKDOWN_QUARTERS = 8
+# Only NSE's own archive is fetched (the link comes from NSE's JSON); filings moved from .com to .in in 2026
+XBRL_HOSTS = ("https://nsearchives.nseindia.com/", "https://nsearchives.nseindia.in/")
 HISTORY_PATH = "api/corporate-share-holdings-master?index=equities&symbol={symbol}"
 _CATEGORIES = {
     "total": "ShareholdingPattern",
@@ -192,7 +194,7 @@ async def shareholding_pattern(db: AsyncSession, ticker: str) -> list[Shareholdi
         except (KeyError, TypeError, ValueError):
             continue
         url = str(raw.get("xbrl") or "")
-        links.setdefault(quarter, url if url.startswith("https://nsearchives.nseindia.com/") else "")
+        links.setdefault(quarter, url if url.startswith(XBRL_HOSTS) else "")
     await _store(db, parse_rows(history))
     rows = (await db.execute(query)).scalars().all()
     missing = [r for r in rows if r.fii_pct is None and links.get(r.quarter)]

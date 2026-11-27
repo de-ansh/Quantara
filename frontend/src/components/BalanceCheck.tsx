@@ -80,7 +80,7 @@ function Mix({ data }: { data: PortfolioBalance }) {
             ))}
             <p className="text-xs text-muted-foreground">
                 {t.is_default
-                    ? <>Target is the starting point for a {data.risk_level ?? "Moderate"} investor; change it to your own. </>
+                    ? <>Target is {t.basis ?? `the starting point for a ${data.risk_level ?? "Moderate"} investor`}; change it to your own. </>
                     : "Your saved target, used for every portfolio. "}
                 Limits: one company {t.max_stock}%, one sector {t.max_sector}%.
                 {!data.risk_level && <> Set your risk profile on the <Link to="/account" className="underline">Account</Link> page to also check Avoid ratings.</>}

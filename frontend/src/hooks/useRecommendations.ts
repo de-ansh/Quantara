@@ -28,6 +28,7 @@ export const useRecommendations = (options = {}) => {
             // Transform backend recommendations to frontend Opportunity format
             return data.recommendations.map(r => ({
                 ticker: r.ticker,
+                sector: (r.reasoning_metadata.stock_sector as string | null | undefined) ?? null,
                 risk: Number(r.reasoning_metadata.risk_score),
                 research: Math.round(r.scores.research_score),
                 signal: r.scores.signal_score > 70 ? 'up' : 'right' as "up" | "up-right" | "right" | "down",

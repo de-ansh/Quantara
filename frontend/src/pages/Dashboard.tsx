@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import apiClient from "@/lib/api"
 import PageHeader from "@/components/PageHeader"
 import MarketToday from "@/components/dashboard/MarketToday"
 import WatchlistPanel from "@/components/dashboard/WatchlistPanel"
 import SignalsPanel from "@/components/dashboard/SignalsPanel"
 import IdeasPanel from "@/components/dashboard/IdeasPanel"
+import { useUserProfile } from "@/hooks/useUserProfile"
 import PortfolioUpdatesCard from "@/components/PortfolioUpdatesCard"
 import TrackRecordCard from "@/components/TrackRecordCard"
 
@@ -13,10 +12,7 @@ const today = () => new Date().toLocaleDateString("en-IN", { weekday: "long", da
 
 /** Answers, in order: how is the market, how is my money, what's moving in what I follow, what could I look at. */
 export default function Dashboard() {
-    const { data: profile } = useQuery({
-        queryKey: ["userProfile"],
-        queryFn: async () => (await apiClient.get<{ risk_level: string | null }>("/users/me")).data,
-    })
+    const { data: profile } = useUserProfile()
     const riskLevel = profile?.risk_level ?? "Moderate"
 
     return (

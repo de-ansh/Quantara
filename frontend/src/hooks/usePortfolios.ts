@@ -162,6 +162,7 @@ export interface TargetMix {
     max_stock: number; // one company, % of the portfolio
     max_sector: number;
     is_default?: boolean; // not saved yet: the risk profile's starting point
+    basis?: string | null; // for a default: whose starting point it is, and why
 }
 
 export interface Trade {
