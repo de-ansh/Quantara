@@ -1235,12 +1235,13 @@ async def simulate_portfolio(
             if pair is not None and len(pair) >= MIN_OVERLAP_DAYS and pair.iloc[:, 1].var() > 0:
                 beta = float(pair.iloc[:, 0].cov(pair.iloc[:, 1]) / pair.iloc[:, 1].var())
             else:
-                beta = db_stock.beta if db_stock and db_stock.beta is not None else 1.0
+                beta = db_stock.beta if db_stock and db_stock.beta is not None and markets[t] == "US" else 1.0
         else:
             estimated.append(t)
             m = DEFAULT_METRICS.get(t, GENERIC_EQUITY)
             vol, max_dd = m["volatility"], m["max_dd"]
-            beta = db_stock.beta if db_stock and db_stock.beta is not None else m["beta"]
+            # Yahoo's stored beta is against the S&P 500, near 0 for an Indian stock, so India assumes the market's 1.0
+            beta = db_stock.beta if db_stock and db_stock.beta is not None and markets[t] == "US" else m["beta"]
 
         vols.append(vol)
         market_rf, market_premium = CAPM[markets[t]]

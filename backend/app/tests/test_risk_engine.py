@@ -189,6 +189,21 @@ async def test_get_stock_correlations_falls_back_when_yahoo_fails(monkeypatch):
     assert risk._returns_cache == {}
 
 
+@pytest.mark.asyncio
+async def test_a_partial_download_is_used_but_not_cached(monkeypatch):
+    import pandas as pd
+
+    from app.api.v1 import risk
+
+    idx = pd.date_range("2025-01-01", periods=5, freq="B")
+    monkeypatch.setattr(risk.yf, "download", lambda tickers, **kw: pd.concat(
+        {"Close": pd.DataFrame({"A.NS": range(1, 6), "B.NS": [None] * 5}, index=idx, dtype=float)}, axis=1))
+    monkeypatch.setattr(risk, "_returns_cache", {})
+    returns = await risk._get_daily_returns(("A.NS", "B.NS"))
+    assert returns is not None and returns["A.NS"].notna().any()
+    assert risk._returns_cache == {}  # B.NS came back empty: try again next time
+
+
 def test_generate_drawdown_series_with_dataframe():
     """Test drawdown calculation with actual price DataFrame."""
     import pandas as pd

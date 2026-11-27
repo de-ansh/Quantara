@@ -202,7 +202,7 @@ async def test_simulate_portfolio_with_db_stocks(mock_current_user, no_price_his
 async def test_an_indian_holding_uses_indian_rates(mock_current_user, no_price_history):
     """India's risk-free rate and premium for .NS/.BO, the US ones otherwise; the page is told which were used."""
     mock_db = _db_returning(
-        Stock(ticker="EXAMPLE.NS", name="Example Ltd", sector="Industrials", beta=1.0),
+        Stock(ticker="EXAMPLE.NS", name="Example Ltd", sector="Industrials", beta=0.05),  # Yahoo's, vs the S&P: ignored
         Stock(ticker="AAPL", name="Apple Inc.", sector="Technology", beta=1.0),
     )
     payload = SimulationRequest(
