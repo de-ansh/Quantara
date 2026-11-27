@@ -375,6 +375,7 @@ class TargetMix(BaseModel):
     max_stock: float = Field(20, ge=5, le=100, description="one company, % of the portfolio")
     max_sector: float = Field(35, ge=10, le=100, description="one sector, % of the portfolio")
     is_default: bool = Field(False, description="true: not saved yet, the risk profile's starting point")
+    basis: str | None = Field(None, description="for a default: whose starting point it is, and why")
 
     @model_validator(mode="after")
     def _sums_to_100(self) -> "TargetMix":
@@ -385,7 +386,7 @@ class TargetMix(BaseModel):
 
 async def _target(db: DBSession, user_id: int, risk_level: str | None) -> Target:
     user = await db.get(User, user_id)
-    return Target.load(user.target_mix if user else None, risk_level)
+    return Target.load(user.target_mix if user else None, risk_level, user.investment_horizon if user else None)
 
 
 @router.get("/target-mix", response_model=TargetMix)
@@ -399,9 +400,9 @@ async def save_target_mix(body: TargetMix, current_user: CurrentUser, db: DBSess
     user = await db.get(User, int(current_user["id"]))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    user.target_mix = body.model_dump(exclude={"is_default"})
+    user.target_mix = body.model_dump(exclude={"is_default", "basis"})
     await db.commit()
-    return body.model_copy(update={"is_default": False})
+    return body.model_copy(update={"is_default": False, "basis": None})
 
 
 @router.delete("/target-mix", response_model=TargetMix)

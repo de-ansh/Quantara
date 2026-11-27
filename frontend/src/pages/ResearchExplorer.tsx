@@ -20,6 +20,7 @@ import { isIndianAsset, getMarketLabel } from "@/lib/currency"
 import WatchlistButton from "@/components/WatchlistButton"
 import type { StockSearchItem } from "@/types/api"
 import DayChange from "@/components/DayChange"
+import YourSectorTag from "@/components/YourSectorTag"
 import { dataCallLabel } from "@/lib/verdict"
 
 const PAGE_SIZE = 25
@@ -661,7 +662,7 @@ export default function ResearchExplorer() {
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-muted-foreground text-[10px]">Sector</div>
-                                                    <div className="font-bold text-foreground text-xs truncate">{row.sector ?? "—"}</div>
+                                                    <div className="font-bold text-foreground text-xs truncate">{row.sector ?? "—"}<YourSectorTag sector={row.sector} /></div>
                                                 </div>
                                             </div>
 
@@ -773,7 +774,7 @@ export default function ResearchExplorer() {
                                                     {row.tracked === false ? "—" : row.signal}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-muted-foreground">{row.sector ?? "—"}</td>
+                                            <td className="px-6 py-4 text-muted-foreground">{row.sector ?? "—"}<YourSectorTag sector={row.sector} /></td>
                                         </tr>
                                     ))}
                                 </tbody>

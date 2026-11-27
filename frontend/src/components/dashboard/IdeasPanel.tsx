@@ -3,6 +3,7 @@ import AdviceNotice from "@/components/AdviceNotice"
 import Panel, { PanelMessage, PanelSkeleton } from "@/components/Panel"
 import { useRecommendations } from "@/hooks/useRecommendations"
 import { riskWord } from "@/components/dashboard/riskWord"
+import YourSectorTag from "@/components/YourSectorTag"
 
 const COLUMNS: [string, string][] = [
     ["Match", "Overall fit for your profile, out of 100"],
@@ -36,6 +37,7 @@ export default function IdeasPanel({ riskLevel }: { riskLevel: string }) {
                                 <tr key={o.ticker} className="hover:bg-muted/40">
                                     <th scope="row" className="px-4 py-2 text-left font-medium">
                                         <Link to={`/research/${o.ticker}`} className="text-foreground hover:text-primary">{o.ticker}</Link>
+                                        <YourSectorTag sector={o.sector} />
                                     </th>
                                     <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">{o.score}</td>
                                     <td className="px-3 py-2 text-right text-xs">{riskWord(o.risk)} <span className="text-muted-foreground font-mono">· {Number.isFinite(o.risk) ? o.risk.toFixed(1) : "—"}</span></td>

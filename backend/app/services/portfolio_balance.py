@@ -21,6 +21,8 @@ DEFAULT_MIX = {
     "Moderate": {"equity": 70.0, "debt": 20.0, "cash": 5.0, "gold": 5.0},
     "Aggressive": {"equity": 85.0, "debt": 5.0, "cash": 5.0, "gold": 5.0},
 }
+PROFILES = ("Conservative", "Moderate", "Aggressive")
+SHORT_HORIZON_MONTHS = 36  # money needed within 3 years can't wait out a market fall
 
 _CASH = re.compile(r"\b(liquid|overnight|money market|1d rate)\b", re.I)
 _GOLD = re.compile(r"\bgold\b|\bsilver\b", re.I)
@@ -48,13 +50,21 @@ class Target:
     max_stock: float = 20.0  # one company, % of the portfolio
     max_sector: float = 35.0  # one sector, counting directly held stocks only
     is_default: bool = True
+    basis: str | None = None  # for a default: whose starting point it is
 
     @classmethod
-    def load(cls, saved: dict | None, risk_level: str | None) -> "Target":
+    def load(cls, saved: dict | None, risk_level: str | None, horizon_months: int | None = None) -> "Target":
         if saved:
-            return cls(**{k: float(saved[k]) for k in (*CLASSES, "max_stock", "max_sector")}, is_default=False)
-        mix = DEFAULT_MIX.get(risk_level or "", DEFAULT_MIX["Moderate"])
-        return cls(mix["equity"], mix["debt"], mix["cash"], mix["gold"])
+            equity, debt, cash, gold, max_stock, max_sector = (float(saved[k]) for k in (*CLASSES, "max_stock", "max_sector"))
+            return cls(equity, debt, cash, gold, max_stock, max_sector, is_default=False)
+        profile = risk_level if risk_level in DEFAULT_MIX else "Moderate"
+        basis = f"the starting point for a {profile} investor"
+        if horizon_months and horizon_months < SHORT_HORIZON_MONTHS and profile != "Conservative":
+            profile = PROFILES[PROFILES.index(profile) - 1]
+            basis = (f"the {profile} starting point: one step more cautious than your {risk_level or 'Moderate'} profile, "
+                     f"because you need the money within {horizon_months} months")
+        mix = DEFAULT_MIX[profile]
+        return cls(mix["equity"], mix["debt"], mix["cash"], mix["gold"], basis=basis)
 
     def share(self, cls_: str) -> float:
         return float(getattr(self, cls_))

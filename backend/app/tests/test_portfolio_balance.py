@@ -38,6 +38,16 @@ def test_target_defaults_from_the_risk_profile_until_saved():
     assert (saved.equity, saved.max_stock, saved.is_default) == (60.0, 15.0, False)
 
 
+def test_a_short_horizon_makes_the_default_one_step_more_cautious():
+    short = Target.load(None, "Aggressive", horizon_months=12)
+    assert (short.equity, short.is_default) == (70.0, True)  # the Moderate mix
+    assert "within 12 months" in (short.basis or "")
+    assert Target.load(None, "Conservative", 6).equity == 50.0  # already the most cautious
+    assert Target.load(None, "Aggressive", 60).equity == 85.0
+    saved = {"equity": 90, "debt": 10, "cash": 0, "gold": 0, "max_stock": 20, "max_sector": 35}
+    assert Target.load(saved, "Aggressive", 12).equity == 90.0  # a saved target is never changed
+
+
 def test_trim_brings_the_holding_to_the_cap_of_what_remains():
     sold = trim_to(500, 1000, 20)  # 50% of 1000
     assert round((500 - sold) / (1000 - sold), 6) == 0.2
@@ -125,7 +135,7 @@ async def test_target_mix_defaults_saves_validates_and_resets(client: AsyncClien
     mine = {"equity": 60, "debt": 30, "cash": 5, "gold": 5, "max_stock": 15, "max_sector": 30}
     saved = await client.put("/api/v1/portfolio/target-mix", headers=headers, json=mine)
     assert saved.status_code == 200 and saved.json()["is_default"] is False
-    assert (await client.get("/api/v1/portfolio/target-mix", headers=headers)).json() == {**mine, "is_default": False}
+    assert (await client.get("/api/v1/portfolio/target-mix", headers=headers)).json() == {**mine, "is_default": False, "basis": None}
 
     bad = await client.put("/api/v1/portfolio/target-mix", headers=headers, json={**mine, "equity": 70})
     assert bad.status_code == 422 and "add up to 100" in bad.text

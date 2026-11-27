@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import apiClient, { apiErrorDetail } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -9,16 +10,11 @@ import TwoFactorCard from "@/components/TwoFactorCard"
 import RecentActivityCard from "@/components/RecentActivityCard"
 import YourDataCard from "@/components/YourDataCard"
 import { Save } from "lucide-react"
+import type { UserProfile } from "@/hooks/useUserProfile"
 
-
-interface UserProfile {
-    id: number
-    email: string
-    risk_level: string | null
-    volatility_tolerance: number | null
-    investment_horizon: number | null
-    sector_preferences: Record<string, number> | null
-}
+// The sectors stocks are filed under (Yahoo's names)
+const SECTORS = ["Communication Services", "Consumer Discretionary", "Consumer Staples", "Energy", "Financials", "Healthcare",
+    "Industrials", "Materials", "Real Estate", "Technology", "Utilities"]
 
 export default function Account() {
     const [user, setUser] = useState<UserProfile | null>(null)
@@ -29,6 +25,9 @@ export default function Account() {
 
     const [riskLevel, setRiskLevel] = useState("Moderate")
     const [volatilityTolerance, setVolatilityTolerance] = useState(50)
+    const [horizon, setHorizon] = useState(12)
+    const [sectors, setSectors] = useState<Set<string>>(new Set())
+    const queryClient = useQueryClient()
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -38,6 +37,8 @@ export default function Account() {
                 setUser(data)
                 setRiskLevel(data.risk_level || "Moderate")
                 setVolatilityTolerance(data.volatility_tolerance ?? 50)
+                setHorizon(data.investment_horizon ?? 12)
+                setSectors(new Set(Object.entries(data.sector_preferences ?? {}).filter(([, v]) => v > 0).map(([k]) => k)))
             } catch {
                 setError("Couldn't load your profile. Try signing in again.")
             } finally {
@@ -54,16 +55,17 @@ export default function Account() {
         setSuccess(false)
 
         try {
-            // Horizon and sector caps aren't used by anything yet, so they aren't shown; send back what's stored
             const payload = {
                 risk_level: riskLevel,
                 volatility_tolerance: volatilityTolerance,
-                investment_horizon: user?.investment_horizon ?? 12,
-                sector_preferences: user?.sector_preferences ?? {},
+                investment_horizon: horizon,
+                sector_preferences: Object.fromEntries([...sectors].map(s => [s, 1])),
             }
 
             const res = await apiClient.post<UserProfile>("/users/risk-profile", payload)
             setUser(res.data)
+            queryClient.invalidateQueries({ queryKey: ["userProfile"] })
+            queryClient.invalidateQueries({ queryKey: ["portfolioBalance"] })
             setSuccess(true)
             setTimeout(() => setSuccess(false), 3000)
         } catch (err) {
@@ -101,6 +103,33 @@ export default function Account() {
                                 onChange={e => setVolatilityTolerance(Number(e.target.value))} className="w-full accent-primary" />
                             <p className="text-xs text-muted-foreground">0 avoids volatile stocks; 100 doesn't mind them. Weighs how ideas are ranked.</p>
                         </div>
+                        <div className="space-y-1.5 max-w-md">
+                            <label htmlFor="horizon" className="text-sm font-medium">When you'll need the money</label>
+                            <div className="flex items-center gap-2">
+                                <input id="horizon" type="number" min={1} max={600} step={1} value={horizon}
+                                    onChange={e => setHorizon(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                                    className="w-24 rounded-md border border-border bg-background px-2 py-1.5 text-sm font-mono tabular-nums" />
+                                <span className="text-sm text-muted-foreground">months from now</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Under 36 months, the balance check's starting mix is one step more cautious than your risk level. A mix you've saved isn't changed.</p>
+                        </div>
+                        <fieldset className="space-y-1.5">
+                            <legend className="text-sm font-medium">Sectors you prefer</legend>
+                            <div className="flex flex-wrap gap-2">
+                                {SECTORS.map(sector => (
+                                    <button key={sector} type="button" aria-pressed={sectors.has(sector)}
+                                        onClick={() => setSectors(prev => {
+                                            const next = new Set(prev)
+                                            if (next.has(sector)) next.delete(sector); else next.add(sector)
+                                            return next
+                                        })}
+                                        className={cn("rounded-md border px-2 py-1 text-xs", sectors.has(sector) ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                                        {sector}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground">Marked "your sector" in Ideas and Find stocks. It doesn't change any scores.</p>
+                        </fieldset>
                         {error && <p role="alert" className="text-sm text-q-risk-high">{error}</p>}
                         {success && <p role="status" className="text-sm text-q-risk-low">Saved.</p>}
                         <Button type="submit" disabled={updating || !user} className="gap-1.5">
