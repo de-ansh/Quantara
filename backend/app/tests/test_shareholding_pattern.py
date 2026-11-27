@@ -46,7 +46,7 @@ async def test_endpoint_reads_missing_quarters_once(client, db_session, monkeypa
     db_session.add(Shareholding(ticker="TCS.NS", quarter=date(2026, 6, 30), promoter_pct=71.77))
     await db_session.commit()
     history = [
-        {"symbol": "TCS", "date": "30-SEP-2026", "pr_and_prgrp": "71.77", "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/SEP.xml"},
+        {"symbol": "TCS", "date": "30-SEP-2026", "pr_and_prgrp": "71.77", "xbrl": "https://nsearchives.nseindia.in/corporate/xbrl/SEP.xml"},  # NSE moved filings to .in
         {"symbol": "TCS", "date": "30-JUN-2026", "pr_and_prgrp": "71.77", "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/JUN.xml"},
         {"symbol": "TCS", "date": "30-JUN-2026", "pr_and_prgrp": "71.70", "xbrl": "https://evil.example/old.xml"},  # original, superseded
     ]
@@ -70,7 +70,7 @@ async def test_endpoint_reads_missing_quarters_once(client, db_session, monkeypa
     body = resp.json()
     assert [q["quarter"] for q in body] == ["2026-09-30", "2026-06-30"]
     assert body[0]["fii_pct"] == 9.01 and body[1]["fii_pct"] == 12.68 and body[1]["promoter_pct"] == 71.77
-    assert sorted(fetched) == ["https://nsearchives.nseindia.com/corporate/xbrl/JUN.xml", "https://nsearchives.nseindia.com/corporate/xbrl/SEP.xml"]
+    assert sorted(fetched) == ["https://nsearchives.nseindia.com/corporate/xbrl/JUN.xml", "https://nsearchives.nseindia.in/corporate/xbrl/SEP.xml"]
 
     await client.get("/api/v1/stocks/TCS.NS/shareholding", headers=headers)
     assert len(fetched) == 2  # stored splits aren't read again
